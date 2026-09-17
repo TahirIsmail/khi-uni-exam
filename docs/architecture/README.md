@@ -50,7 +50,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | CSP with per-request nonce, frame/sniff/referrer/permissions headers, no caching of signed-in pages                  | `tests/Feature/Security/SecurityBaselineTest.php`                   |
 | Login rate-limited; inactive or SSO-only accounts cannot use password login                                          | `tests/Feature/Security/*`                                          |
 | Mass assignment, lazy loading and missing attributes fail outside production                                         | `AppServiceProvider` (strict models)                                |
-| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; scopes limit where they apply           | `tests/Feature/Identity/AccessControlTest.php`                      |
+| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; branches, then scopes, limit where | `tests/Feature/Identity/AccessControlTest.php`                      |
 | Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted              | `tests/Feature/Audit/AuditLogTest.php`                              |
 | Static analysis at PHPStan level 7                                                                                   | `composer types:check`                                              |
 
@@ -59,8 +59,15 @@ Delivery, Proctoring, Result, Analytics, Audit.
 - **Who may do what.** Roles are managed in kmu-cms (Settings → Roles) and read through `v_cms_staff_roles`.
   kmu-assess grants catalogue permissions to those roles (`sec_role_permissions`), so there is one list
   of roles for both apps. A CMS role marked Super Admin has every permission.
-- **Where.** `sec_user_scopes` limits a user to everywhere (`all`) or to programmes, professionals or
-  courses. A user without a scope can still see screens but can act on nothing that has a place.
+- **Which branch (campus).** Branches are the outer limit, with the kmu-cms rule: a Super Admin (or
+  break-glass account) works in every active branch; other staff in their extra branches
+  (`staff_accessible_branches`), or else their own branch. `AccessControl::branchIds()` gives the list.
+- **Where inside the branch.** `sec_user_scopes` limits a user to everywhere in their branches (`all`)
+  or to programmes, professionals or courses. A user without a scope can still see screens but can
+  act on nothing that has a place.
+- **Rule for every later module.** Every question bank, exam, candidate and result table carries
+  `branch_id`; every list and search filters by `branchIds()`; every change checks
+  `allows($user, $permission, ScopeTarget::...)`, which refuses another branch's data.
 - **Break-glass.** `php artisan user:break-glass email --reason=...` gives a local account every
   permission for a CMS outage; granting and revoking are audited.
 - **Audit log.** `AuditLogger::record()` inside the same transaction as the change. Rows can't be

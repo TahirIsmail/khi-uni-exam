@@ -51,19 +51,34 @@ trait InteractsWithCms
         ]);
     }
 
+    protected function cmsBranch(string $name = 'Main Campus', string $status = 'active'): int
+    {
+        return (int) DB::table(config('database.cms_source_database').'.branches')->insertGetId([
+            'branch_name' => $name,
+            'branch_code' => 'B-'.bin2hex(random_bytes(4)),
+            'status' => $status,
+        ]);
+    }
+
+    protected function cmsGiveBranch(int $staffId, int $branchId): void
+    {
+        DB::table(config('database.cms_source_database').'.staff_accessible_branches')->insert(['staff_id' => $staffId, 'branch_id' => $branchId]);
+    }
+
     protected function cmsAssignRole(int $staffId, int $roleId): void
     {
         DB::table(config('database.cms_source_database').'.staff_roles')->insert(['staff_id' => $staffId, 'role_id' => $roleId, 'is_active' => 1]);
     }
 
     /**
-     * A local user linked to a new CMS staff member holding the given CMS roles.
+     * A local user linked to a new CMS staff member holding the given CMS roles, whose own branch is
+     * $branchId (none if null).
      *
      * @param  list<int>  $roleIds
      */
-    protected function staffUser(array $roleIds = []): User
+    protected function staffUser(array $roleIds = [], ?int $branchId = null): User
     {
-        $staffId = $this->cmsStaff();
+        $staffId = $this->cmsStaff(['branch_id' => $branchId]);
         foreach ($roleIds as $roleId) {
             $this->cmsAssignRole($staffId, $roleId);
         }

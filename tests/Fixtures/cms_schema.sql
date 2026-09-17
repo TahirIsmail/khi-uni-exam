@@ -86,6 +86,14 @@ CREATE TABLE `roles` (
   `updated_at` date DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+CREATE TABLE `staff_accessible_branches` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `staff_id` int NOT NULL,
+  `branch_id` int NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_staff_branch` (`staff_id`,`branch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE `branches` (
   `id` int NOT NULL AUTO_INCREMENT,
   `branch_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,

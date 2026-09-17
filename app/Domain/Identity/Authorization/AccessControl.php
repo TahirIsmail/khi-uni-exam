@@ -10,14 +10,17 @@ use Illuminate\Support\Facades\DB;
  *
  * - Roles come from kmu-cms (v_cms_staff_roles); permissions are granted to those roles here.
  * - A CMS Super Admin role, or a local break-glass account, has every permission everywhere.
- * - Scopes limit where a permission applies: everywhere ("all"), or specific programmes,
- *   professionals or courses. A programme scope covers its professionals and courses.
+ * - Branches (campuses) are the outer limit, using the kmu-cms rule: a Super Admin works in every
+ *   active branch; other staff in their extra branches (staff_accessible_branches), or else in
+ *   their own branch. Unlike kmu-cms, an inactive own branch gives no access.
+ * - Scopes limit where a permission applies inside those branches: everywhere ("all"), or specific
+ *   programmes, professionals or courses. A programme scope covers its professionals and courses.
  *
  * Results are cached for the current request (the service is registered as scoped).
  */
 final class AccessControl
 {
-    /** @var array<int, array{roles: list<CmsRole>, permissions: list<string>, scopes: list<UserScope>}> */
+    /** @var array<int, array{roles: list<CmsRole>, permissions: list<string>, scopes: list<UserScope>, branches: list<int>}> */
     private array $cache = [];
 
     /**
@@ -71,15 +74,36 @@ final class AccessControl
     }
 
     /**
-     * Whether the permission applies to the given place. A null target means "anywhere at all"
-     * (for screens that list only what the user may see).
+     * The branches (campuses) the user may work in. Lists and searches must filter by these.
+     *
+     * @return list<int>
+     */
+    public function branchIds(User $user): array
+    {
+        return $user->is_active ? $this->load($user)['branches'] : [];
+    }
+
+    public function canAccessBranch(User $user, int $branchId): bool
+    {
+        return in_array($branchId, $this->branchIds($user), true);
+    }
+
+    /**
+     * Whether the permission applies to the given place. A null target means "somewhere": use it
+     * only for screens that then list just the user's branches and scopes.
      */
     public function allows(User $user, string $permission, ?ScopeTarget $target = null): bool
     {
         if (! $this->has($user, $permission)) {
             return false;
         }
-        if ($target === null || $this->isSuperAdmin($user)) {
+        if ($target === null) {
+            return true;
+        }
+        if (! $this->canAccessBranch($user, $target->branchId)) {
+            return false;
+        }
+        if ($this->isSuperAdmin($user)) {
             return true;
         }
 
@@ -105,7 +129,7 @@ final class AccessControl
     }
 
     /**
-     * @return array{roles: list<CmsRole>, permissions: list<string>, scopes: list<UserScope>}
+     * @return array{roles: list<CmsRole>, permissions: list<string>, scopes: list<UserScope>, branches: list<int>}
      */
     private function load(User $user): array
     {
@@ -133,6 +157,39 @@ final class AccessControl
             ->map(fn (object $row): UserScope => new UserScope((string) $row->scope_type, $row->scope_id === null ? null : (int) $row->scope_id))
             ->all();
 
-        return $this->cache[$user->id] = ['roles' => array_values($roles), 'permissions' => array_values($permissions), 'scopes' => array_values($scopes)];
+        return $this->cache[$user->id] = [
+            'roles' => array_values($roles),
+            'permissions' => array_values($permissions),
+            'scopes' => array_values($scopes),
+            'branches' => $this->loadBranchIds($user, $roles),
+        ];
+    }
+
+    /**
+     * @param  array<int, CmsRole>  $roles
+     * @return list<int>
+     */
+    private function loadBranchIds(User $user, array $roles): array
+    {
+        $cms = DB::connection('cms');
+        $activeBranches = fn () => $cms->table('v_cms_branches')->where('status', 'active');
+        $ids = fn (iterable $values): array => array_values(array_unique(array_map(fn (mixed $id): int => (int) $id, [...$values])));
+
+        $superAdmin = $user->is_break_glass || array_filter($roles, fn (CmsRole $role): bool => $role->isSuperAdmin) !== [];
+        if ($superAdmin) {
+            return $ids($activeBranches()->orderBy('id')->pluck('id'));
+        }
+        if ($user->cms_staff_id === null) {
+            return [];
+        }
+
+        $extra = $ids($cms->table('v_cms_staff_branches')->where('staff_id', $user->cms_staff_id)->orderBy('branch_id')->pluck('branch_id'));
+        if ($extra !== []) {
+            return $extra;
+        }
+
+        $own = $cms->table('v_cms_staff')->where('id', $user->cms_staff_id)->value('branch_id');
+
+        return $own !== null && $activeBranches()->where('id', $own)->exists() ? [(int) $own] : [];
     }
 }

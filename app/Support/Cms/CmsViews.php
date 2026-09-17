@@ -26,6 +26,10 @@ final class CmsViews
 
             'v_cms_roles' => "SELECT r.id, r.name, r.is_superadmin FROM {$db}.roles r",
 
+            // Extra branches a staff member may work in (CMS Settings → Staff); inactive branches excluded.
+            'v_cms_staff_branches' => "SELECT sb.staff_id, sb.branch_id
+                FROM {$db}.staff_accessible_branches sb JOIN {$db}.branches b ON b.id = sb.branch_id AND b.status = 'active'",
+
             'v_cms_branches' => "SELECT b.id, b.branch_name, b.branch_code, b.status FROM {$db}.branches b",
 
             'v_cms_intakes' => "SELECT s.id, s.branch_id, s.academic_year_id, s.session AS name, s.start_date, s.end_date FROM {$db}.sessions s",
@@ -33,7 +37,8 @@ final class CmsViews
             'v_cms_programmes' => "SELECT c.id, c.branch_id, c.education_type_id, c.class AS name, p.code, p.calendar_type, p.duration_years
                 FROM {$db}.classes c JOIN {$db}.acad_programme_profiles p ON p.class_id = c.id",
 
-            'v_cms_professionals' => "SELECT pr.id, pr.class_id AS programme_id, pr.code, pr.name, pr.sequence, pr.is_active FROM {$db}.acad_professionals pr",
+            'v_cms_professionals' => "SELECT pr.id, c.branch_id, pr.class_id AS programme_id, pr.code, pr.name, pr.sequence, pr.is_active
+                FROM {$db}.acad_professionals pr JOIN {$db}.classes c ON c.id = pr.class_id",
 
             'v_cms_professional_terms' => "SELECT t.id, t.professional_id, t.section_id, s.section AS name, t.sequence, t.is_active
                 FROM {$db}.acad_professional_terms t JOIN {$db}.sections s ON s.id = t.section_id",
@@ -43,9 +48,9 @@ final class CmsViews
 
             'v_cms_disciplines' => "SELECT d.id, d.code, d.name, d.is_active FROM {$db}.acad_disciplines d",
 
-            'v_cms_courses' => "SELECT co.id, co.course_code, co.title, co.class_id AS programme_id, co.professional_id, co.term_id, co.course_kind,
+            'v_cms_courses' => "SELECT co.id, c.branch_id, co.course_code, co.title, co.class_id AS programme_id, co.professional_id, co.term_id, co.course_kind,
                     co.status, co.valid_from, co.valid_to, co.supersedes_course_id
-                FROM {$db}.acad_courses co",
+                FROM {$db}.acad_courses co JOIN {$db}.classes c ON c.id = co.class_id",
 
             'v_cms_curriculum_nodes' => "SELECT n.id, n.course_id, n.parent_id, ty.code AS level_code, n.discipline_id, n.code, n.name, n.path,
                     n.depth, n.sort_order, n.is_active, COALESCE(lt.allow_questions, 0) AS allow_questions
