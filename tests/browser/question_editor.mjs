@@ -295,8 +295,23 @@ try {
     await load('/questions/create');
     await waitFor("!!document.getElementById('type')");
 
+    // The academic structure decides the order: programme, then its Course IDs, then topics.
     check(
-        'the course from the CMS is offered',
+        'the programme is asked for first (MBBS from the CMS)',
+        await setSelect('#programme', 1),
+    );
+    await sleep(600);
+    const courseOptions = await evaluate(
+        "[...document.querySelectorAll('#course option')].map(o => o.textContent.trim())",
+    );
+    check(
+        "only the programme's own courses are offered",
+        Array.isArray(courseOptions) &&
+            courseOptions.some((o) => o.includes('E2E-QB-101')),
+        JSON.stringify(courseOptions),
+    );
+    check(
+        'the course from the CMS can be chosen',
         await setSelect('#course', courseId),
     );
     await sleep(1200);
@@ -304,13 +319,14 @@ try {
         "[...document.querySelectorAll('#topic option')].map(o => o.textContent.trim())",
     );
     check(
-        'only topics that take questions are offered (the discipline level is not)',
+        'only topics that take questions are offered, with their discipline above them',
         Array.isArray(topics) &&
-            topics.some((t) => t.includes('Acute coronary syndrome')) &&
-            !topics.some((t) => t.includes('discipline')),
+            topics.some((t) =>
+                t.includes('Cardiology (discipline) → Acute coronary syndrome'),
+            ) &&
+            !topics.some((t) => t.trim() === 'Cardiology (discipline)'),
         JSON.stringify(topics),
     );
-
     const topicId = cms(
         `SELECT id FROM acad_curriculum_nodes WHERE course_id = ${courseId} AND depth = 2`,
     );

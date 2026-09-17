@@ -31,8 +31,17 @@ final class QuestionEditorData
      */
     public function forCreate(User $user, int $branchId): array
     {
+        $courses = $this->courses($user, $branchId);
+        $programmeIds = array_values(array_unique(array_map(fn (array $course): int => $course['programme_id'], $courses)));
+
         return [
-            'courses' => $this->courses($user, $branchId),
+            // Only programmes the author actually has a course in: the editor asks for the
+            // programme first, then its courses, as the CMS academic structure is arranged.
+            'programmes' => array_values(array_filter(
+                $this->academic->programmes($branchId),
+                fn (array $programme): bool => in_array($programme['id'], $programmeIds, true),
+            )),
+            'courses' => $courses,
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             'disciplines' => $this->academic->disciplines(),
             ...$this->lookups(),

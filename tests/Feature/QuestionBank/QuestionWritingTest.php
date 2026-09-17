@@ -291,6 +291,34 @@ test('the topic must belong to the course and allow questions', function () {
     expect(Question::query()->count())->toBe(0);
 });
 
+test('the editor asks for the programme first, then only its courses', function () {
+    $author = ($this->author)();
+    $bds = $this->cmsProgramme($this->branch, 'BDS');
+    $bdsCourse = $this->cmsCourse($bds, $this->cmsProfessional($bds), 'ORAL');
+    $otherBranch = $this->cmsBranch('City Campus');
+    $cityProgramme = $this->cmsProgramme($otherBranch, 'DPT');
+    $this->cmsCourse($cityProgramme, $this->cmsProfessional($cityProgramme), 'PHY');
+
+    $this->actingAs($author)->get('/questions/create')->assertOk()->assertInertia(fn ($page) => $page
+        // Programmes of this campus that the author has a course in, and nothing else.
+        ->where('programmes', fn ($programmes) => collect($programmes)->pluck('id')->sort()->values()->all() === collect([$this->programme, $bds])->sort()->values()->all())
+        ->where('courses', fn ($courses) => collect($courses)->pluck('id')->sort()->values()->all() === collect([$this->course, $bdsCourse])->sort()->values()->all())
+        ->where('courses', fn ($courses) => collect($courses)->firstWhere('id', $bdsCourse)['programme_id'] === $bds));
+});
+
+test('a programme the author has no course in is not offered', function () {
+    $role = $this->cmsRole('Faculty limited');
+    $this->cmsGrant($role, 'qbank_questions', 'view', 'add');
+    $author = $this->staffUser([$role], $this->branch);
+    $this->cmsExamScope($author, 'course', $this->course);
+    $bds = $this->cmsProgramme($this->branch, 'BDS');
+    $this->cmsCourse($bds, $this->cmsProfessional($bds), 'ORAL');
+
+    $this->actingAs($author)->get('/questions/create')->assertInertia(fn ($page) => $page
+        ->where('programmes', fn ($programmes) => collect($programmes)->pluck('id')->all() === [$this->programme])
+        ->where('courses', fn ($courses) => collect($courses)->pluck('id')->all() === [$this->course]));
+});
+
 test('the editor is given the types, courses, topics and lookups it needs', function () {
     $author = ($this->author)();
 

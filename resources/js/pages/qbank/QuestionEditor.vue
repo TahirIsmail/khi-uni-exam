@@ -47,6 +47,7 @@ const props = defineProps<{
     version: StoredVersion | null;
     reference: string | null;
     types: QuestionTypeInfo[];
+    programmes: { id: number; name: string; code: string }[];
     courses: CourseOption[];
     disciplines: { id: number; code: string; name: string }[];
     tags: { id: number; name: string }[];
@@ -106,6 +107,15 @@ const draft = ref<QuestionDraft>(
           },
 );
 
+const programmeId = ref<number | null>(
+    props.version !== null
+        ? (props.courses.find((course) => course.id === props.version?.courseId)
+              ?.programme_id ??
+              props.programmes[0]?.id ??
+              null)
+        : (props.programmes[0]?.id ?? null),
+);
+
 const nodes = ref<CurriculumNode[]>([]);
 const availableTags = ref([...props.tags]);
 const newTag = ref('');
@@ -127,6 +137,35 @@ const topics = computed(() =>
     nodes.value.filter((node) => node.allows_questions),
 );
 const hasCourses = computed(() => props.courses.length > 0);
+
+// The CMS structure decides the order: programme, then its Course IDs, then the topics inside.
+const coursesOfProgramme = computed(() =>
+    props.courses.filter((course) => course.programme_id === programmeId.value),
+);
+
+// Topics are shown with their parents (for MBBS: discipline → topic → subtopic).
+const topicOptions = computed(() => {
+    const byId = new Map(nodes.value.map((node) => [node.id, node]));
+    const pathOf = (node: CurriculumNode): string => {
+        const names: string[] = [node.name];
+        let parent =
+            node.parent_id === null ? undefined : byId.get(node.parent_id);
+        while (parent) {
+            names.unshift(parent.name);
+            parent =
+                parent.parent_id === null
+                    ? undefined
+                    : byId.get(parent.parent_id);
+        }
+        return names.join(' → ');
+    };
+
+    return topics.value.map((node) => ({
+        id: node.id,
+        label: pathOf(node),
+        level: node.level,
+    }));
+});
 const errorCount = computed(
     () => Object.values(checks.value.errors).flat().length,
 );
@@ -215,6 +254,14 @@ async function loadTopics(courseId: number | null): Promise<void> {
         ).nodes;
     }
 }
+
+watch(programmeId, (id, previous) => {
+    if (previous === undefined || id === previous) {
+        return;
+    }
+    draft.value.course_id = coursesOfProgramme.value[0]?.id ?? null;
+    draft.value.node_id = null;
+});
 
 watch(
     () => draft.value.course_id,
@@ -446,18 +493,54 @@ function submit(): void {
                         </header>
                         <div class="grid gap-4 p-4 sm:grid-cols-2">
                             <div class="grid gap-1.5">
-                                <Label for="course">Course *</Label>
+                                <Label for="programme">Programme *</Label>
+                                <select
+                                    id="programme"
+                                    v-model.number="programmeId"
+                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    :disabled="
+                                        readOnly || programmes.length === 0
+                                    "
+                                    data-test="programme"
+                                >
+                                    <option
+                                        v-if="programmes.length === 0"
+                                        :value="null"
+                                    >
+                                        No programme available
+                                    </option>
+                                    <option
+                                        v-for="programme in programmes"
+                                        :key="programme.id"
+                                        :value="programme.id"
+                                    >
+                                        {{ programme.name }} ({{
+                                            programme.code
+                                        }})
+                                    </option>
+                                </select>
+                                <p class="text-muted-foreground text-xs">
+                                    MBBS, BDS or DPT, as the CMS academic
+                                    structure has them.
+                                </p>
+                            </div>
+
+                            <div class="grid gap-1.5">
+                                <Label for="course">Course ID *</Label>
                                 <select
                                     id="course"
                                     v-model.number="draft.course_id"
                                     class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="readOnly || !hasCourses"
                                 >
-                                    <option v-if="!hasCourses" :value="null">
-                                        No course available
+                                    <option
+                                        v-if="coursesOfProgramme.length === 0"
+                                        :value="null"
+                                    >
+                                        No course in this programme
                                     </option>
                                     <option
-                                        v-for="course in courses"
+                                        v-for="course in coursesOfProgramme"
                                         :key="course.id"
                                         :value="course.id"
                                     >
@@ -483,15 +566,11 @@ function submit(): void {
                                 >
                                     <option :value="null">Choose…</option>
                                     <option
-                                        v-for="node in topics"
-                                        :key="node.id"
-                                        :value="node.id"
+                                        v-for="topic in topicOptions"
+                                        :key="topic.id"
+                                        :value="topic.id"
                                     >
-                                        {{
-                                            '— '.repeat(
-                                                Math.max(0, node.depth - 1),
-                                            )
-                                        }}{{ node.name }}
+                                        {{ topic.label }}
                                     </option>
                                 </select>
                                 <p

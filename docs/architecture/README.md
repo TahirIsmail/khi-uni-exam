@@ -126,9 +126,14 @@ The editor is one screen per question, driven by the type: `/questions` lists th
 `/questions/create` and `…/versions/{version}/edit` write a draft, and `…/versions/{version}` shows a
 question as a candidate would see it, with the answer key.
 
-- **Where it belongs.** Course and topic come from kmu-cms; only courses in the user's campus and exam
-  access are offered, and only topics of a level that takes questions. The topic decides the
-  programme, professional, term and discipline stored with the version.
+- **Where it belongs, in the CMS's own order.** The editor asks for the **programme** (MBBS, BDS,
+  DPT), then the **Course ID** of that programme, then the **topic** inside the course's curriculum —
+  shown with its parents, for example `Cardiology (discipline) → Acute coronary syndrome`. Which
+  curriculum levels take questions is set per programme in the CMS (Programme Structure: MBBS is
+  discipline → topic → subtopic with questions on topic and subtopic; BDS and DPT are topic →
+  subtopic). Only courses in the user's campus and exam access are offered, and only programmes they
+  have a course in. The chosen topic decides the professional, term and discipline stored with the
+  version.
 - **The type decides the shape.** Options, sub-parts, accepted answers, rubric and settings appear
   from the type row (`qb_question_types`), so a new type needs no new screen.
 - **Rules are applied on the server** (`QuestionValidator`): stem length, marks, option and answer
