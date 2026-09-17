@@ -4,16 +4,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\MassAssignmentException;
 use Illuminate\Database\UniqueConstraintViolationException;
 
-test('a deactivated user cannot log in with a password', function () {
-    $user = User::factory()->create();
-    $user->forceFill(['is_active' => false])->save();
-
-    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
-        ->assertSessionHasErrors('email');
-
-    $this->assertGuest();
-});
-
 test('a user deactivated during a session is signed out on the next request', function () {
     $user = User::factory()->create();
 
@@ -21,19 +11,7 @@ test('a user deactivated during a session is signed out on the next request', fu
 
     $user->forceFill(['is_active' => false])->save();
 
-    $this->get(route('dashboard'))->assertRedirect(route('login'));
-    $this->assertGuest();
-});
-
-test('a staff account linked to kmu-cms without a local password cannot use password login', function () {
-    $user = User::factory()->create(['password' => null]);
-    $user->forceFill(['cms_staff_id' => 101])->save();
-
-    $this->post(route('login.store'), ['email' => $user->email, 'password' => ''])
-        ->assertSessionHasErrors();
-    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'anything'])
-        ->assertSessionHasErrors('email');
-
+    $this->get(route('dashboard'))->assertRedirect(config('services.kmu_cms.url').'/site/login');
     $this->assertGuest();
 });
 

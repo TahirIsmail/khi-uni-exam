@@ -2,17 +2,26 @@
 
 use App\Models\User;
 use Illuminate\Database\Eloquent\MassAssignmentException;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 
-test('the home page is not public and sends guests to login', function () {
+test('there are no public pages: guests are sent to the kmu-cms login', function () {
     $this->get('/')->assertRedirect('/dashboard');
-    $this->get('/dashboard')->assertRedirect(route('login'));
+    $this->get('/dashboard')->assertRedirect(config('services.kmu_cms.url').'/site/login');
 });
 
-test('public registration is disabled', function () {
-    expect(Route::has('register'))->toBeFalse()
-        ->and(Route::has('register.store'))->toBeFalse();
+test('there is no login, registration, password, profile or settings screen here', function () {
+    foreach (['login', 'login.store', 'register', 'password.request', 'password.reset', 'password.confirm', 'two-factor.login', 'profile.edit', 'security.edit', 'appearance.edit', 'verification.notice', 'passkey.login'] as $name) {
+        expect(Route::has($name))->toBeFalse("route {$name} should not exist");
+    }
+
+    $user = User::factory()->create();
+    foreach (['/login', '/register', '/forgot-password', '/settings/profile', '/settings/security', '/user/confirm-password', '/two-factor-challenge', '/admin/roles', '/admin/audit'] as $url) {
+        $this->actingAs($user)->get($url)->assertNotFound();
+    }
+    auth()->logout();
+
+    $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertNotFound();
+    $this->assertGuest();
 
     $this->get('/register')->assertNotFound();
     $this->post('/register', [
@@ -31,10 +40,16 @@ test('unknown urls return not found', function () {
     $this->get('/phpinfo.php')->assertNotFound();
 });
 
-test('responses carry the security headers', function () {
-    $response = $this->get(route('login'));
+/** A page anyone can reach: the refused sign-in page. */
+function publicPage($test)
+{
+    return $test->post('/sso/cms', ['ticket' => 'not-a-ticket']);
+}
 
-    $response->assertOk()
+test('responses carry the security headers', function () {
+    $response = publicPage($this);
+
+    $response->assertForbidden()
         ->assertHeader('X-Content-Type-Options', 'nosniff')
         ->assertHeader('X-Frame-Options', 'DENY')
         ->assertHeader('Referrer-Policy', 'same-origin')
@@ -51,7 +66,7 @@ test('responses carry the security headers', function () {
 });
 
 test('the inline script carries the same nonce as the policy', function () {
-    $response = $this->get(route('login'));
+    $response = publicPage($this);
 
     preg_match("/'nonce-([A-Za-z0-9]+)'/", (string) $response->headers->get('Content-Security-Policy'), $matches);
 
@@ -70,8 +85,8 @@ test('a tampered appearance cookie cannot inject script', function () {
     $payload = "';alert(1);//";
 
     $this->withUnencryptedCookie('appearance', $payload)
-        ->get(route('login'))
-        ->assertOk()
+        ->post('/sso/cms', ['ticket' => 'not-a-ticket'])
+        ->assertForbidden()
         ->assertDontSee($payload, false)
         ->assertSee("const appearance = 'system';", false);
 });
@@ -79,32 +94,4 @@ test('a tampered appearance cookie cannot inject script', function () {
 test('mass assignment of unknown attributes throws outside production', function () {
     expect(fn () => new User(['name' => 'A', 'is_admin' => true]))
         ->toThrow(MassAssignmentException::class);
-});
-
-test('login is rate limited after five failed attempts', function () {
-    $user = User::factory()->create();
-
-    foreach (range(1, 5) as $attempt) {
-        $this->post(route('login.store'), ['email' => $user->email, 'password' => 'wrong-password']);
-    }
-
-    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'wrong-password'])
-        ->assertStatus(429);
-});
-
-test('sql injection in the login form does not authenticate', function () {
-    User::factory()->create(['email' => 'staff@example.com']);
-
-    $this->post(route('login.store'), [
-        'email' => "staff@example.com' OR '1'='1",
-        'password' => "' OR '1'='1",
-    ]);
-
-    $this->assertGuest();
-});
-
-test('passwords are hashed with the configured driver in production settings', function () {
-    config(['hashing.driver' => 'argon2id']);
-
-    expect(Hash::driver('argon2id')->make('secret-password'))->toStartWith('$argon2id$');
 });

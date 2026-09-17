@@ -1,5 +1,5 @@
 -- Structure (no data) of the kmu-cms tables that the v_cms_* views read.
--- Regenerate when those tables change:
+-- Regenerate when those tables change (sch_settings is trimmed by hand):
 --   mysqldump -uroot --no-data --skip-triggers --skip-comments --compact --set-gtid-purged=OFF kmu-cms <tables> | sed -E 's/ AUTO_INCREMENT=[0-9]+//'
 SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE `staff` (
@@ -322,4 +322,55 @@ CREATE TABLE `acad_exam_types` (
   UNIQUE KEY `uq_acad_exam_types_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `permission_group` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) DEFAULT NULL,
+  `short_code` varchar(100) NOT NULL,
+  `is_active` int DEFAULT '0',
+  `system` int NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+CREATE TABLE `permission_category` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `perm_group_id` int DEFAULT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  `short_code` varchar(100) DEFAULT NULL,
+  `enable_view` int DEFAULT '0',
+  `enable_add` int DEFAULT '0',
+  `enable_edit` int DEFAULT '0',
+  `enable_delete` int DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+CREATE TABLE `roles_permissions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `role_id` int DEFAULT NULL,
+  `perm_cat_id` int DEFAULT NULL,
+  `can_view` int DEFAULT NULL,
+  `can_add` int DEFAULT NULL,
+  `can_edit` int DEFAULT NULL,
+  `can_delete` int DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+CREATE TABLE `acad_staff_exam_scopes` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `staff_id` int NOT NULL,
+  `scope_type` enum('programme','professional','course') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope_id` int unsigned NOT NULL,
+  `created_by` int DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_acad_staff_exam_scopes` (`staff_id`,`scope_type`,`scope_id`),
+  KEY `idx_acad_staff_exam_scopes_target` (`scope_type`,`scope_id`),
+  CONSTRAINT `fk_acad_staff_exam_scopes_staff` FOREIGN KEY (`staff_id`) REFERENCES `staff` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- sch_settings has ~150 columns in kmu-cms; only the ones read here are kept.
+CREATE TABLE `sch_settings` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) DEFAULT NULL,
+  `kmu_assess_mfa_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 SET FOREIGN_KEY_CHECKS = 1;

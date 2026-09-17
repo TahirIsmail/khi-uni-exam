@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
-use App\Http\Middleware\ConfirmIdentity;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -30,8 +29,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // The CMS sign-on ticket (signed, 60 s, single use) replaces the CSRF token on this route only.
         $middleware->validateCsrfTokens(except: ['sso/cms']);
 
-        // Password-less staff (signed in through kmu-cms) confirm their identity with an authenticator code.
-        $middleware->alias(['password.confirm' => ConfirmIdentity::class]);
+        // There is no login screen here: guests sign in to kmu-cms and come back through "Question Bank & Exams".
+        $middleware->redirectGuestsTo(fn (): string => rtrim((string) config('services.kmu_cms.url'), '/').'/site/login');
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 

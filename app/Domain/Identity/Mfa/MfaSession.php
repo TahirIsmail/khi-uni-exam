@@ -2,17 +2,16 @@
 
 namespace App\Domain\Identity\Mfa;
 
-use App\Domain\Identity\Authorization\AccessControl;
 use App\Models\User;
+use App\Support\Cms\CmsSettings;
 use Illuminate\Contracts\Session\Session;
 
 /**
  * Multi-factor authentication for the current session (blueprint 6.2).
  *
- * MFA is required for privileged users (see Permissions::PRIVILEGED, Super Admin, break-glass)
- * and for anyone who turned on two-factor authentication themselves. It must be passed once per
- * session, whether the user signed in with a password or came from kmu-cms, and again when a
- * password-less user confirms their identity for sensitive settings.
+ * A Super Admin turns it on or off for everyone in kmu-cms (off by default). When on, every staff
+ * member must set up an authenticator app and pass a challenge once per session after arriving
+ * from kmu-cms.
  */
 final class MfaSession
 {
@@ -20,11 +19,11 @@ final class MfaSession
 
     private const AT_KEY = 'mfa.passed_at';
 
-    public function __construct(private readonly AccessControl $access) {}
+    public function __construct(private readonly CmsSettings $settings) {}
 
-    public function isRequired(User $user): bool
+    public function isRequired(): bool
     {
-        return $user->hasEnabledTwoFactorAuthentication() || $this->access->isPrivileged($user);
+        return $this->settings->mfaEnabled();
     }
 
     public function isEnrolled(User $user): bool
@@ -35,11 +34,6 @@ final class MfaSession
     public function hasPassed(Session $session, User $user): bool
     {
         return (int) $session->get(self::USER_KEY) === $user->id && $session->has(self::AT_KEY);
-    }
-
-    public function passedWithin(Session $session, User $user, int $seconds): bool
-    {
-        return $this->hasPassed($session, $user) && time() - (int) $session->get(self::AT_KEY) <= $seconds;
     }
 
     public function markPassed(Session $session, User $user): void

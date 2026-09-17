@@ -9,6 +9,7 @@ use App\Domain\Identity\Mfa\RecordTwoFactorEvents;
 use App\Domain\Identity\Mfa\SingleUseTotpProvider;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
 use App\Models\User;
+use App\Support\Cms\CmsSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Repository;
@@ -52,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
 
         // One instance per request, so permission lookups and the request context are not shared between requests.
         $this->app->scoped(AccessControl::class);
+        $this->app->scoped(CmsSettings::class);
         $this->app->scoped(AuditLogger::class, fn (): AuditLogger => new AuditLogger);
     }
 
@@ -63,6 +65,9 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         RateLimiter::for('cms-sso', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
+
+        // Authenticator and recovery codes: per user, so one account cannot be brute-forced from many IPs.
+        RateLimiter::for('mfa', fn (Request $request) => Limit::perMinute(5)->by('mfa|'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
 
         Event::listen([
             ValidTwoFactorAuthenticationCodeProvided::class,

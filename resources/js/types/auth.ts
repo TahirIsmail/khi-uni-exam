@@ -10,15 +10,8 @@ export type User = {
     [key: string]: unknown;
 };
 
-export type AuthCan = {
-    manageRoles?: boolean;
-    manageStaff?: boolean;
-    viewAudit?: boolean;
-};
-
 export type Auth = {
     user: User;
-    can: AuthCan;
 };
 
 export type Passkey = {

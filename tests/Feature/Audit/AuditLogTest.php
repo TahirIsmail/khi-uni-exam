@@ -102,14 +102,30 @@ test('SSO sign-in and refusals are audited', function () {
         ->and(app(AuditVerifier::class)->verify()['ok'])->toBeTrue();
 });
 
-test('break-glass grants require a reason and are audited', function () {
-    $user = User::factory()->create(['email' => 'emergency@kmu.test']);
+test('kmu-cms reads the audit log with actor names through v_cms_audit_entries', function () {
+    $user = User::factory()->create(['name' => 'Dr Sana Ali']);
+    $user->forceFill(['cms_staff_id' => 77])->save();
+    $id = audit()->record('test.for_cms', 'thing', 9, null, ['a' => 1], 'why', $user, 3);
 
-    $this->artisan('user:break-glass', ['email' => 'emergency@kmu.test'])->assertFailed();
-    $this->artisan('user:break-glass', ['email' => 'emergency@kmu.test', '--reason' => 'CMS outage'])->assertSuccessful();
+    $row = DB::table('v_cms_audit_entries')->where('id', $id)->first();
 
-    expect($user->fresh()->is_break_glass)->toBeTrue()
-        ->and(DB::table('sec_audit_logs')->where('action', 'admin.break_glass.granted')->value('reason'))->toBe('CMS outage');
+    expect($row->actor_name)->toBe('Dr Sana Ali')
+        ->and((int) $row->actor_staff_id)->toBe(77)
+        ->and((int) $row->branch_id)->toBe(3)
+        ->and($row->reason)->toBe('why');
+});
+
+test('the SQL for the audit reader account grants SELECT on the audit view only', function () {
+    config(['database.cms_audit_reader_password' => 'short']);
+    $this->artisan('cms:audit-reader-sql')->assertFailed();
+
+    config(['database.cms_audit_reader_password' => str_repeat('x', 24)]);
+    $this->artisan('cms:audit-reader-sql', ['--user' => 'kmu_audit_reader'])
+        ->expectsOutputToContain('GRANT SELECT ON `'.config('database.connections.mysql.database').'`.`v_cms_audit_entries` TO')
+        ->doesntExpectOutputToContain('sec_audit_logs')
+        ->assertSuccessful();
+
+    $this->artisan('cms:audit-reader-sql', ['--user' => "x'; DROP USER root; --"])->assertFailed();
 });
 
 test('every response has a request id that audit entries reference', function () {

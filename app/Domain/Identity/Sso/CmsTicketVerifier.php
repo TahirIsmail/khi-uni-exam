@@ -27,6 +27,49 @@ final class CmsTicketVerifier
      */
     public function verify(string $ticket, int $now): array
     {
+        $claims = $this->signedClaims($ticket, $now);
+
+        // A logout token must never work as a sign-in ticket.
+        if (array_key_exists('purpose', $claims)) {
+            throw new InvalidCmsTicket('wrong_purpose');
+        }
+
+        $jti = $claims['jti'] ?? null;
+        if (! is_string($jti) || preg_match('/^[a-f0-9]{64}$/', $jti) !== 1) {
+            throw new InvalidCmsTicket('invalid_ticket_id');
+        }
+
+        $sub = $claims['sub'] ?? null;
+        if (! is_int($sub) || $sub < 1) {
+            throw new InvalidCmsTicket('invalid_subject');
+        }
+
+        return [
+            'sub' => $sub,
+            'jti' => $jti,
+            'exp' => (int) $claims['exp'],
+            'redirect' => self::safeRedirect($claims['redirect'] ?? null),
+        ];
+    }
+
+    /**
+     * A single-logout token from kmu-cms: signed, short-lived, purpose "logout". It names no user;
+     * it only ends the session of the browser that carries it.
+     */
+    public function verifyLogout(string $token, int $now): void
+    {
+        if (($this->signedClaims($token, $now)['purpose'] ?? null) !== 'logout') {
+            throw new InvalidCmsTicket('wrong_purpose');
+        }
+    }
+
+    /**
+     * Signature, issuer, audience and lifetime shared by sign-in tickets and logout tokens.
+     *
+     * @return array<string, mixed>
+     */
+    private function signedClaims(string $ticket, int $now): array
+    {
         $key = base64_decode($this->secret, true);
         if ($key === false || strlen($key) < 32) {
             throw new InvalidCmsTicket('sso_secret_not_configured');
@@ -64,22 +107,7 @@ final class CmsTicketVerifier
             throw new InvalidCmsTicket('expired');
         }
 
-        $jti = $claims['jti'] ?? null;
-        if (! is_string($jti) || preg_match('/^[a-f0-9]{64}$/', $jti) !== 1) {
-            throw new InvalidCmsTicket('invalid_ticket_id');
-        }
-
-        $sub = $claims['sub'] ?? null;
-        if (! is_int($sub) || $sub < 1) {
-            throw new InvalidCmsTicket('invalid_subject');
-        }
-
-        return [
-            'sub' => $sub,
-            'jti' => $jti,
-            'exp' => $exp,
-            'redirect' => self::safeRedirect($claims['redirect'] ?? null),
-        ];
+        return $claims;
     }
 
     /**

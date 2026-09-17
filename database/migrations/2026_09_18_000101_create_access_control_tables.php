@@ -1,6 +1,5 @@
 <?php
 
-use App\Domain\Identity\Authorization\Permissions;
 use App\Support\Cms\CmsViews;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -50,19 +49,7 @@ return new class extends Migration
             $table->unique(['user_id', 'scope_type', 'scope_key']);
         });
 
-        $now = now();
-        foreach (Permissions::CATALOGUE as $group => $permissions) {
-            foreach ($permissions as $code => $description) {
-                DB::table('sec_permissions')->insert([
-                    'code' => $code,
-                    'group_name' => $group,
-                    'description' => $description,
-                    'is_privileged' => in_array($code, Permissions::PRIVILEGED, true),
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            }
-        }
+        // (The permission catalogue was seeded here until administration moved to kmu-cms; see 000104.)
 
         // v_cms_roles was added to the CMS views.
         foreach (CmsViews::definitions((string) config('database.cms_source_database')) as $name => $select) {

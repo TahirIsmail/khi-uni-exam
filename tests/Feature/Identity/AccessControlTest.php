@@ -4,8 +4,6 @@ use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Models\User;
-use Illuminate\Database\QueryException;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Tests\Concerns\InteractsWithCms;
@@ -21,70 +19,77 @@ function access(): AccessControl
     return app(AccessControl::class);
 }
 
-test('permissions come from the CMS roles a staff member holds', function () {
+test('every permission code maps to exactly one kmu-cms checkbox', function () {
+    $codes = Permissions::codes();
+
+    expect($codes)->toHaveCount(count(array_unique($codes)));
+    foreach (Permissions::CATALOGUE as $permissions) {
+        foreach ($permissions as [$description, $category, $checkbox]) {
+            expect($description)->not->toBe('')
+                ->and($category)->toMatch('/^[a-z_]+$/')
+                ->and($checkbox)->toBeIn(['view', 'add', 'edit', 'delete']);
+        }
+    }
+});
+
+test('permissions come from the checkboxes ticked for the staff member\'s roles in kmu-cms', function () {
     $faculty = $this->cmsRole('Faculty');
     $reviewer = $this->cmsRole('Reviewer');
-    $this->grant($faculty, 'qbank.question.view', 'qbank.question.create');
-    $this->grant($reviewer, 'qbank.review.perform');
+    $this->cmsGrant($faculty, 'qbank_questions', 'view', 'add');
+    $this->cmsGrant($reviewer, 'qbank_review', 'view');
 
     $author = $this->staffUser([$faculty]);
     $both = $this->staffUser([$faculty, $reviewer]);
 
-    expect(access()->has($author, 'qbank.question.create'))->toBeTrue()
+    expect(access()->permissions($author))->toEqualCanonicalizing(['qbank.question.view', 'qbank.question.create', 'qbank.question.edit_own', 'qbank.question.submit'])
         ->and(access()->has($author, 'qbank.review.perform'))->toBeFalse()
-        ->and(access()->permissions($both))->toEqualCanonicalizing(['qbank.question.view', 'qbank.question.create', 'qbank.review.perform']);
+        ->and(access()->has($author, 'qbank.question.edit_any'))->toBeFalse()
+        ->and(access()->has($both, 'qbank.review.perform'))->toBeTrue();
 });
 
-test('a staff member without granted roles has no permissions', function () {
-    $user = $this->staffUser([$this->cmsRole('Receptionist')]);
+test('checkboxes of other permission groups grant nothing here', function () {
+    $role = $this->cmsRole('Accountant');
+    $this->cmsPermissionCatalogue();
+    $cms = config('database.cms_source_database');
+    $otherGroup = DB::table("{$cms}.permission_group")->insertGetId(['name' => 'Fees', 'short_code' => 'fees_collection', 'is_active' => 1, 'system' => 0]);
+    $lookalike = DB::table("{$cms}.permission_category")->insertGetId(['perm_group_id' => $otherGroup, 'name' => 'Questions', 'short_code' => 'qbank_questions_fake', 'enable_view' => 1]);
+    DB::table("{$cms}.roles_permissions")->insert(['role_id' => $role, 'perm_cat_id' => $lookalike, 'can_view' => 1, 'can_add' => 1, 'can_edit' => 1, 'can_delete' => 1]);
 
-    expect(access()->permissions($user))->toBe([])
-        ->and(access()->isPrivileged($user))->toBeFalse();
+    expect(access()->permissions($this->staffUser([$role])))->toBe([]);
 });
 
-test('a local account without a CMS link and without break-glass has no permissions', function () {
-    $user = User::factory()->create();
-
-    expect(access()->permissions($user))->toBe([]);
+test('a staff member whose roles have no exam checkboxes, or who has no CMS link, has no permissions', function () {
+    expect(access()->permissions($this->staffUser([$this->cmsRole('Receptionist')])))->toBe([])
+        ->and(access()->permissions(User::factory()->create()))->toBe([]);
 });
 
-test('the CMS Super Admin role and break-glass accounts have every permission in every active branch', function () {
+test('a CMS Super Admin has every permission in every active campus', function () {
     $main = $this->cmsBranch('Main Campus');
     $city = $this->cmsBranch('City Campus');
     $closed = $this->cmsBranch('Closed Campus', 'inactive');
-
     $superAdmin = $this->staffUser([$this->cmsRole('Super Admin', true)]);
-    $breakGlass = User::factory()->create();
-    $breakGlass->forceFill(['is_break_glass' => true])->save();
+    $this->cmsExamScope($superAdmin, 'course', 5);
 
-    foreach ([$superAdmin, $breakGlass] as $user) {
-        expect(access()->permissions($user))->toEqualCanonicalizing(Permissions::codes())
-            ->and(access()->isPrivileged($user))->toBeTrue()
-            ->and(access()->branchIds($user))->toBe([$main, $city])
-            ->and(access()->allows($user, 'exam.publish', new ScopeTarget($city, 999, 999, 999)))->toBeTrue()
-            ->and(access()->allows($user, 'exam.publish', ScopeTarget::branch($closed)))->toBeFalse();
-    }
+    expect(access()->permissions($superAdmin))->toEqualCanonicalizing(Permissions::codes())
+        ->and(access()->branchIds($superAdmin))->toBe([$main, $city])
+        ->and(access()->allows($superAdmin, 'exam.publish', new ScopeTarget($city, 999, 999, 999)))->toBeTrue()
+        ->and(access()->allows($superAdmin, 'exam.publish', ScopeTarget::branch($closed)))->toBeFalse();
 });
 
-test('holding any privileged permission makes a user privileged (MFA required)', function () {
-    $approver = $this->cmsRole('Approver');
-    $this->grant($approver, 'qbank.question.view', 'qbank.question.approve');
-
-    expect(access()->isPrivileged($this->staffUser([$approver])))->toBeTrue();
-});
-
-test('an inactive user has no permissions even if granted', function () {
+test('an inactive user has no permissions or campuses even if granted', function () {
+    $branch = $this->cmsBranch();
     $role = $this->cmsRole('Faculty');
-    $this->grant($role, 'qbank.question.view');
-    $user = $this->staffUser([$role]);
+    $this->cmsGrant($role, 'qbank_questions', 'view');
+    $user = $this->staffUser([$role], $branch);
     $user->forceFill(['is_active' => false])->save();
 
-    expect(access()->has($user, 'qbank.question.view'))->toBeFalse();
+    expect(access()->has($user, 'qbank.question.view'))->toBeFalse()
+        ->and(access()->branchIds($user))->toBe([]);
 });
 
 test('the Gate answers catalogue permissions through access control', function () {
     $role = $this->cmsRole('Faculty');
-    $this->grant($role, 'qbank.question.view');
+    $this->cmsGrant($role, 'qbank_questions', 'view');
     $user = $this->staffUser([$role]);
 
     expect(Gate::forUser($user)->allows('qbank.question.view'))->toBeTrue()
@@ -92,56 +97,66 @@ test('the Gate answers catalogue permissions through access control', function (
         ->and(Gate::forUser($user)->allows('not.a.catalogue.permission'))->toBeFalse();
 });
 
-test('scopes limit where a permission applies inside the user\'s branch', function () {
+test('without exam access limits a user works everywhere in their campuses, never in another campus', function () {
+    $main = $this->cmsBranch('Main Campus');
+    $city = $this->cmsBranch('City Campus');
+    $role = $this->cmsRole('Faculty');
+    $this->cmsGrant($role, 'qbank_questions', 'view', 'add');
+    $user = $this->staffUser([$role], $main);
+
+    expect(access()->scopes($user))->toBe([])
+        ->and(access()->allows($user, 'qbank.question.create', new ScopeTarget($main, 10, 100, 1000)))->toBeTrue()
+        ->and(access()->allows($user, 'qbank.question.create', new ScopeTarget($main, 20, 200, 2000)))->toBeTrue()
+        ->and(access()->allows($user, 'qbank.question.create', new ScopeTarget($city, 10, 100, 1000)))->toBeFalse()
+        ->and(access()->allows($user, 'exam.publish', new ScopeTarget($main, 10)))->toBeFalse();
+});
+
+test('exam access limits from kmu-cms restrict where a permission applies', function () {
     $branch = $this->cmsBranch();
     $role = $this->cmsRole('Faculty');
-    $this->grant($role, 'qbank.question.create');
-
-    $everywhere = $this->staffUser([$role], $branch);
-    $this->scope($everywhere, 'all');
+    $this->cmsGrant($role, 'qbank_questions', 'view', 'add');
 
     $mbbs = $this->staffUser([$role], $branch);
-    $this->scope($mbbs, 'programme', 10);
+    $this->cmsExamScope($mbbs, 'programme', 10);
 
     $firstProf = $this->staffUser([$role], $branch);
-    $this->scope($firstProf, 'professional', 100);
+    $this->cmsExamScope($firstProf, 'professional', 100);
 
-    $oneCourse = $this->staffUser([$role], $branch);
-    $this->scope($oneCourse, 'course', 1000);
-
-    $noScope = $this->staffUser([$role], $branch);
+    $twoCourses = $this->staffUser([$role], $branch);
+    $this->cmsExamScope($twoCourses, 'course', 1000);
+    $this->cmsExamScope($twoCourses, 'course', 1002);
 
     $mbbsFirstProfCourse = new ScopeTarget($branch, 10, 100, 1000);
     $mbbsOtherCourse = new ScopeTarget($branch, 10, 101, 1001);
     $bdsCourse = new ScopeTarget($branch, 20, 200, 2000);
 
-    expect(access()->allows($everywhere, 'qbank.question.create', $bdsCourse))->toBeTrue()
-        ->and(access()->allows($mbbs, 'qbank.question.create', $mbbsOtherCourse))->toBeTrue()
+    expect(access()->allows($mbbs, 'qbank.question.create', $mbbsOtherCourse))->toBeTrue()
         ->and(access()->allows($mbbs, 'qbank.question.create', $bdsCourse))->toBeFalse()
         ->and(access()->allows($firstProf, 'qbank.question.create', $mbbsFirstProfCourse))->toBeTrue()
         ->and(access()->allows($firstProf, 'qbank.question.create', $mbbsOtherCourse))->toBeFalse()
-        ->and(access()->allows($oneCourse, 'qbank.question.create', $mbbsFirstProfCourse))->toBeTrue()
-        ->and(access()->allows($oneCourse, 'qbank.question.create', $mbbsOtherCourse))->toBeFalse()
-        ->and(access()->allows($noScope, 'qbank.question.create', $mbbsFirstProfCourse))->toBeFalse()
-        ->and(access()->allows($noScope, 'qbank.question.create'))->toBeTrue();
+        ->and(access()->allows($twoCourses, 'qbank.question.create', $mbbsFirstProfCourse))->toBeTrue()
+        ->and(access()->allows($twoCourses, 'qbank.question.create', new ScopeTarget($branch, 10, 101, 1002)))->toBeTrue()
+        ->and(access()->allows($twoCourses, 'qbank.question.create', $mbbsOtherCourse))->toBeFalse()
+        ->and(access()->allows($twoCourses, 'qbank.question.create'))->toBeTrue();
 });
 
-test('an "all" scope never reaches another branch', function () {
+test('a limit never grants a permission the user does not have, nor another campus', function () {
     $main = $this->cmsBranch('Main Campus');
     $city = $this->cmsBranch('City Campus');
-    $role = $this->cmsRole('Faculty');
-    $this->grant($role, 'qbank.question.create');
-    $user = $this->staffUser([$role], $main);
-    $this->scope($user, 'all');
-    $this->scope($user, 'programme', 20);
+    $user = $this->staffUser([$this->cmsRole('Faculty')], $main);
+    $this->cmsExamScope($user, 'programme', 10);
 
-    expect(access()->branchIds($user))->toBe([$main])
-        ->and(access()->allows($user, 'qbank.question.create', ScopeTarget::branch($main)))->toBeTrue()
-        ->and(access()->allows($user, 'qbank.question.create', ScopeTarget::branch($city)))->toBeFalse()
-        ->and(access()->allows($user, 'qbank.question.create', new ScopeTarget($city, 20)))->toBeFalse();
+    expect(access()->allows($user, 'qbank.question.create', new ScopeTarget($main, 10)))->toBeFalse();
+
+    $role = $this->cmsRole('Writer');
+    $this->cmsGrant($role, 'qbank_questions', 'add');
+    $writer = $this->staffUser([$role], $main);
+    $this->cmsExamScope($writer, 'programme', 10);
+
+    expect(access()->allows($writer, 'qbank.question.create', new ScopeTarget($city, 10)))->toBeFalse();
 });
 
-test('extra branches from kmu-cms replace the staff member\'s own branch, and inactive ones are ignored', function () {
+test('extra campuses from kmu-cms replace the staff member\'s own campus, and inactive ones are ignored', function () {
     $main = $this->cmsBranch('Main Campus');
     $city = $this->cmsBranch('City Campus');
     $hill = $this->cmsBranch('Hill Campus');
@@ -152,37 +167,16 @@ test('extra branches from kmu-cms replace the staff member\'s own branch, and in
     $this->cmsGiveBranch((int) $user->cms_staff_id, $closed);
 
     expect(access()->branchIds($user))->toBe([$city, $hill])
-        ->and(access()->canAccessBranch($user, $main))->toBeFalse();
+        ->and(access()->canAccessBranch($user, $main))->toBeFalse()
+        ->and(access()->branchIds($this->staffUser([], $closed)))->toBe([])
+        ->and(access()->branchIds($this->staffUser()))->toBe([]);
 });
 
-test('no branch access without an active own branch, a CMS link, or an active account', function () {
-    $closed = $this->cmsBranch('Closed Campus', 'inactive');
-    $main = $this->cmsBranch('Main Campus');
-    $inactiveUser = $this->staffUser([], $main);
-    $inactiveUser->forceFill(['is_active' => false])->save();
-
-    expect(access()->branchIds($this->staffUser([], $closed)))->toBe([])
-        ->and(access()->branchIds($this->staffUser()))->toBe([])
-        ->and(access()->branchIds(User::factory()->create()))->toBe([])
-        ->and(access()->branchIds($inactiveUser))->toBe([]);
-});
-
-test('a scope never grants a permission the user does not have', function () {
+test('scope targets take their campus, programme and professional from kmu-cms', function () {
     $branch = $this->cmsBranch();
-    $user = $this->staffUser([$this->cmsRole('Faculty')], $branch);
-    $this->scope($user, 'all');
-
-    expect(access()->allows($user, 'qbank.question.create', new ScopeTarget($branch, 10, 100, 1000)))->toBeFalse();
-});
-
-test('scope targets take their branch, programme and professional from kmu-cms', function () {
-    $cms = config('database.cms_source_database');
-    $branch = $this->cmsBranch();
-    DB::statement("SET SESSION sql_mode = ''");
-    $programme = (int) DB::table("{$cms}.classes")->insertGetId(['branch_id' => $branch, 'education_type_id' => 1, 'class' => 'MBBS Test', 'is_active' => 'no']);
-    DB::table("{$cms}.acad_programme_profiles")->insert(['class_id' => $programme, 'code' => 'MBBST', 'calendar_type' => 'annual', 'duration_years' => 5]);
-    $professional = (int) DB::table("{$cms}.acad_professionals")->insertGetId(['class_id' => $programme, 'code' => 'PROF-1', 'name' => 'First Professional', 'sequence' => 1]);
-    $course = (int) DB::table("{$cms}.acad_courses")->insertGetId(['course_code' => 'MBBST-FND', 'title' => 'Foundation', 'class_id' => $programme, 'professional_id' => $professional, 'course_kind' => 'module']);
+    $programme = $this->cmsProgramme($branch, 'MBBS');
+    $professional = $this->cmsProfessional($programme);
+    $course = $this->cmsCourse($programme, $professional);
 
     expect(ScopeTarget::course($course))->toEqual(new ScopeTarget($branch, $programme, $professional, $course))
         ->and(ScopeTarget::professional($professional))->toEqual(new ScopeTarget($branch, $programme, $professional))
@@ -192,13 +186,15 @@ test('scope targets take their branch, programme and professional from kmu-cms',
         ->and(ScopeTarget::programme(99999999))->toBeNull();
 });
 
-test('the same scope cannot be added twice, including "all"', function () {
-    $user = $this->staffUser();
-    $this->scope($user, 'all');
+test('cms:check-permissions confirms every checkbox exists and reports missing ones', function () {
+    $this->cmsPermissionCatalogue();
+    $this->artisan('cms:check-permissions')->assertSuccessful();
 
-    expect(fn () => $this->scope($user, 'all'))->toThrow(UniqueConstraintViolationException::class);
-});
+    DB::table(config('database.cms_source_database').'.permission_category')->where('short_code', 'exam_papers_publish')->delete();
+    DB::table(config('database.cms_source_database').'.permission_category')->where('short_code', 'qbank_questions')->update(['enable_delete' => 0]);
 
-test('only catalogue permissions can be granted', function () {
-    expect(fn () => $this->grant($this->cmsRole('X'), 'made.up.permission'))->toThrow(QueryException::class);
+    $this->artisan('cms:check-permissions')
+        ->expectsOutputToContain('exam_papers_publish is missing')
+        ->expectsOutputToContain("qbank_questions has no 'delete' checkbox")
+        ->assertFailed();
 });

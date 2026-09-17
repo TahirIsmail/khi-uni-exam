@@ -5,12 +5,12 @@ Status: Accepted (17 Sep 2026). Implemented in step 6 (18 Sep 2026).
 ## Decision
 
 A staff member who is already signed in to kmu-cms clicks **Assessment / Exams** and lands in
-this app already signed in. There is no second login screen. Local password login exists only
-for break-glass administrator accounts.
+this app already signed in. There is no second login screen, and no local password login at all
+(see ADR-0004). Logging out in either app logs out of both.
 
 ## Flow
 
-1. kmu-cms route `assessment/launch` (requires a CMS session) builds a short-lived signed ticket:
+1. kmu-cms route `admin/kmuexam/launch` (requires a CMS session) builds a short-lived signed ticket:
    `{ sub: staff_id, aud: "kmu-assess", iat, exp: iat + 60s, jti: 32 random bytes, redirect: "/path" }`,
    signed with HMAC-SHA256 using a shared secret (at least 32 random bytes, from environment
    config on both servers, never committed).

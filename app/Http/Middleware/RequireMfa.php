@@ -9,13 +9,13 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Users who need multi-factor authentication cannot use anything until they have set up an
- * authenticator and passed a challenge in this session. Only the MFA screens, sign-out and the
- * CMS sign-on entry stay reachable.
+ * When two-factor authentication is turned on in kmu-cms, nobody can use anything until they have
+ * set up an authenticator and passed a challenge in this session. Only the MFA screens, log out
+ * and the CMS sign-on/logout entries stay reachable.
  */
 final class RequireMfa
 {
-    private const EXEMPT_ROUTES = ['mfa.*', 'logout', 'sso.*', 'two-factor.login', 'two-factor.login.store'];
+    private const EXEMPT_ROUTES = ['mfa.*', 'logout', 'sso.*'];
 
     public function __construct(private readonly MfaSession $mfa) {}
 
@@ -23,7 +23,7 @@ final class RequireMfa
     {
         $user = $request->user();
 
-        if (! $user instanceof User || $request->routeIs(...self::EXEMPT_ROUTES) || ! $this->mfa->isRequired($user)) {
+        if (! $user instanceof User || $request->routeIs(...self::EXEMPT_ROUTES) || ! $this->mfa->isRequired()) {
             return $next($request);
         }
         if ($this->mfa->hasPassed($request->session(), $user)) {

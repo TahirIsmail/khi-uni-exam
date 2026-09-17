@@ -22,7 +22,7 @@ const props = defineProps<{
 setLayoutProps({
     title: 'Set up two-factor authentication',
     description: props.required
-        ? 'Your account can change important data (questions, exams, results or access), so it must be protected with an authenticator app before you continue.'
+        ? 'The question bank and exams are confidential, so your account must be protected with an authenticator app before you continue.'
         : 'Protect your account with an authenticator app.',
 });
 

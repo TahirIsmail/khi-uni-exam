@@ -12,21 +12,15 @@ import {
 import { logout } from '@/routes';
 import { store } from '@/routes/mfa/challenge';
 
-const props = defineProps<{
-    confirming: boolean;
-}>();
-
 const useRecovery = ref(false);
 const code = ref('');
 
 watchEffect(() => {
     setLayoutProps({
         title: useRecovery.value ? 'Recovery code' : 'Authentication code',
-        description: props.confirming
-            ? 'Confirm it is you before changing security settings.'
-            : useRecovery.value
-              ? 'Enter one of the recovery codes you saved when you set up your authenticator. Each code works once.'
-              : 'Your account can change important data, so enter the 6-digit code from your authenticator app.',
+        description: useRecovery.value
+            ? 'Enter one of the recovery codes you saved when you set up your authenticator. Each code works once.'
+            : 'Enter the 6-digit code from your authenticator app.',
     });
 });
 

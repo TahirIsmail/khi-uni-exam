@@ -22,9 +22,8 @@ class EnsureUserIsActive
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            return redirect()->route('login')->withErrors([
-                'email' => __('This account has been deactivated.'),
-            ]);
+            // There is no login screen here; staff sign in again through kmu-cms.
+            return redirect()->away(rtrim((string) config('services.kmu_cms.url'), '/').'/site/login');
         }
 
         return $next($request);

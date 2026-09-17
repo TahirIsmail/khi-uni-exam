@@ -1,14 +1,15 @@
 <?php
 
+use App\Http\Controllers\Identity\LogoutController;
 use Illuminate\Support\Facades\Route;
 
-// There is no public landing page: guests are sent to the login screen by the auth middleware.
+// No public pages: staff arrive signed in from kmu-cms (routes/sso.php); guests are sent to the CMS login.
 Route::redirect('/', '/dashboard')->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware('auth')->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+
+    Route::post('logout', [LogoutController::class, 'logout'])->name('logout');
 });
 
-require __DIR__.'/settings.php';
-require __DIR__.'/admin.php';
 require __DIR__.'/mfa.php';

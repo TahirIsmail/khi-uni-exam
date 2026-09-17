@@ -2,6 +2,7 @@
 
 namespace Tests\Concerns;
 
+use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -90,31 +91,13 @@ trait InteractsWithCms
         ]);
     }
 
-    /**
-     * A staff user holding a new role with the given permissions, working in $branchId, with an
-     * "all" scope unless $allScope is false.
-     *
-     * @param  list<string>  $permissions
-     */
-    protected function adminWith(array $permissions, int $branchId, bool $allScope = true): User
-    {
-        $role = $this->cmsRole('Admin '.bin2hex(random_bytes(3)));
-        $this->grant($role, ...$permissions);
-        $user = $this->staffUser([$role], $branchId);
-        if ($allScope) {
-            $this->scope($user, 'all');
-        }
-
-        return $user;
-    }
-
     protected function cmsAssignRole(int $staffId, int $roleId): void
     {
         DB::table(config('database.cms_source_database').'.staff_roles')->insert(['staff_id' => $staffId, 'role_id' => $roleId, 'is_active' => 1]);
     }
 
     /**
-     * A local user linked to a new CMS staff member holding the given CMS roles, whose own branch is
+     * A local user linked to a new CMS staff member holding the given CMS roles, whose own campus is
      * $branchId (none if null).
      *
      * @param  list<int>  $roleIds
@@ -132,16 +115,63 @@ trait InteractsWithCms
         return $user;
     }
 
-    protected function grant(int $roleId, string ...$permissions): void
+    /**
+     * The "Question Bank & Exams" permission group and categories, as kmu-cms migration 0006 creates them.
+     */
+    protected function cmsPermissionCatalogue(): void
     {
-        foreach ($permissions as $permission) {
-            DB::table('sec_role_permissions')->insert(['cms_role_id' => $roleId, 'permission_code' => $permission]);
+        $cms = config('database.cms_source_database');
+        if (DB::table("{$cms}.permission_group")->where('short_code', 'qbank_exams')->exists()) {
+            return;
+        }
+
+        $group = DB::table("{$cms}.permission_group")->insertGetId(['name' => 'Question Bank & Exams', 'short_code' => 'qbank_exams', 'is_active' => 1, 'system' => 0]);
+        foreach (Permissions::cmsCheckboxes() as $category => $checkboxes) {
+            DB::table("{$cms}.permission_category")->insert([
+                'perm_group_id' => $group,
+                'name' => $category,
+                'short_code' => $category,
+                'enable_view' => (int) in_array('view', $checkboxes, true),
+                'enable_add' => (int) in_array('add', $checkboxes, true),
+                'enable_edit' => (int) in_array('edit', $checkboxes, true),
+                'enable_delete' => (int) in_array('delete', $checkboxes, true),
+            ]);
         }
     }
 
-    protected function scope(User $user, string $type, ?int $id = null): void
+    /**
+     * Ticks checkboxes for a role in Roles → Assign Permission, e.g. cmsGrant($role, 'qbank_questions', 'view', 'add').
+     */
+    protected function cmsGrant(int $roleId, string $category, string ...$checkboxes): void
     {
-        DB::table('sec_user_scopes')->insert(['user_id' => $user->id, 'scope_type' => $type, 'scope_id' => $id]);
+        $this->cmsPermissionCatalogue();
+        $cms = config('database.cms_source_database');
+        $categoryId = DB::table("{$cms}.permission_category")->where('short_code', $category)->value('id');
+
+        DB::table("{$cms}.roles_permissions")->insert([
+            'role_id' => $roleId,
+            'perm_cat_id' => $categoryId,
+            'can_view' => (int) in_array('view', $checkboxes, true),
+            'can_add' => (int) in_array('add', $checkboxes, true),
+            'can_edit' => (int) in_array('edit', $checkboxes, true),
+            'can_delete' => (int) in_array('delete', $checkboxes, true),
+        ]);
+    }
+
+    /** An exam access limit set in kmu-cms (Question Bank & Exams → Exam Access). */
+    protected function cmsExamScope(User $user, string $type, int $id): void
+    {
+        DB::table(config('database.cms_source_database').'.acad_staff_exam_scopes')->insert([
+            'staff_id' => $user->cms_staff_id, 'scope_type' => $type, 'scope_id' => $id,
+        ]);
+    }
+
+    /** Turns two-factor authentication on or off in kmu-cms (Exam Module Settings). */
+    protected function cmsMfa(bool $enabled): void
+    {
+        $table = config('database.cms_source_database').'.sch_settings';
+        DB::table($table)->delete();
+        DB::table($table)->insert(['id' => 1, 'name' => 'KMU', 'kmu_assess_mfa_enabled' => (int) $enabled]);
     }
 
     /**

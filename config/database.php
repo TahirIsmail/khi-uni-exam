@@ -156,6 +156,9 @@ return [
     // Name of the kmu-cms database on the same MySQL server; the v_cms_* views read from it.
     'cms_source_database' => env('CMS_SOURCE_DATABASE', 'kmu-cms'),
 
+    // Password of the MySQL user kmu-cms uses to read the audit log (`php artisan cms:audit-reader-sql`).
+    'cms_audit_reader_password' => env('CMS_AUDIT_READER_PASSWORD'),
+
     /*
     |--------------------------------------------------------------------------
     | Redis Databases

@@ -40,70 +40,62 @@ Delivery, Proctoring, Result, Analytics, Audit.
 
 ## Security rules (enforced by tests)
 
-| Rule                                                                                                                 | Enforced in                                                         |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| No raw SQL fragments (`whereRaw`, `DB::statement`, ...) without a `// raw-sql-reviewed:` marker; values always bound | `tests/Unit/ArchitectureTest.php`                                   |
-| Controllers never use the `DB` facade or PDO                                                                         | `tests/Unit/ArchitectureTest.php`                                   |
-| No weak hashing/randomness, `eval`, shell calls, `unserialize`, debug output                                         | `tests/Unit/ArchitectureTest.php` (Pest `php` + `security` presets) |
-| `env()` only in config                                                                                               | `tests/Unit/ArchitectureTest.php`                                   |
-| No public registration, no self-deletion, no public landing page; unknown URLs 404                                   | `tests/Feature/Security/SecurityBaselineTest.php`                   |
-| CSP with per-request nonce, frame/sniff/referrer/permissions headers, no caching of signed-in pages                  | `tests/Feature/Security/SecurityBaselineTest.php`                   |
-| Login rate-limited; inactive or SSO-only accounts cannot use password login                                          | `tests/Feature/Security/*`                                          |
-| Mass assignment, lazy loading and missing attributes fail outside production                                         | `AppServiceProvider` (strict models)                                |
-| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; branches, then scopes, limit where   | `tests/Feature/Identity/AccessControlTest.php`                      |
-| Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted             | `tests/Feature/Audit/AuditLogTest.php`                              |
-| Admin screens: branch isolation, no self-escalation, every change audited                                            | `tests/Feature/Admin/*`                                             |
-| MFA for privileged users, once per session, single-use codes, rate-limited                                           | `tests/Feature/Identity/MfaTest.php`                                |
-| Static analysis at PHPStan level 7                                                                                   | `composer types:check`                                              |
+| Rule                                                                                                                   | Enforced in                                                         |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| No raw SQL fragments (`whereRaw`, `DB::statement`, ...) without a `// raw-sql-reviewed:` marker; values always bound   | `tests/Unit/ArchitectureTest.php`                                   |
+| Controllers never use the `DB` facade or PDO                                                                           | `tests/Unit/ArchitectureTest.php`                                   |
+| No weak hashing/randomness, `eval`, shell calls, `unserialize`, debug output                                           | `tests/Unit/ArchitectureTest.php` (Pest `php` + `security` presets) |
+| `env()` only in config                                                                                                 | `tests/Unit/ArchitectureTest.php`                                   |
+| No login, registration, password, profile, settings or admin screens; guests go to the kmu-cms login; unknown URLs 404 | `tests/Feature/Security/SecurityBaselineTest.php`                   |
+| CSP with per-request nonce, frame/sniff/referrer/permissions headers, no caching of signed-in pages                    | `tests/Feature/Security/SecurityBaselineTest.php`                   |
+| Single logout both ways (POST /logout, signed GET /sso/logout); deactivated users signed out mid-session               | `tests/Feature/Identity/LogoutTest.php`                             |
+| Mass assignment, lazy loading and missing attributes fail outside production                                           | `AppServiceProvider` (strict models)                                |
+| Permissions come from kmu-cms checkboxes (`Permissions::CATALOGUE` map); campuses, then CMS exam access limits         | `tests/Feature/Identity/AccessControlTest.php`                      |
+| Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted               | `tests/Feature/Audit/AuditLogTest.php`                              |
+| kmu-cms reads the audit log through `v_cms_audit_entries` with a SELECT-only account                                   | `tests/Feature/Audit/AuditLogTest.php`                              |
+| MFA (when on in kmu-cms) for everyone, once per session, single-use codes, rate-limited                                | `tests/Feature/Identity/MfaTest.php`                                |
+| Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
-## Access control and audit
+## Administration lives in kmu-cms (ADR-0004)
 
-- **Who may do what.** Roles are managed in kmu-cms (Settings → Roles) and read through `v_cms_staff_roles`.
-  kmu-assess grants catalogue permissions to those roles (`sec_role_permissions`), so there is one list
-  of roles for both apps. A CMS role marked Super Admin has every permission.
-- **Which branch (campus).** Branches are the outer limit, with the kmu-cms rule: a Super Admin (or
-  break-glass account) works in every active branch; other staff in their extra branches
-  (`staff_accessible_branches`), or else their own branch. `AccessControl::branchIds()` gives the list.
-- **Where inside the branch.** `sec_user_scopes` limits a user to everywhere in their branches (`all`)
-  or to programmes, professionals or courses. A user without a scope can still see screens but can
-  act on nothing that has a place.
+This app is only the question bank & exam module. Everything about who may use it is managed in
+kmu-cms under **Question Bank & Exams** (sidebar) and **Roles → Assign Permission**:
+
+| What                             | Where in kmu-cms                                                                  | Read here through                                 |
+| -------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------- |
+| What a role may do               | Roles → Assign Permission → Question Bank & Exams (View/Add/Edit/Delete per item) | `v_cms_role_permissions` → `Permissions`          |
+| Where a staff member may work    | Their campus (Staff) and Question Bank & Exams → Exam Access (optional limits)    | `v_cms_staff_branches`, `v_cms_staff_exam_scopes` |
+| Two-factor authentication on/off | Question Bank & Exams → Exam Module Settings (Super Admin; off by default)        | `v_cms_exam_settings`                             |
+| The audit log                    | Question Bank & Exams → Exam Audit Log (campus-wise)                              | kmu-cms reads `v_cms_audit_entries` here          |
+
+- **Permissions.** Code checks catalogue codes (`Gate::allows('qbank.question.create')`), never role
+  names. Each code is one CMS checkbox (`Permissions::CATALOGUE`); `php artisan cms:check-permissions`
+  confirms they all exist. A CMS role marked Super Admin has every permission.
+- **Campuses, then limits.** A Super Admin works in every active campus; other staff in their extra
+  campuses, or else their own. Without Exam Access limits a user works everywhere in their campuses;
+  with limits only in those programmes, professionals and courses (`AccessControl::allows()` with a
+  `ScopeTarget`).
 - **Rule for every later module.** Every question bank, exam, candidate and result table carries
-  `branch_id`; every list and search filters by `branchIds()`; every change checks
-  `allows($user, $permission, ScopeTarget::...)`, which refuses another branch's data.
-- **Break-glass.** `php artisan user:break-glass email --reason=...` gives a local account every
-  permission for a CMS outage; granting and revoking are audited.
-- **Audit log.** `AuditLogger::record()` inside the same transaction as the change. Rows can't be
-  updated or deleted (MySQL triggers), each row stores the previous row's hash, and
-  `php artisan audit:verify` (daily, 02:30) reports the first broken row.
-- After changing the catalogue in code, run `php artisan permissions:sync` (migrations also seed it).
-- **Screens (Administration menu).**
-    - _Roles & permissions_ (`admin.roles.manage`): tick what each CMS role may do. Only someone who
-      works in every active campus can save, nobody can grant or revoke a permission they do not hold,
-      the Super Admin role is read-only, and you cannot remove role management from your own role.
-    - _Staff scopes_ (`admin.users.manage`): staff of your campuses; add or remove where their
-      permissions apply. Scopes can be set before someone's first sign-in. You cannot edit yourself,
-      a scope must be in a campus both of you work in, and an "all" scope needs you to manage every
-      campus of that person.
-    - _Audit log_ (`audit.view`, export `audit.export`): filter, expand, check the hash chain, export
-      CSV (formula cells neutralised; exports are audited). Entries of other campuses are never shown.
-- **Multi-factor authentication (MFA).** Required for anyone holding a privileged permission (marked MFA
-  on the roles screen), a Super Admin, a break-glass account, and anyone who turned on 2FA themselves.
-    - Once per session, whether they signed in with a password or came from kmu-cms: until then only
-      `/mfa/*` and log out work (`RequireMfa`).
-    - First time: `/mfa/setup` (authenticator app, QR code), then 8 recovery codes shown once.
-      An authenticator that is already set up cannot be replaced from a session.
-    - Codes are single-use (`SingleUseTotpProvider`), 5 attempts a minute per user, every pass and
-      failure audited (never the code).
-    - Staff without a password confirm their identity for security settings with a fresh code
-      (`ConfirmIdentity` replaces `password.confirm`).
-    - Lost phone: `php artisan user:mfa-reset email --reason=...` removes the authenticator, ends
-      their sessions, and is audited.
-- Browser check (local): `node tests/browser/admin_and_mfa.mjs https://kmu-assess.test` (temporary
-  staff are removed afterwards; their audit entries stay).
+  `branch_id`; every list filters by `branchIds()`; every change checks `allows(...)`.
+- **Signing in and out.** Only through kmu-cms (ADR-0002). There is no login, profile or settings
+  screen here. Log out in either app logs out of both: `POST /logout` here sends the browser to the
+  CMS logout, which comes back through a signed 60-second token on `GET /sso/logout`. The sidebar has
+  "Back to CMS".
+- **Two-factor authentication.** When turned on in kmu-cms, everyone must set up an authenticator
+  (`/mfa/setup`, 8 recovery codes shown once) and pass a challenge once per session. Codes are
+  single-use (`SingleUseTotpProvider`), 5 attempts a minute per user; every pass, failure and setup is
+  audited without the code. Lost phone: `php artisan user:mfa-reset email --reason=...`.
+- **Audit log.** `AuditLogger::record()` inside the same transaction as the change, with the campus
+  (`branch_id`). Rows cannot be updated or deleted (MySQL triggers), each stores the previous row's
+  hash, and `php artisan audit:verify` checks the chain nightly. kmu-cms shows it through a
+  SELECT-only account on `v_cms_audit_entries` (`php artisan cms:audit-reader-sql`).
+- **Browser tests** (kmu-cms repo, local): `node tests/sso/exam_admin_e2e.mjs https://kmu-cms.test https://kmu-assess.test`
+  and `tests/sso/sso_e2e.mjs`.
 
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
+- [ADR-0004 — Administration of this module lives in kmu-cms](adr-0004-administration-in-cms.md)
 - [ADR-0003 — A candidate's exam survives a crash or network loss and resumes on another computer](adr-0003-exam-resume-on-another-computer.md)
 
 ## Implementation steps (first increment)
@@ -116,7 +108,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
-| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | Done                            |
+| 7    | Permissions, campuses and limits, audit log, MFA — administered from kmu-cms (ADR-0004)                   | both       | Done                            |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |

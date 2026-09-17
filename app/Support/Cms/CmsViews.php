@@ -26,6 +26,21 @@ final class CmsViews
 
             'v_cms_roles' => "SELECT r.id, r.name, r.is_superadmin FROM {$db}.roles r",
 
+            // Ticked checkboxes of the "Question Bank & Exams" permission group (Roles → Assign Permission).
+            'v_cms_role_permissions' => "SELECT rp.role_id, pc.short_code AS category, rp.can_view, rp.can_add, rp.can_edit, rp.can_delete
+                FROM {$db}.roles_permissions rp
+                JOIN {$db}.permission_category pc ON pc.id = rp.perm_cat_id
+                JOIN {$db}.permission_group pg ON pg.id = pc.perm_group_id AND pg.short_code = 'qbank_exams'",
+
+            'v_cms_permission_categories' => "SELECT pc.short_code AS category, pc.name, pc.enable_view, pc.enable_add, pc.enable_edit, pc.enable_delete
+                FROM {$db}.permission_category pc
+                JOIN {$db}.permission_group pg ON pg.id = pc.perm_group_id AND pg.short_code = 'qbank_exams'",
+
+            // Exam access limits (CMS Question Bank & Exams → Exam Access).
+            'v_cms_staff_exam_scopes' => "SELECT x.staff_id, x.scope_type, x.scope_id FROM {$db}.acad_staff_exam_scopes x",
+
+            'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
+
             // Extra branches a staff member may work in (CMS Settings → Staff); inactive branches excluded.
             'v_cms_staff_branches' => "SELECT sb.staff_id, sb.branch_id
                 FROM {$db}.staff_accessible_branches sb JOIN {$db}.branches b ON b.id = sb.branch_id AND b.status = 'active'",

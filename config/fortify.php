@@ -161,15 +161,11 @@ return [
     */
 
     'features' => [
-        Features::resetPasswords(),
-        Features::emailVerification(),
+        // Only the authenticator building blocks are used (routes are ignored, see FortifyServiceProvider).
+        // 'confirm' makes an authenticator count only after its first code was entered.
         Features::twoFactorAuthentication([
             'confirm' => true,
-            'confirmPassword' => true,
-            // 'window' => 0
-        ]),
-        Features::passkeys([
-            'confirmPassword' => true,
+            'confirmPassword' => false,
         ]),
     ],
 

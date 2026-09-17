@@ -28,9 +28,7 @@ class MfaController extends Controller
             return to_route('mfa.setup');
         }
 
-        return Inertia::render('auth/MfaChallenge', [
-            'confirming' => $request->boolean('confirm'),
-        ]);
+        return Inertia::render('auth/MfaChallenge');
     }
 
     public function verify(Request $request, VerifyMfaCode $verify): RedirectResponse
@@ -55,7 +53,7 @@ class MfaController extends Controller
         $started = $user->two_factor_secret !== null;
 
         return Inertia::render('auth/MfaSetup', [
-            'required' => $this->mfa->isRequired($user),
+            'required' => $this->mfa->isRequired(),
             'started' => $started,
             'qrCodeSvg' => $started ? $user->twoFactorQrCodeSvg() : null,
             'setupKey' => $started ? decrypt($user->two_factor_secret) : null,

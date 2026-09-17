@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { LayoutGrid, ScrollText, ShieldCheck, Users } from '@lucide/vue';
-import { computed } from 'vue';
+import { ArrowLeft, LayoutGrid } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -15,9 +14,6 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
-import { index as auditIndex } from '@/routes/admin/audit';
-import { index as rolesIndex } from '@/routes/admin/roles';
-import { index as staffIndex } from '@/routes/admin/staff';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -29,30 +25,6 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
 ];
-
-// Shown only when the server says so; every route checks the permission again.
-const adminNavItems = computed<NavItem[]>(() => {
-    const can = page.props.auth.can ?? {};
-    const items: NavItem[] = [];
-    if (can.manageRoles) {
-        items.push({
-            title: 'Roles & permissions',
-            href: rolesIndex(),
-            icon: ShieldCheck,
-        });
-    }
-    if (can.manageStaff) {
-        items.push({ title: 'Staff scopes', href: staffIndex(), icon: Users });
-    }
-    if (can.viewAudit) {
-        items.push({
-            title: 'Audit log',
-            href: auditIndex(),
-            icon: ScrollText,
-        });
-    }
-    return items;
-});
 </script>
 
 <template>
@@ -71,14 +43,20 @@ const adminNavItems = computed<NavItem[]>(() => {
 
         <SidebarContent>
             <NavMain :items="mainNavItems" />
-            <NavMain
-                v-if="adminNavItems.length > 0"
-                label="Administration"
-                :items="adminNavItems"
-            />
         </SidebarContent>
 
         <SidebarFooter>
+            <SidebarMenu>
+                <SidebarMenuItem>
+                    <!-- Roles, exam access, settings and the audit log are managed in the CMS. -->
+                    <SidebarMenuButton as-child tooltip="Back to CMS">
+                        <a :href="page.props.cmsUrl" data-test="back-to-cms">
+                            <ArrowLeft />
+                            <span>Back to CMS</span>
+                        </a>
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+            </SidebarMenu>
             <NavUser />
         </SidebarFooter>
     </Sidebar>
