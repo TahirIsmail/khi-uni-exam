@@ -56,6 +56,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | MFA (when on in kmu-cms) for everyone, once per session, single-use codes, rate-limited                                | `tests/Feature/Identity/MfaTest.php`                                |
 | Question versions are frozen once approved; workflow steps, one active version, append-only log                        | `tests/Feature/QuestionBank/SchemaRulesTest.php`                    |
 | Question text is sanitised before storing; type rules and the campus/exam access are enforced server-side              | `tests/Feature/QuestionBank/QuestionWritingTest.php`                |
+| Search filters are validated and never reach beyond the campus and exam access                                         | `tests/Feature/QuestionBank/SearchAndHistoryTest.php`               |
 | Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
 ## Administration lives in kmu-cms (ADR-0004)
@@ -163,6 +164,24 @@ question as a candidate would see it, with the answer key.
 - Browser test (local): `node tests/browser/question_editor.mjs https://kmu-assess.test` (24 checks,
   including the picture upload; it reuses one test course and author in the CMS).
 
+## Finding and comparing questions (step 10)
+
+- **Search** (`/questions`): words are matched against each version's plain-text copy with MySQL's
+  FULLTEXT index and with a plain "contains" search, so part of a word or a reference
+  (`Q-2026-000123`) still finds the question; best matches come first.
+- **Filters**: programme, Course ID, topic (including everything under it), discipline, type, level
+  of thinking, expected difficulty, tag, author, marks range, date changed, status, written by me,
+  archived, and "same text twice". Every value is validated — an unknown status, type or sort order
+  is refused rather than ignored — and the search never leaves the campus and exam access.
+- **Question page** (`/questions/{question}`): every version with its status, author and dates; a
+  timeline of what happened (written, sent for review, changes asked for, approved, put in use,
+  superseded, retired) from the append-only status log; and other questions in the campus with the
+  same text.
+- **Comparing two versions** (`/questions/{question}/diff?from=&to=`): the question text word by word
+  (removals struck through, additions underlined), options matched by their letter with any answer-key
+  change called out, and a table of what else changed (type, marks, course, topic, counts). The word
+  diff is a small longest-common-subsequence walk (`TextDiff`), with no dependency.
+
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
@@ -182,7 +201,7 @@ question as a candidate would see it, with the answer key.
 | 7    | Permissions, campuses and limits, audit log, MFA — administered from kmu-cms (ADR-0004)                   | both       | Done                            |
 | 8    | Campus context; question bank tables, all question types, immutability triggers                           | both       | Done                            |
 | 9    | Question editor, live validation, candidate preview, versions                                             | kmu-assess | Done                            |
-| 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |
+| 10   | Search and filters, version history, timeline, side-by-side diff                                          | kmu-assess | Done                            |
 | 11   | Excel/CSV import                                                                                          | kmu-assess |                                 |
 | 12   | Review, pre-hoc, approval                                                                                 | kmu-assess |                                 |
 | 13   | Acceptance testing of the increment                                                                       | both       |                                 |

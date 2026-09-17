@@ -25,6 +25,8 @@ Route::middleware('auth')->group(function () {
     Route::post('questions/tags', [TagController::class, 'store'])->middleware(['can:qbank.question.create', 'throttle:60,1'])->name('questions.tags.store');
 
     Route::prefix('questions/{question}')->whereNumber('question')->group(function () {
+        Route::get('/', [QuestionController::class, 'history'])->middleware('can:qbank.question.view')->name('questions.history');
+        Route::get('diff', [QuestionController::class, 'diff'])->middleware('can:qbank.question.view')->name('questions.diff');
         Route::post('versions', [QuestionController::class, 'newVersion'])->name('questions.versions.store');
 
         Route::prefix('versions/{version}')->whereNumber('version')->group(function () {

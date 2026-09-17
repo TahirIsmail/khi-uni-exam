@@ -6,6 +6,7 @@ use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\QuestionBank\Models\CognitiveLevel;
 use App\Domain\QuestionBank\Models\DifficultyLevel;
+use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionType;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\Tag;
@@ -44,6 +45,28 @@ final class QuestionEditorData
             'courses' => $courses,
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             'disciplines' => $this->academic->disciplines(),
+            ...$this->lookups(),
+        ];
+    }
+
+    /**
+     * What the search screen needs: the same places and lookups as the editor.
+     *
+     * @return array<string, mixed>
+     */
+    public function forSearch(User $user, int $branchId): array
+    {
+        $courses = $this->courses($user, $branchId);
+        $programmeIds = array_values(array_unique(array_map(fn (array $course): int => $course['programme_id'], $courses)));
+
+        return [
+            'programmes' => array_values(array_filter(
+                $this->academic->programmes($branchId),
+                fn (array $programme): bool => in_array($programme['id'], $programmeIds, true),
+            )),
+            'courses' => $courses,
+            'disciplines' => $this->academic->disciplines(),
+            'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             ...$this->lookups(),
         ];
     }
@@ -151,6 +174,15 @@ final class QuestionEditorData
             'tagIds' => $content->tagIds,
             'authorId' => $version->author_id,
         ];
+    }
+
+    /** The same check for a question, using the version in use (or the newest one). */
+    public function allowsQuestion(User $user, string $permission, Question $question): bool
+    {
+        /** @var QuestionVersion|null $version */
+        $version = $question->activeVersion ?? $question->versions()->orderByDesc('version_no')->first();
+
+        return $version !== null && $this->allows($user, $permission, $version);
     }
 
     public function allows(User $user, string $permission, QuestionVersion $version): bool

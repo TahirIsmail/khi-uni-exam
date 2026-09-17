@@ -7,10 +7,13 @@ use App\Domain\QuestionBank\Actions\CreateQuestionDraft;
 use App\Domain\QuestionBank\Actions\SaveQuestionDraft;
 use App\Domain\QuestionBank\Actions\StartNewVersion;
 use App\Domain\QuestionBank\Actions\SubmitQuestionVersion;
+use App\Domain\QuestionBank\Enums\VersionStatus;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Queries\QuestionEditorData;
+use App\Domain\QuestionBank\Queries\QuestionHistory;
 use App\Domain\QuestionBank\Queries\QuestionList;
+use App\Domain\QuestionBank\Queries\VersionDiff;
 use App\Domain\QuestionBank\Validation\QuestionValidator;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
@@ -18,6 +21,7 @@ use App\Http\Requests\QuestionBank\SaveQuestionRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -37,24 +41,59 @@ class QuestionController extends Controller
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', 'string', 'max:20'],
-            'course_id' => ['nullable', 'integer', 'min:1'],
+            'status' => ['nullable', 'string', Rule::in(array_column(VersionStatus::cases(), 'value'))],
+            'programme_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'course_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'node_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'discipline_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'type_id' => ['nullable', 'integer', Rule::exists('qb_question_types', 'id')],
+            'cognitive_level_id' => ['nullable', 'integer', Rule::exists('qb_cognitive_levels', 'id')],
+            'difficulty_level_id' => ['nullable', 'integer', Rule::exists('qb_difficulty_levels', 'id')],
+            'tag_id' => ['nullable', 'integer', Rule::exists('qb_tags', 'id')],
+            'author_id' => ['nullable', 'integer', 'min:1'],
+            'marks_min' => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'marks_max' => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'updated_from' => ['nullable', 'date_format:Y-m-d'],
+            'updated_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:updated_from'],
+            'sort' => ['nullable', Rule::in(['relevance', 'updated', 'oldest', 'marks', 'reference'])],
             'mine' => ['nullable', 'boolean'],
+            'duplicates' => ['nullable', 'boolean'],
+            'archived' => ['nullable', 'boolean'],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $filters['mine'] = $request->boolean('mine');
+        $filters['duplicates'] = $request->boolean('duplicates');
+        $filters['archived'] = $request->boolean('archived');
+        $branchId = $this->branchId($request);
+        $number = fn (string $key): ?int => isset($filters[$key]) ? (int) $filters[$key] : null;
 
         return Inertia::render('qbank/Questions', [
-            'questions' => $list->paginate($request->user(), $this->branchId($request), $filters),
+            'questions' => $list->paginate($request->user(), $branchId, $filters),
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'status' => $filters['status'] ?? '',
-                'course_id' => isset($filters['course_id']) ? (int) $filters['course_id'] : null,
+                'programme_id' => $number('programme_id'),
+                'course_id' => $number('course_id'),
+                'node_id' => $number('node_id'),
+                'discipline_id' => $number('discipline_id'),
+                'type_id' => $number('type_id'),
+                'cognitive_level_id' => $number('cognitive_level_id'),
+                'difficulty_level_id' => $number('difficulty_level_id'),
+                'tag_id' => $number('tag_id'),
+                'author_id' => $number('author_id'),
+                'marks_min' => $filters['marks_min'] ?? null,
+                'marks_max' => $filters['marks_max'] ?? null,
+                'updated_from' => $filters['updated_from'] ?? null,
+                'updated_to' => $filters['updated_to'] ?? null,
+                'sort' => $filters['sort'] ?? 'relevance',
                 'mine' => $filters['mine'],
+                'duplicates' => $filters['duplicates'],
+                'archived' => $filters['archived'],
             ],
-            'courses' => $this->editorData->courses($request->user(), $this->branchId($request)),
-            'statuses' => $list->statusCounts($request->user(), $this->branchId($request)),
+            'statuses' => $list->statusCounts($request->user(), $branchId),
+            'authors' => $list->authors($request->user(), $branchId),
+            ...$this->editorData->forSearch($request->user(), $branchId),
             'canCreate' => $request->user()->can('qbank.question.create'),
         ]);
     }
@@ -148,6 +187,42 @@ class QuestionController extends Controller
             'version' => $this->editorData->version($version),
             'checks' => $validator->check($reader->read($version)),
             ...$this->editorData->lookups(),
+        ]);
+    }
+
+    /** Everything that happened to one question: its versions and their steps. */
+    public function history(Request $request, Question $question, QuestionHistory $history): Response
+    {
+        abort_unless((int) $question->branch_id === $this->branchId($request), 404);
+        abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
+
+        return Inertia::render('qbank/QuestionHistory', $history->for($question));
+    }
+
+    /** Two versions side by side. */
+    public function diff(Request $request, Question $question, VersionDiff $diff): Response
+    {
+        abort_unless((int) $question->branch_id === $this->branchId($request), 404);
+        abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
+
+        $input = $request->validate([
+            'from' => ['required', 'integer', 'min:1'],
+            'to' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $from = $question->versions()->whereKey((int) $input['from'])->firstOrFail();
+        $to = $question->versions()->whereKey((int) $input['to'])->firstOrFail();
+
+        return Inertia::render('qbank/QuestionDiff', [
+            'reference' => $question->public_ref,
+            'questionId' => $question->id,
+            'diff' => $diff->between($from, $to),
+            'versions' => $question->versions()->orderByDesc('version_no')->get(['id', 'version_no', 'status'])
+                ->map(fn (QuestionVersion $version): array => [
+                    'id' => $version->id,
+                    'versionNo' => $version->version_no,
+                    'statusLabel' => $version->status->label(),
+                ])->values()->all(),
         ]);
     }
 

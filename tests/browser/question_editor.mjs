@@ -516,6 +516,87 @@ try {
         shown.slice(0, 200),
     );
 
+    // ---- search, history and the comparison of two versions (step 10) ----
+    await load('/questions?search=crushing chest pain');
+    check(
+        'searching by words finds the question',
+        /Q-\d{4}-\d{6}/.test(await text()),
+        (await text()).slice(0, 200),
+    );
+    await load('/questions?search=nothing-like-this-at-all');
+    check(
+        'a search with no match says so',
+        /No questions found/.test(await text()),
+    );
+
+    await load(`/questions/${questionId}`);
+    const history = await text();
+    check(
+        'the history page lists the version and what happened to it',
+        /v1/.test(history) &&
+            /Sent for review/.test(history) &&
+            /Question written/.test(history),
+        history.slice(0, 300),
+    );
+
+    // A second version, changed, then compared with the first.
+    await click('[data-test=new-version]');
+    await waitFor("location.pathname.includes('/edit')");
+    // Wait until the copied question is on screen: an edit made while it renders would be lost.
+    await waitFor(
+        "document.querySelectorAll('[data-option]').length === 4 && (document.getElementById('stem')?.value.length ?? 0) > 20",
+    );
+    await sleep(500);
+
+    // Replace the text the way a person would: select it all and type over it.
+    await evaluate(
+        "(() => { const el = document.getElementById('stem'); el.focus(); el.select(); return true; })()",
+    );
+    await send('Input.insertText', {
+        text: '<p>A 54-year-old woman has crushing chest pain radiating to the jaw for 40 minutes.</p>',
+    });
+    await sleep(500);
+    check(
+        'the copied version can be edited',
+        /woman/.test(await evaluate("document.getElementById('stem').value")),
+        (await evaluate("document.getElementById('stem').value")).slice(0, 140),
+    );
+
+    await click('[data-correct=B]');
+    await sleep(900);
+    await click('[data-test=save-draft]');
+    await waitFor('/Draft saved/.test(document.body.innerText)');
+
+    const savedStem = assess(
+        `SELECT LEFT(v.stem, 80) FROM qb_question_versions v JOIN qb_questions q ON q.id = v.question_id WHERE q.public_ref = '${reference}' AND v.version_no = 2`,
+    );
+    check(
+        'the second version keeps the edit',
+        /woman/.test(savedStem),
+        `${savedStem} | page: ${(await text()).replace(/\s+/g, ' ').slice(0, 300)}`,
+    );
+
+    const secondVersionId = assess(
+        `SELECT v.id FROM qb_question_versions v WHERE v.question_id = ${questionId} AND v.version_no = 2`,
+    );
+    await load(
+        `/questions/${questionId}/diff?from=${versionId}&to=${secondVersionId}`,
+    );
+    const diff = await text();
+    check(
+        'the comparison shows the changed words and the moved answer key',
+        /version 1 → version 2/.test(diff) &&
+            /woman/.test(diff) &&
+            (await evaluate(
+                "!!document.querySelector('[data-key-changed=A]') && !!document.querySelector('[data-key-changed=B]')",
+            )),
+        `v1=${versionId} v2=${secondVersionId} | ${diff.replace(/\s+/g, ' ').slice(0, 700)}`,
+    );
+    check(
+        'the comparison lists what else changed',
+        await evaluate('/Marks|Topic|Type/.test(document.body.innerText)'),
+    );
+
     check(
         'no JavaScript errors in the editor',
         jsErrors.length === 0,

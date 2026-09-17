@@ -122,6 +122,34 @@ final class CmsAcademic
         ];
     }
 
+    /**
+     * A topic and everything under it, so searching a topic also finds its subtopics.
+     *
+     * @return list<int>
+     */
+    public function nodeSubtreeIds(int $nodeId): array
+    {
+        $node = DB::connection('cms')->table('v_cms_curriculum_nodes')->where('id', $nodeId)->first(['id', 'path']);
+        if ($node === null) {
+            return [];
+        }
+
+        $childPath = rtrim((string) $node->path, '/').'/'.$nodeId.'/';
+        $ids = DB::connection('cms')->table('v_cms_curriculum_nodes')
+            ->where('path', 'like', addcslashes($childPath, '\\%_').'%')
+            ->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+
+        return array_values(array_unique([$nodeId, ...$ids]));
+    }
+
+    /** A topic's name, for headings and comparisons. */
+    public function nodeName(int $nodeId): ?string
+    {
+        $name = DB::connection('cms')->table('v_cms_curriculum_nodes')->where('id', $nodeId)->value('name');
+
+        return $name === null ? null : (string) $name;
+    }
+
     /** A course's title and code, for headings and lists. */
     public function courseLabel(int $courseId): ?string
     {
