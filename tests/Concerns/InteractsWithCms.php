@@ -84,7 +84,7 @@ trait InteractsWithCms
         ]);
     }
 
-    protected function cmsCourse(int $programmeId, int $professionalId, string $code = 'FND'): int
+    protected function cmsCourse(int $programmeId, ?int $professionalId = null, string $code = 'FND'): int
     {
         return (int) DB::table(config('database.cms_source_database').'.acad_courses')->insertGetId([
             'course_code' => $code.'-'.bin2hex(random_bytes(3)), 'title' => 'Course '.$code, 'class_id' => $programmeId, 'professional_id' => $professionalId, 'course_kind' => 'module',
@@ -113,6 +113,44 @@ trait InteractsWithCms
         $user->forceFill(['cms_staff_id' => $staffId])->save();
 
         return $user;
+    }
+
+    /**
+     * A topic of a course that questions may be attached to (level template with allow_questions).
+     */
+    protected function cmsCurriculumNode(int $courseId, int $programmeId, string $name = 'Ischaemic heart disease', bool $allowQuestions = true, ?int $disciplineId = null): int
+    {
+        $cms = config('database.cms_source_database');
+        // Two levels, as kmu-cms has them: topics take questions, the section above them does not.
+        $levelCode = $allowQuestions ? 'topic' : 'section';
+        $depth = $allowQuestions ? 2 : 1;
+        $levelType = DB::table("{$cms}.acad_level_types")->where('code', $levelCode)->value('id')
+            ?? DB::table("{$cms}.acad_level_types")->insertGetId(['code' => $levelCode, 'name' => ucfirst($levelCode)]);
+
+        if (DB::table("{$cms}.acad_level_templates")->where(['class_id' => $programmeId, 'depth' => $depth])->doesntExist()) {
+            DB::table("{$cms}.acad_level_templates")->insert([
+                'class_id' => $programmeId, 'depth' => $depth, 'level_type_id' => $levelType, 'allow_questions' => (int) $allowQuestions,
+            ]);
+        }
+
+        return (int) DB::table("{$cms}.acad_curriculum_nodes")->insertGetId([
+            'course_id' => $courseId,
+            'level_type_id' => $levelType,
+            'discipline_id' => $disciplineId,
+            'code' => 'T-'.bin2hex(random_bytes(3)),
+            'name' => $name,
+            'path' => '/',
+            'depth' => $depth,
+            'sort_order' => 1,
+            'is_active' => 1,
+        ]);
+    }
+
+    protected function cmsDiscipline(string $name = 'Physiology'): int
+    {
+        return (int) DB::table(config('database.cms_source_database').'.acad_disciplines')->insertGetId([
+            'code' => 'D-'.bin2hex(random_bytes(3)), 'name' => $name, 'is_active' => 1,
+        ]);
     }
 
     /**

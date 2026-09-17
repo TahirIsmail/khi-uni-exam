@@ -16,3 +16,4 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/mfa.php';
+require __DIR__.'/qbank.php';

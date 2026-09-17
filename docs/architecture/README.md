@@ -55,6 +55,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | kmu-cms reads the audit log through `v_cms_audit_entries` with a SELECT-only account                                   | `tests/Feature/Audit/AuditLogTest.php`                              |
 | MFA (when on in kmu-cms) for everyone, once per session, single-use codes, rate-limited                                | `tests/Feature/Identity/MfaTest.php`                                |
 | Question versions are frozen once approved; workflow steps, one active version, append-only log                        | `tests/Feature/QuestionBank/SchemaRulesTest.php`                    |
+| Question text is sanitised before storing; type rules and the campus/exam access are enforced server-side              | `tests/Feature/QuestionBank/QuestionWritingTest.php`                |
 | Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
 ## Administration lives in kmu-cms (ADR-0004)
@@ -119,6 +120,34 @@ version, and only one version can be `active` at a time (a generated unique key 
   keys across databases here, so the application validates them against the read-only `v_cms_*`
   views and the two databases stay independently restorable.
 
+## Writing questions (step 9)
+
+The editor is one screen per question, driven by the type: `/questions` lists the campus's questions,
+`/questions/create` and `…/versions/{version}/edit` write a draft, and `…/versions/{version}` shows a
+question as a candidate would see it, with the answer key.
+
+- **Where it belongs.** Course and topic come from kmu-cms; only courses in the user's campus and exam
+  access are offered, and only topics of a level that takes questions. The topic decides the
+  programme, professional, term and discipline stored with the version.
+- **The type decides the shape.** Options, sub-parts, accepted answers, rubric and settings appear
+  from the type row (`qb_question_types`), so a new type needs no new screen.
+- **Rules are applied on the server** (`QuestionValidator`): stem length, marks, option and answer
+  counts per type, one key where the type allows one, duplicate options, matching answers that exist,
+  numbers with a tolerance, rubric lines and references. The editor shows the same list live
+  (`POST /questions/check`), and submission runs it again on what is stored — a draft can always be
+  saved, but it cannot be sent for review while an error stands.
+- **Advice, not walls.** The item-writing checklist (all/none of the above, negative lead-in, longest
+  option is the key, absolute terms, missing explanation or reference) appears as warnings.
+- **Text is cleaned before it is stored** (`QuestionHtml`, Symfony HTML Sanitizer): a small tag
+  allow-list, http(s) or relative links only; scripts, event handlers, styles and frames are dropped.
+  The preview shows the stored text, so what is checked is what a candidate sees.
+- **Duplicates and search.** Each version stores a content hash of the normalised stem and options,
+  and a plain-text copy for searching.
+- **Versions.** Editing a question that is past drafting starts the next version as a draft copied
+  from the one in use (`POST /questions/{question}/versions`); the version in use stays active until
+  the new one is approved. References come from a counter (`Q-2026-000123`).
+- Browser test (local): `node tests/browser/question_editor.mjs https://kmu-assess.test`.
+
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
@@ -137,7 +166,7 @@ version, and only one version can be `active` at a time (a generated unique key 
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
 | 7    | Permissions, campuses and limits, audit log, MFA — administered from kmu-cms (ADR-0004)                   | both       | Done                            |
 | 8    | Campus context; question bank tables, all question types, immutability triggers                           | both       | Done                            |
-| 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
+| 9    | Question editor, live validation, candidate preview, versions                                             | kmu-assess | Done                            |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |
 | 11   | Excel/CSV import                                                                                          | kmu-assess |                                 |
 | 12   | Review, pre-hoc, approval                                                                                 | kmu-assess |                                 |
