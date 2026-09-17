@@ -469,8 +469,13 @@ function submit(): void {
                     then appear here.
                 </p>
                 <p>
-                    If you do have courses, your exam access may be limited to
-                    other programmes — check
+                    A course that is <em>retired</em> is never offered here, and
+                    a course counts only once it has a topic at a level that
+                    takes questions.
+                </p>
+                <p>
+                    If you do have active courses, your exam access may be
+                    limited to other programmes — check
                     <em>Question Bank &amp; Exams → Exam Access</em> in the CMS.
                 </p>
             </div>
