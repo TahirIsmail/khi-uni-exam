@@ -9,15 +9,22 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function (): void {
+            Route::middleware('web')->group(__DIR__.'/../routes/sso.php');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
+
+        // The CMS sign-on ticket (signed, 60 s, single use) replaces the CSRF token on this route only.
+        $middleware->validateCsrfTokens(except: ['sso/cms']);
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 

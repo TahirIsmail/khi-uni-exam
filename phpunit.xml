@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true"
 >
     <testsuites>
@@ -10,6 +10,9 @@
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
     <source>
@@ -27,6 +30,11 @@
         <env name="DB_CONNECTION" value="mysql"/>
         <env name="DB_DATABASE" value="kmu_assess_testing"/>
         <env name="DB_URL" value=""/>
+        <env name="CMS_SOURCE_DATABASE" value="kmu_cms_testing"/>
+        <env name="CMS_DB_USERNAME" value="root"/>
+        <env name="CMS_DB_PASSWORD" value=""/>
+        <env name="KMU_CMS_URL" value="https://cms.example.test"/>
+        <env name="KMU_CMS_SSO_SECRET" value="dGVzdC1vbmx5LXNzby1zZWNyZXQtMzItYnl0ZXMtbG9uZyE="/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

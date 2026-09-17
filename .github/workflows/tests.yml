@@ -38,6 +38,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The v_cms_* views read the kmu-cms database, which lives in another repository. CI uses an
+      # empty copy of its structure so migrations can create the views.
+      - name: Create stand-in kmu-cms database
+        run: |
+          mysql -h 127.0.0.1 -uroot -e 'CREATE DATABASE IF NOT EXISTS `kmu-cms` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+          mysql -h 127.0.0.1 -uroot kmu-cms < tests/Fixtures/cms_schema.sql
+
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:

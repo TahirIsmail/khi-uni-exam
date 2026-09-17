@@ -30,7 +30,7 @@ app/
 resources/js/pages/<module>   staff screens (Vue 3 + Inertia)
 resources/js/exam-client      candidate exam app (separate Vue SPA; added in the delivery step)
 routes/web.php                staff routes (all behind auth)
-routes/sso.php                SSO entry from kmu-cms (added in step 6)
+routes/sso.php                SSO entry from kmu-cms (POST /sso/cms)
 routes/delivery.php           candidate exam API (added in the delivery step)
 docs/architecture             decisions (ADRs)
 ```
@@ -66,7 +66,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 3    | Replace ICE seed data with KMU values                                                                     | kmu-cms    | Done (3b branding pending logo) |
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
-| 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       |                                 |
+| 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
 | 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess |                                 |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |

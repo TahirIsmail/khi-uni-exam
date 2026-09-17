@@ -32,6 +32,27 @@ return [
 
     'connections' => [
 
+        /*
+        | Read-only access to kmu-cms data (students, staff, academic structure).
+        | It reads the v_cms_* views inside this app's own database, as a MySQL user that has SELECT
+        | on those views and nothing else, so this app can never change CMS data.
+        | Create the user with: php artisan cms:reader-sql | mysql -uroot
+        */
+        'cms' => [
+            'driver' => 'mysql',
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('CMS_DB_USERNAME', 'kmu_cms_reader'),
+            'password' => env('CMS_DB_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -131,6 +152,9 @@ return [
         'table' => 'migrations',
         'update_date_on_publish' => true,
     ],
+
+    // Name of the kmu-cms database on the same MySQL server; the v_cms_* views read from it.
+    'cms_source_database' => env('CMS_SOURCE_DATABASE', 'kmu-cms'),
 
     /*
     |--------------------------------------------------------------------------

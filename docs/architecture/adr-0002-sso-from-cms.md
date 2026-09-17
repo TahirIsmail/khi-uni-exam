@@ -1,6 +1,6 @@
 # ADR-0002 — Staff sign in once, in kmu-cms (SSO)
 
-Status: Accepted (17 Sep 2026). Implemented in step 6.
+Status: Accepted (17 Sep 2026). Implemented in step 6 (18 Sep 2026).
 
 ## Decision
 
@@ -46,3 +46,19 @@ for break-glass administrator accounts.
 Valid ticket signs in; tampered payload, wrong secret, expired, future-dated, wrong audience,
 replayed `jti`, inactive CMS staff, inactive local user and external redirect are each rejected;
 a GET to the endpoint is not allowed; the session ID changes on login.
+
+## Implementation (step 6)
+
+| Part                                | Where                                                                                                                                          |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Launch link "Question Bank & Exams" | kmu-cms sidebar → `admin/kmuexam/launch` (`application/controllers/admin/Kmuexam.php`)                                                         |
+| Ticket issuer                       | kmu-cms `application/libraries/Kmu_sso_ticket.php`; settings in `application/config/kmu_assessment.php` (not in git; see `.example.php`)       |
+| Entry point                         | `POST /sso/cms` (`routes/sso.php`), CSRF-exempt, `throttle:cms-sso` (20/min per IP)                                                            |
+| Verification                        | `App\Domain\Identity\Sso\CmsTicketVerifier`                                                                                                    |
+| Sign-in                             | `App\Domain\Identity\Actions\SignInFromCms` (burns jti first, re-reads CMS staff, links or creates the user, refuses email takeover)           |
+| Used ticket ids                     | `sso_consumed_tickets`, purged daily by `sso:purge-tickets`                                                                                    |
+| CMS data access                     | `v_cms_*` views (`App\Support\Cms\CmsViews`), read on the `cms` connection by a SELECT-only user: `php artisan cms:reader-sql \| mysql -uroot` |
+| Settings                            | `.env`: `KMU_CMS_URL`, `KMU_CMS_SSO_SECRET` (same value as the CMS), `CMS_SOURCE_DATABASE`, `CMS_DB_USERNAME`, `CMS_DB_PASSWORD`               |
+
+Tests: `tests/Feature/Identity/CmsSsoTest.php` (every refusal case above), `tests/Integration/CmsReaderAccessTest.php`
+(the reader account can read the views and nothing else), and the browser test `tests/sso/sso_e2e.mjs` in kmu-cms.
