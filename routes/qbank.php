@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\QuestionBank\MediaController;
 use App\Http\Controllers\QuestionBank\QuestionController;
+use App\Http\Controllers\QuestionBank\TagController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,6 +17,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('questions/curriculum', [QuestionController::class, 'curriculum'])->middleware('can:qbank.question.view')->name('questions.curriculum');
     Route::post('questions/check', [QuestionController::class, 'check'])->middleware(['can:qbank.question.view', 'throttle:120,1'])->name('questions.check');
+
+    // Pictures are private: uploaded by authors, served only to staff of the same campus.
+    Route::post('questions/media', [MediaController::class, 'store'])->middleware(['can:qbank.question.create', 'throttle:60,1'])->name('questions.media.store');
+    Route::get('questions/media/{media}', [MediaController::class, 'show'])->middleware('can:qbank.question.view')->whereNumber('media')->name('questions.media.show');
+
+    Route::post('questions/tags', [TagController::class, 'store'])->middleware(['can:qbank.question.create', 'throttle:60,1'])->name('questions.tags.store');
 
     Route::prefix('questions/{question}')->whereNumber('question')->group(function () {
         Route::post('versions', [QuestionController::class, 'newVersion'])->name('questions.versions.store');

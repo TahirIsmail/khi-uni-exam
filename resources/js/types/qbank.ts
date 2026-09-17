@@ -112,6 +112,7 @@ export type QuestionDraft = {
     question_type_id: number | null;
     course_id: number | null;
     node_id: number | null;
+    discipline_id: number | null;
     vignette: string | null;
     stem: string;
     lead_in: string | null;
@@ -139,6 +140,7 @@ export type StoredVersion = {
     questionTypeId: number;
     courseId: number;
     nodeId: number;
+    disciplineId: number | null;
     vignette: string | null;
     stem: string;
     leadIn: string | null;

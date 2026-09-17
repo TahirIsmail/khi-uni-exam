@@ -34,6 +34,7 @@ final class QuestionEditorData
         return [
             'courses' => $this->courses($user, $branchId),
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
+            'disciplines' => $this->academic->disciplines(),
             ...$this->lookups(),
         ];
     }
@@ -123,6 +124,7 @@ final class QuestionEditorData
             'questionTypeId' => $version->question_type_id,
             'courseId' => $version->course_id,
             'nodeId' => $version->node_id,
+            'disciplineId' => $version->discipline_id,
             'vignette' => $content->vignette,
             'stem' => $content->stem,
             'leadIn' => $content->leadIn,

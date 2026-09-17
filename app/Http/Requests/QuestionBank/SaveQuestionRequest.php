@@ -30,6 +30,7 @@ class SaveQuestionRequest extends FormRequest
             'settings' => ['nullable', 'array'],
             'marks' => ['required', 'numeric', 'min:0', 'max:9999'],
             'negative_marks' => ['required', 'numeric', 'min:0', 'max:9999'],
+            'discipline_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'cognitive_level_id' => ['nullable', 'integer', Rule::exists('qb_cognitive_levels', 'id')],
             'difficulty_level_id' => ['nullable', 'integer', Rule::exists('qb_difficulty_levels', 'id')],
 
@@ -80,6 +81,22 @@ class SaveQuestionRequest extends FormRequest
 
             'tag_ids' => ['array', 'max:20'],
             'tag_ids.*' => ['integer', Rule::exists('qb_tags', 'id')],
+        ];
+    }
+
+    /**
+     * Plain wording, because the editor shows these beside the fields while the author types.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'question_type_id.required' => 'Choose the type of question.',
+            'course_id.required' => 'Choose the course.',
+            'node_id.required' => 'Choose the topic.',
+            'stem.required' => 'Write the question.',
+            'marks.required' => 'Enter the marks.',
         ];
     }
 

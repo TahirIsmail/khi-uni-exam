@@ -64,63 +64,75 @@ const statusStyles: Record<string, string> = {
         </div>
 
         <form
-            class="flex flex-wrap items-end gap-2"
+            class="grid gap-3 rounded-xl border p-4 shadow-xs"
             @submit.prevent="apply({})"
         >
-            <Input
-                v-model="search"
-                type="search"
-                class="max-w-xs"
-                maxlength="100"
-                placeholder="Search text or reference"
-                aria-label="Search questions"
-            />
-            <select
-                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                :value="filters.course_id ?? ''"
-                aria-label="Course"
-                @change="
-                    apply({
-                        course_id:
-                            ($event.target as HTMLSelectElement).value ||
-                            undefined,
-                    })
-                "
-            >
-                <option value="">All courses</option>
-                <option
-                    v-for="course in courses"
-                    :key="course.id"
-                    :value="course.id"
+            <div class="flex flex-wrap items-end gap-2">
+                <Input
+                    v-model="search"
+                    type="search"
+                    class="max-w-xs"
+                    maxlength="100"
+                    placeholder="Search text or reference"
+                    aria-label="Search questions"
+                />
+                <select
+                    class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                    :value="filters.course_id ?? ''"
+                    aria-label="Course"
+                    @change="
+                        apply({
+                            course_id:
+                                ($event.target as HTMLSelectElement).value ||
+                                undefined,
+                        })
+                    "
                 >
-                    {{ course.code }} — {{ course.title }}
-                </option>
-            </select>
-            <Button type="submit" variant="outline">Search</Button>
-            <Button
-                type="button"
-                :variant="filters.mine ? 'default' : 'outline'"
-                @click="apply({ mine: filters.mine ? undefined : 1 })"
-                >Mine</Button
-            >
-            <Button
-                type="button"
-                :variant="filters.status === '' ? 'default' : 'outline'"
-                @click="apply({ status: undefined })"
-                >All statuses</Button
-            >
-            <Button
-                v-for="(count, status) in statuses"
-                :key="status"
-                type="button"
-                :variant="filters.status === status ? 'default' : 'outline'"
-                @click="apply({ status })"
-            >
-                {{ status.replace('_', ' ') }} ({{ count }})
-            </Button>
+                    <option value="">All courses</option>
+                    <option
+                        v-for="course in courses"
+                        :key="course.id"
+                        :value="course.id"
+                    >
+                        {{ course.code }} — {{ course.title }}
+                    </option>
+                </select>
+                <Button type="submit" variant="outline">Search</Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    :variant="filters.mine ? 'default' : 'outline'"
+                    @click="apply({ mine: filters.mine ? undefined : 1 })"
+                    >Written by me</Button
+                >
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-muted-foreground text-xs">Status</span>
+                <Button
+                    type="button"
+                    size="sm"
+                    :variant="filters.status === '' ? 'default' : 'outline'"
+                    @click="apply({ status: undefined })"
+                    >All</Button
+                >
+                <Button
+                    v-for="(count, status) in statuses"
+                    :key="status"
+                    type="button"
+                    size="sm"
+                    :variant="filters.status === status ? 'default' : 'outline'"
+                    @click="apply({ status })"
+                >
+                    {{ status.replace('_', ' ') }}
+                    <span class="text-muted-foreground ml-1 tabular-nums">{{
+                        count
+                    }}</span>
+                </Button>
+            </div>
         </form>
 
-        <div class="overflow-x-auto rounded-lg border">
+        <div class="overflow-x-auto rounded-xl border shadow-xs">
             <table class="w-full text-sm">
                 <thead class="bg-muted/50 text-left">
                     <tr>

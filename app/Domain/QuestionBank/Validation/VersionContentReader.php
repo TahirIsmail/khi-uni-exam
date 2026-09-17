@@ -34,6 +34,7 @@ final class VersionContentReader
             settings: $version->settings ?? [],
             marks: $version->marks,
             negativeMarks: $version->negative_marks,
+            disciplineId: $version->discipline_id,
             cognitiveLevelId: $version->cognitive_level_id,
             difficultyLevelId: $version->difficulty_level_id,
             options: array_values($version->options->map(fn (QuestionOption $option): array => [

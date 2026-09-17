@@ -141,12 +141,22 @@ question as a candidate would see it, with the answer key.
 - **Text is cleaned before it is stored** (`QuestionHtml`, Symfony HTML Sanitizer): a small tag
   allow-list, http(s) or relative links only; scripts, event handlers, styles and frames are dropped.
   The preview shows the stored text, so what is checked is what a candidate sees.
+- **Pictures** are uploaded with a description (needed for screen readers and printed papers), kept
+  off the public web root and served only to staff of the same campus (`/questions/media/{id}`), and
+  the same file in a campus is stored once. Which version uses which picture is recorded from the
+  image addresses in its text (`qb_version_media`).
+- **Tags and discipline.** Authors add tags for their campus as they write; the discipline defaults to
+  the topic's own and can be set per question, because blueprints count by discipline.
 - **Duplicates and search.** Each version stores a content hash of the normalised stem and options,
   and a plain-text copy for searching.
 - **Versions.** Editing a question that is past drafting starts the next version as a draft copied
   from the one in use (`POST /questions/{question}/versions`); the version in use stays active until
   the new one is approved. References come from a counter (`Q-2026-000123`).
-- Browser test (local): `node tests/browser/question_editor.mjs https://kmu-assess.test`.
+- **The way in.** The sidebar shows "Question bank" to anyone who may open it, and the dashboard
+  shows the campus's counts by status. With no course yet, the editor says which CMS screens to use
+  (Academics → Course, then Curriculum).
+- Browser test (local): `node tests/browser/question_editor.mjs https://kmu-assess.test` (24 checks,
+  including the picture upload; it reuses one test course and author in the CMS).
 
 ## Decisions
 

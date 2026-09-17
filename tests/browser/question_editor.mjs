@@ -25,6 +25,9 @@ const CHROME =
 const EMAIL = 'qbank-editor-e2e@kmu.local';
 const COURSE_CODE = 'E2E-QB-101';
 const SUPER_ADMIN_ROLE = 7;
+const PICTURE =
+    process.env.PICTURE ??
+    new URL('fixtures/ecg.png', import.meta.url).pathname;
 
 const run = (mysql, query) => {
     try {
@@ -103,6 +106,10 @@ function cleanup() {
         if (userId) assess(`DELETE FROM sessions WHERE user_id = ${userId}`);
         assess(
             `DELETE FROM sso_consumed_tickets WHERE cms_staff_id = ${staffId}`,
+        );
+        // Pictures no version uses any more are removed, so runs do not pile up.
+        assess(
+            'DELETE FROM qb_media WHERE id NOT IN (SELECT media_id FROM qb_version_media)',
         );
         cms(`UPDATE staff SET is_active = 0 WHERE id = ${staffId}`);
     }
@@ -367,6 +374,38 @@ try {
         'the preview shows the question as a candidate sees it, with the key marked',
         /crushing chest pain/.test(preview) && /key/.test(preview),
         preview.slice(0, 200),
+    );
+
+    // A picture: uploaded, described, and inserted into the question text.
+    await send('DOM.enable');
+    await click('[data-add-image=stem]');
+    const fileInput = (
+        await send('Runtime.evaluate', {
+            expression: "document.querySelector('[data-file=stem]')",
+        })
+    ).result?.result?.objectId;
+    await send('DOM.setFileInputFiles', {
+        files: [PICTURE],
+        objectId: fileInput,
+    });
+    await sleep(400);
+    await type(
+        '#stem-alt',
+        'ECG showing ST elevation in leads II, III and aVF',
+    );
+    await click('[data-insert-image=stem]');
+    const inserted = await waitFor(
+        "/questions\\/media\\/\\d+/.test(document.getElementById('stem').value)",
+    );
+    check(
+        'a picture is uploaded and placed in the question text',
+        inserted,
+        (await evaluate("document.getElementById('stem').value")).slice(-120),
+    );
+    check(
+        'the picture is stored for this campus with its description',
+        assess('SELECT alt_text FROM qb_media ORDER BY id DESC LIMIT 1') ===
+            'ECG showing ST elevation in leads II, III and aVF',
     );
 
     await click('[data-test=add-reference]');

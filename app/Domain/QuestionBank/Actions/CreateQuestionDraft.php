@@ -68,7 +68,7 @@ final class CreateQuestionDraft
                 'term_id' => $place['term_id'],
                 'course_id' => $place['course_id'],
                 'node_id' => $place['node_id'],
-                'discipline_id' => $place['discipline_id'],
+                'discipline_id' => $content->disciplineId ?? $place['discipline_id'],
                 'cognitive_level_id' => $content->cognitiveLevelId,
                 'difficulty_level_id' => $content->difficultyLevelId,
                 'status' => VersionStatus::Draft,
