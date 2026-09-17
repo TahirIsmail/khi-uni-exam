@@ -5,19 +5,31 @@ namespace App\Providers;
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\Permissions;
+use App\Domain\Identity\Mfa\RecordTwoFactorEvents;
+use App\Domain\Identity\Mfa\SingleUseTotpProvider;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
+use Laravel\Fortify\Events\RecoveryCodeReplaced;
+use Laravel\Fortify\Events\RecoveryCodesGenerated;
+use Laravel\Fortify\Events\TwoFactorAuthenticationConfirmed;
+use Laravel\Fortify\Events\TwoFactorAuthenticationDisabled;
+use Laravel\Fortify\Events\TwoFactorAuthenticationFailed;
+use Laravel\Fortify\Events\ValidTwoFactorAuthenticationCodeProvided;
+use PragmaRX\Google2FA\Google2FA;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -30,6 +42,12 @@ class AppServiceProvider extends ServiceProvider
             (string) config('services.kmu_cms.sso_secret'),
             (int) config('services.kmu_cms.ticket_ttl_seconds'),
             (int) config('services.kmu_cms.clock_skew_seconds'),
+        ));
+
+        // Authenticator codes are single-use everywhere (see SingleUseTotpProvider).
+        $this->app->singleton(TwoFactorAuthenticationProvider::class, fn ($app): SingleUseTotpProvider => new SingleUseTotpProvider(
+            $app->make(Google2FA::class),
+            $app->make(Repository::class),
         ));
 
         // One instance per request, so permission lookups and the request context are not shared between requests.
@@ -45,6 +63,15 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         RateLimiter::for('cms-sso', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
+
+        Event::listen([
+            ValidTwoFactorAuthenticationCodeProvided::class,
+            TwoFactorAuthenticationConfirmed::class,
+            TwoFactorAuthenticationFailed::class,
+            TwoFactorAuthenticationDisabled::class,
+            RecoveryCodesGenerated::class,
+            RecoveryCodeReplaced::class,
+        ], RecordTwoFactorEvents::class);
 
         // Catalogue permissions (e.g. Gate::allows('qbank.question.view')) are answered by AccessControl.
         // Any other ability falls through to policies.

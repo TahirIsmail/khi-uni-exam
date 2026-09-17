@@ -5,8 +5,9 @@ use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\InteractsWithCms;
+use Tests\Concerns\PassesMfa;
 
-uses(InteractsWithCms::class);
+uses(InteractsWithCms::class, PassesMfa::class);
 
 beforeEach(function () {
     $this->shareCmsConnection();

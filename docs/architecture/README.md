@@ -53,6 +53,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; branches, then scopes, limit where   | `tests/Feature/Identity/AccessControlTest.php`                      |
 | Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted             | `tests/Feature/Audit/AuditLogTest.php`                              |
 | Admin screens: branch isolation, no self-escalation, every change audited                                            | `tests/Feature/Admin/*`                                             |
+| MFA for privileged users, once per session, single-use codes, rate-limited                                           | `tests/Feature/Identity/MfaTest.php`                                |
 | Static analysis at PHPStan level 7                                                                                   | `composer types:check`                                              |
 
 ## Access control and audit
@@ -85,7 +86,20 @@ Delivery, Proctoring, Result, Analytics, Audit.
       campus of that person.
     - _Audit log_ (`audit.view`, export `audit.export`): filter, expand, check the hash chain, export
       CSV (formula cells neutralised; exports are audited). Entries of other campuses are never shown.
-- Browser check (read-only, local): `node tests/browser/admin_screens.mjs https://kmu-assess.test`.
+- **Multi-factor authentication (MFA).** Required for anyone holding a privileged permission (marked MFA
+  on the roles screen), a Super Admin, a break-glass account, and anyone who turned on 2FA themselves.
+    - Once per session, whether they signed in with a password or came from kmu-cms: until then only
+      `/mfa/*` and log out work (`RequireMfa`).
+    - First time: `/mfa/setup` (authenticator app, QR code), then 8 recovery codes shown once.
+      An authenticator that is already set up cannot be replaced from a session.
+    - Codes are single-use (`SingleUseTotpProvider`), 5 attempts a minute per user, every pass and
+      failure audited (never the code).
+    - Staff without a password confirm their identity for security settings with a fresh code
+      (`ConfirmIdentity` replaces `password.confirm`).
+    - Lost phone: `php artisan user:mfa-reset email --reason=...` removes the authenticator, ends
+      their sessions, and is audited.
+- Browser check (local): `node tests/browser/admin_and_mfa.mjs https://kmu-assess.test` (temporary
+  staff are removed afterwards; their audit entries stay).
 
 ## Decisions
 
@@ -102,7 +116,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
-| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | 7a, 7b done; 7c MFA pending     |
+| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | Done                            |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |

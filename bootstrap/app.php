@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\ConfirmIdentity;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RequireMfa;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,10 +30,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // The CMS sign-on ticket (signed, 60 s, single use) replaces the CSRF token on this route only.
         $middleware->validateCsrfTokens(except: ['sso/cms']);
 
+        // Password-less staff (signed in through kmu-cms) confirm their identity with an authenticator code.
+        $middleware->alias(['password.confirm' => ConfirmIdentity::class]);
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->web(append: [
             EnsureUserIsActive::class,
+            RequireMfa::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

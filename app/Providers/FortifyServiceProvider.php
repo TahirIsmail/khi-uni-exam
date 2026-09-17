@@ -93,6 +93,11 @@ class FortifyServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->session()->get('login.id'));
         });
 
+        // Authenticator and recovery codes after sign-in: per user, so one account cannot be brute-forced from many IPs.
+        RateLimiter::for('mfa', function (Request $request) {
+            return Limit::perMinute(5)->by('mfa|'.($request->user()?->getAuthIdentifier() ?? $request->ip()));
+        });
+
         RateLimiter::for('login', function (Request $request) {
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
