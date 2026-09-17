@@ -65,7 +65,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 2    | CMS security: CSRF, HttpOnly cookies, SHA-1 password path, close open URLs (`/migrate`, test controllers) | kmu-cms    | Done                            |
 | 3    | Replace ICE seed data with KMU values                                                                     | kmu-cms    | Done (3b branding pending logo) |
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
-| 5    | Academic screens + delete guard                                                                           | kmu-cms    |                                 |
+| 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       |                                 |
 | 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess |                                 |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
