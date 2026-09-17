@@ -54,6 +54,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted               | `tests/Feature/Audit/AuditLogTest.php`                              |
 | kmu-cms reads the audit log through `v_cms_audit_entries` with a SELECT-only account                                   | `tests/Feature/Audit/AuditLogTest.php`                              |
 | MFA (when on in kmu-cms) for everyone, once per session, single-use codes, rate-limited                                | `tests/Feature/Identity/MfaTest.php`                                |
+| Question versions are frozen once approved; workflow steps, one active version, append-only log                        | `tests/Feature/QuestionBank/SchemaRulesTest.php`                    |
 | Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
 ## Administration lives in kmu-cms (ADR-0004)
@@ -92,6 +93,32 @@ kmu-cms under **Question Bank & Exams** (sidebar) and **Roles → Assign Permiss
 - **Browser tests** (kmu-cms repo, local): `node tests/sso/exam_admin_e2e.mjs https://kmu-cms.test https://kmu-assess.test`
   and `tests/sso/sso_e2e.mjs`.
 
+## Question bank (step 8)
+
+A question is a stable identity (`qb_questions`, one campus and course, archived but never deleted)
+with a chain of versions (`qb_question_versions`). The content and the workflow status live on the
+version, and only one version can be `active` at a time (a generated unique key enforces it).
+
+- **Kinds of question** (`qb_question_types`, seeded): single best answer, multiple response,
+  true/false, multiple true/false, extended matching (EMQ), matching pairs, put-in-order, short
+  answer, numerical, fill in the blanks (cloze), long answer/essay with a rubric, label the image.
+  Each row says what the type is made of (shared options, sub-parts, typed answers, manual marking)
+  and its settings with defaults (shuffle, partial credit, word limits, tolerance, ...), so the
+  editor and the validator read the type instead of hard-coding it.
+- **One set of tables serves every type**: `qb_question_options` (A, B, C ...), `qb_question_items`
+  (statements, lead-ins, prompts, blanks, steps), `qb_question_answers` (accepted text or a number
+  with a tolerance), `qb_question_rubric_criteria`, `qb_references`, `qb_media` + `qb_version_media`,
+  `qb_tags` + `qb_version_tags`, and the append-only `qb_version_status_log`.
+- **Immutability, in the database** (migration `…_add_question_bank_immutability`): a version and
+  everything belonging to it can be written to only while `draft` or `changes_requested`. Afterwards
+  its content is frozen (a change means a new version), status moves follow the workflow of
+  blueprint 8.2 (`VersionStatus` mirrors it, and a test proves code and database agree), only a draft
+  version can be deleted, questions are archived, and the status log cannot be changed.
+- **Campus.** Every row carries `branch_id`: the campus the author is working in (step 8a).
+- `course_id`, `node_id` and the other academic ids point into kmu-cms. MySQL cannot enforce foreign
+  keys across databases here, so the application validates them against the read-only `v_cms_*`
+  views and the two databases stay independently restorable.
+
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
@@ -109,7 +136,7 @@ kmu-cms under **Question Bank & Exams** (sidebar) and **Roles → Assign Permiss
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
 | 7    | Permissions, campuses and limits, audit log, MFA — administered from kmu-cms (ADR-0004)                   | both       | Done                            |
-| 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
+| 8    | Campus context; question bank tables, all question types, immutability triggers                           | both       | Done                            |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |
 | 11   | Excel/CSV import                                                                                          | kmu-assess |                                 |
