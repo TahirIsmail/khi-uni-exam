@@ -20,6 +20,11 @@ declare module '@inertiajs/core' {
             auth: Auth;
             sidebarOpen: boolean;
             cmsUrl: string;
+            branch: {
+                id: number | null;
+                name: string | null;
+                options: { id: number; name: string }[];
+            } | null;
             [key: string]: unknown;
         };
     }

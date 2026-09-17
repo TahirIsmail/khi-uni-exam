@@ -2,11 +2,14 @@
 
 namespace App\Http\Middleware;
 
+use App\Domain\Identity\ActiveBranch;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function __construct(private readonly ActiveBranch $activeBranch) {}
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -40,6 +43,12 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            // The campus being worked in, and the user's campuses for the switcher.
+            'branch' => $request->user() === null ? null : [
+                'id' => $this->activeBranch->id($request->user()),
+                'name' => $this->activeBranch->name($request->user()),
+                'options' => $this->activeBranch->options($request->user()),
             ],
             // "Back to CMS" link.
             'cmsUrl' => rtrim((string) config('services.kmu_cms.url'), '/').'/admin/admin/dashboard',

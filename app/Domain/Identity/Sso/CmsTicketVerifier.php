@@ -9,7 +9,8 @@ use App\Domain\Identity\Exceptions\InvalidCmsTicket;
  *
  * Format: base64url(JSON claims) "." base64url(HMAC-SHA256(first part, secret)).
  * Claims: iss "kmu-cms", aud "kmu-assess", sub (CMS staff id), iat, exp (iat + at most 60 s),
- * jti (64 hex characters, single use), redirect (optional path inside this app).
+ * jti (64 hex characters, single use), redirect (optional path inside this app), branch (the campus
+ * selected in kmu-cms, or null).
  * Checking that the jti has not been used before is done by the caller, which owns storage.
  */
 final class CmsTicketVerifier
@@ -23,7 +24,7 @@ final class CmsTicketVerifier
     ) {}
 
     /**
-     * @return array{sub: int, jti: string, exp: int, redirect: string}
+     * @return array{sub: int, jti: string, exp: int, redirect: string, branch: int|null}
      */
     public function verify(string $ticket, int $now): array
     {
@@ -44,11 +45,15 @@ final class CmsTicketVerifier
             throw new InvalidCmsTicket('invalid_subject');
         }
 
+        $branch = $claims['branch'] ?? null;
+
         return [
             'sub' => $sub,
             'jti' => $jti,
             'exp' => (int) $claims['exp'],
             'redirect' => self::safeRedirect($claims['redirect'] ?? null),
+            // The campus selected in kmu-cms; null there means "All Branches".
+            'branch' => (is_int($branch) && $branch > 0) ? $branch : null,
         ];
     }
 

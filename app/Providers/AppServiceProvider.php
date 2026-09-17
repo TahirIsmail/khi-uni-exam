@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Identity\ActiveBranch;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Mfa\RecordTwoFactorEvents;
@@ -54,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
         // One instance per request, so permission lookups and the request context are not shared between requests.
         $this->app->scoped(AccessControl::class);
         $this->app->scoped(CmsSettings::class);
+        $this->app->scoped(ActiveBranch::class);
         $this->app->scoped(AuditLogger::class, fn (): AuditLogger => new AuditLogger);
     }
 
