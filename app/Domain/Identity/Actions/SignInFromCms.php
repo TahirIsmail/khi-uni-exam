@@ -3,6 +3,7 @@
 namespace App\Domain\Identity\Actions;
 
 use App\Domain\Identity\Exceptions\InvalidCmsTicket;
+use App\Domain\Identity\Exceptions\StaffEmailConflict;
 use App\Domain\Identity\Models\CmsStaff;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
 use App\Models\User;
@@ -19,7 +20,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class SignInFromCms
 {
-    public function __construct(private readonly CmsTicketVerifier $verifier) {}
+    public function __construct(
+        private readonly CmsTicketVerifier $verifier,
+        private readonly LinkCmsStaff $link,
+    ) {}
 
     /**
      * @return array{user: User, redirect: string}
@@ -47,42 +51,16 @@ final class SignInFromCms
             throw new InvalidCmsTicket('cms_staff_inactive', $claims['sub']);
         }
 
-        $user = DB::transaction(fn () => $this->linkedUser($staff));
+        try {
+            $user = ($this->link)($staff, signingIn: true);
+        } catch (StaffEmailConflict) {
+            throw new InvalidCmsTicket('email_belongs_to_another_account', $staff->id);
+        }
 
         if (! $user->is_active) {
             throw new InvalidCmsTicket('local_user_inactive', $claims['sub']);
         }
 
         return ['user' => $user, 'redirect' => $claims['redirect']];
-    }
-
-    private function linkedUser(CmsStaff $staff): User
-    {
-        $email = mb_strtolower(trim($staff->email));
-        $user = User::query()->where('cms_staff_id', $staff->id)->lockForUpdate()->first();
-
-        // An existing local account with this email that is not linked to this staff member is
-        // never taken over automatically; an administrator has to resolve it.
-        $emailOwner = User::query()->where('email', $email)->first();
-        if ($emailOwner !== null && (int) $emailOwner->cms_staff_id !== (int) $staff->id) {
-            throw new InvalidCmsTicket('email_belongs_to_another_account', $staff->id);
-        }
-
-        if ($user === null) {
-            $user = new User;
-            $user->forceFill([
-                'cms_staff_id' => $staff->id,
-                'password' => null,
-                'email_verified_at' => now(),
-            ]);
-        }
-
-        $user->forceFill([
-            'name' => $staff->fullName() !== '' ? $staff->fullName() : $email,
-            'email' => $email,
-            'last_login_at' => now(),
-        ])->save();
-
-        return $user;
     }
 }

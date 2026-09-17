@@ -65,6 +65,49 @@ trait InteractsWithCms
         DB::table(config('database.cms_source_database').'.staff_accessible_branches')->insert(['staff_id' => $staffId, 'branch_id' => $branchId]);
     }
 
+    protected function cmsProgramme(int $branchId, string $code = 'MBBS', ?string $name = null): int
+    {
+        $cms = config('database.cms_source_database');
+        DB::statement("SET SESSION sql_mode = ''");
+        $id = (int) DB::table("{$cms}.classes")->insertGetId(['branch_id' => $branchId, 'education_type_id' => 1, 'class' => $name ?? $code.' '.bin2hex(random_bytes(2)), 'is_active' => 'no']);
+        DB::table("{$cms}.acad_programme_profiles")->insert(['class_id' => $id, 'code' => $code.'-'.bin2hex(random_bytes(2)), 'calendar_type' => 'annual', 'duration_years' => 5]);
+        DB::statement("SET SESSION sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
+
+        return $id;
+    }
+
+    protected function cmsProfessional(int $programmeId, int $sequence = 1): int
+    {
+        return (int) DB::table(config('database.cms_source_database').'.acad_professionals')->insertGetId([
+            'class_id' => $programmeId, 'code' => 'PROF-'.$sequence, 'name' => 'Professional '.$sequence, 'sequence' => $sequence,
+        ]);
+    }
+
+    protected function cmsCourse(int $programmeId, int $professionalId, string $code = 'FND'): int
+    {
+        return (int) DB::table(config('database.cms_source_database').'.acad_courses')->insertGetId([
+            'course_code' => $code.'-'.bin2hex(random_bytes(3)), 'title' => 'Course '.$code, 'class_id' => $programmeId, 'professional_id' => $professionalId, 'course_kind' => 'module',
+        ]);
+    }
+
+    /**
+     * A staff user holding a new role with the given permissions, working in $branchId, with an
+     * "all" scope unless $allScope is false.
+     *
+     * @param  list<string>  $permissions
+     */
+    protected function adminWith(array $permissions, int $branchId, bool $allScope = true): User
+    {
+        $role = $this->cmsRole('Admin '.bin2hex(random_bytes(3)));
+        $this->grant($role, ...$permissions);
+        $user = $this->staffUser([$role], $branchId);
+        if ($allScope) {
+            $this->scope($user, 'all');
+        }
+
+        return $user;
+    }
+
     protected function cmsAssignRole(int $staffId, int $roleId): void
     {
         DB::table(config('database.cms_source_database').'.staff_roles')->insert(['staff_id' => $staffId, 'role_id' => $roleId, 'is_active' => 1]);

@@ -28,6 +28,7 @@ final class AuditLogger
         ?array $newValues = null,
         ?string $reason = null,
         ?User $actor = null,
+        ?int $branchId = null,
     ): int {
         $request = request();
         $authenticated = Auth::user();
@@ -40,6 +41,7 @@ final class AuditLogger
             'action' => $action,
             'entity_type' => $entityType,
             'entity_id' => $entityId === null ? null : (string) $entityId,
+            'branch_id' => $branchId,
             'old_values' => $oldValues === null ? null : $this->redact($oldValues),
             'new_values' => $newValues === null ? null : $this->redact($newValues),
             'reason' => $reason === null ? null : mb_substr($reason, 0, 500),

@@ -40,6 +40,12 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // Only what the navigation needs; every route and action checks again on the server.
+                'can' => $request->user() === null ? [] : [
+                    'manageRoles' => $request->user()->can('admin.roles.manage'),
+                    'manageStaff' => $request->user()->can('admin.users.manage'),
+                    'viewAudit' => $request->user()->can('audit.view'),
+                ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

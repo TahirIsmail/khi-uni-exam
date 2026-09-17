@@ -50,8 +50,9 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | CSP with per-request nonce, frame/sniff/referrer/permissions headers, no caching of signed-in pages                  | `tests/Feature/Security/SecurityBaselineTest.php`                   |
 | Login rate-limited; inactive or SSO-only accounts cannot use password login                                          | `tests/Feature/Security/*`                                          |
 | Mass assignment, lazy loading and missing attributes fail outside production                                         | `AppServiceProvider` (strict models)                                |
-| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; branches, then scopes, limit where | `tests/Feature/Identity/AccessControlTest.php`                      |
-| Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted              | `tests/Feature/Audit/AuditLogTest.php`                              |
+| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; branches, then scopes, limit where   | `tests/Feature/Identity/AccessControlTest.php`                      |
+| Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted             | `tests/Feature/Audit/AuditLogTest.php`                              |
+| Admin screens: branch isolation, no self-escalation, every change audited                                            | `tests/Feature/Admin/*`                                             |
 | Static analysis at PHPStan level 7                                                                                   | `composer types:check`                                              |
 
 ## Access control and audit
@@ -74,6 +75,17 @@ Delivery, Proctoring, Result, Analytics, Audit.
   updated or deleted (MySQL triggers), each row stores the previous row's hash, and
   `php artisan audit:verify` (daily, 02:30) reports the first broken row.
 - After changing the catalogue in code, run `php artisan permissions:sync` (migrations also seed it).
+- **Screens (Administration menu).**
+    - _Roles & permissions_ (`admin.roles.manage`): tick what each CMS role may do. Only someone who
+      works in every active campus can save, nobody can grant or revoke a permission they do not hold,
+      the Super Admin role is read-only, and you cannot remove role management from your own role.
+    - _Staff scopes_ (`admin.users.manage`): staff of your campuses; add or remove where their
+      permissions apply. Scopes can be set before someone's first sign-in. You cannot edit yourself,
+      a scope must be in a campus both of you work in, and an "all" scope needs you to manage every
+      campus of that person.
+    - _Audit log_ (`audit.view`, export `audit.export`): filter, expand, check the hash chain, export
+      CSV (formula cells neutralised; exports are audited). Entries of other campuses are never shown.
+- Browser check (read-only, local): `node tests/browser/admin_screens.mjs https://kmu-assess.test`.
 
 ## Decisions
 
@@ -90,7 +102,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
-| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | 7a done; 7b screens, 7c MFA     |
+| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | 7a, 7b done; 7c MFA pending     |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |

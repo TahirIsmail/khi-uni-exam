@@ -16,7 +16,7 @@ final class AuditChain
     /** Columns covered by the hash, in order. */
     private const FIELDS = [
         'occurred_at', 'actor_type', 'actor_id', 'action', 'entity_type', 'entity_id',
-        'old_values', 'new_values', 'reason', 'ip', 'user_agent', 'session_hash', 'request_id',
+        'branch_id', 'old_values', 'new_values', 'reason', 'ip', 'user_agent', 'session_hash', 'request_id',
     ];
 
     /**
@@ -38,7 +38,7 @@ final class AuditChain
 
             if (in_array($field, ['old_values', 'new_values'], true) && $value !== null) {
                 $value = self::sorted(is_string($value) ? json_decode($value, true) : $value);
-            } elseif ($field === 'actor_id' && $value !== null) {
+            } elseif (in_array($field, ['actor_id', 'branch_id'], true) && $value !== null) {
                 $value = (int) $value;
             } elseif ($value !== null) {
                 $value = (string) $value;
