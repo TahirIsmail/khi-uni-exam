@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
+        $middleware->prepend(AssignRequestId::class);
 
         // The CMS sign-on ticket (signed, 60 s, single use) replaces the CSRF token on this route only.
         $middleware->validateCsrfTokens(except: ['sso/cms']);

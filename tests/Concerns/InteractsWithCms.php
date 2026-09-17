@@ -3,6 +3,7 @@
 namespace Tests\Concerns;
 
 use App\Domain\Identity\Sso\CmsTicketVerifier;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -38,6 +39,51 @@ trait InteractsWithCms
         DB::statement("SET SESSION sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
 
         return (int) $id;
+    }
+
+    protected function cmsRole(string $name, bool $superAdmin = false): int
+    {
+        return (int) DB::table(config('database.cms_source_database').'.roles')->insertGetId([
+            'name' => $name,
+            'is_active' => 0,
+            'is_system' => 0,
+            'is_superadmin' => $superAdmin ? 1 : 0,
+        ]);
+    }
+
+    protected function cmsAssignRole(int $staffId, int $roleId): void
+    {
+        DB::table(config('database.cms_source_database').'.staff_roles')->insert(['staff_id' => $staffId, 'role_id' => $roleId, 'is_active' => 1]);
+    }
+
+    /**
+     * A local user linked to a new CMS staff member holding the given CMS roles.
+     *
+     * @param  list<int>  $roleIds
+     */
+    protected function staffUser(array $roleIds = []): User
+    {
+        $staffId = $this->cmsStaff();
+        foreach ($roleIds as $roleId) {
+            $this->cmsAssignRole($staffId, $roleId);
+        }
+
+        $user = User::factory()->create(['password' => null]);
+        $user->forceFill(['cms_staff_id' => $staffId])->save();
+
+        return $user;
+    }
+
+    protected function grant(int $roleId, string ...$permissions): void
+    {
+        foreach ($permissions as $permission) {
+            DB::table('sec_role_permissions')->insert(['cms_role_id' => $roleId, 'permission_code' => $permission]);
+        }
+    }
+
+    protected function scope(User $user, string $type, ?int $id = null): void
+    {
+        DB::table('sec_user_scopes')->insert(['user_id' => $user->id, 'scope_type' => $type, 'scope_id' => $id]);
     }
 
     /**

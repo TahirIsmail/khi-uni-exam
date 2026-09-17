@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('sso:purge-tickets')->daily();
+Schedule::command('audit:verify')->dailyAt('02:30');

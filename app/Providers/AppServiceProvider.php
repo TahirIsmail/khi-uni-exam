@@ -2,13 +2,18 @@
 
 namespace App\Providers;
 
+use App\Domain\Audit\AuditLogger;
+use App\Domain\Identity\Authorization\AccessControl;
+use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -26,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
             (int) config('services.kmu_cms.ticket_ttl_seconds'),
             (int) config('services.kmu_cms.clock_skew_seconds'),
         ));
+
+        // One instance per request, so permission lookups and the request context are not shared between requests.
+        $this->app->scoped(AccessControl::class);
+        $this->app->scoped(AuditLogger::class, fn (): AuditLogger => new AuditLogger);
     }
 
     /**
@@ -36,6 +45,12 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         RateLimiter::for('cms-sso', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
+
+        // Catalogue permissions (e.g. Gate::allows('qbank.question.view')) are answered by AccessControl.
+        // Any other ability falls through to policies.
+        Gate::before(function (User $user, string $ability): ?bool {
+            return Permissions::exists($ability) ? app(AccessControl::class)->has($user, $ability) : null;
+        });
     }
 
     /**

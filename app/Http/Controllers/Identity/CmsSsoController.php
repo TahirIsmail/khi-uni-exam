@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Identity;
 
+use App\Domain\Audit\AuditLogger;
 use App\Domain\Identity\Actions\SignInFromCms;
 use App\Domain\Identity\Exceptions\InvalidCmsTicket;
 use App\Http\Controllers\Controller;
@@ -18,7 +19,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class CmsSsoController extends Controller
 {
-    public function __invoke(Request $request, SignInFromCms $signIn): RedirectResponse|Response
+    public function __invoke(Request $request, SignInFromCms $signIn, AuditLogger $audit): RedirectResponse|Response
     {
         $ticket = $request->input('ticket');
 
@@ -30,6 +31,7 @@ final class CmsSsoController extends Controller
                 'cms_staff_id' => $refused->cmsStaffId,
                 'ip' => $request->ip(),
             ]);
+            $audit->record('identity.sso.refused', 'cms_staff', $refused->cmsStaffId, null, ['reason' => $refused->reason]);
 
             return Inertia::render('auth/SsoFailed', [
                 'cmsUrl' => config('services.kmu_cms.url'),
@@ -43,6 +45,7 @@ final class CmsSsoController extends Controller
         $request->session()->regenerate();
 
         Log::info('CMS single sign-on', ['user_id' => $user->id, 'cms_staff_id' => $user->cms_staff_id, 'ip' => $request->ip()]);
+        $audit->record('identity.sso.login', 'user', $user->id, null, ['cms_staff_id' => $user->cms_staff_id], null, $user);
 
         return redirect()->to($redirect);
     }

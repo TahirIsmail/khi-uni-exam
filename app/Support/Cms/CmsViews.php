@@ -24,6 +24,8 @@ final class CmsViews
             'v_cms_staff_roles' => "SELECT sr.staff_id, sr.role_id, r.name AS role_name, r.is_superadmin
                 FROM {$db}.staff_roles sr JOIN {$db}.roles r ON r.id = sr.role_id",
 
+            'v_cms_roles' => "SELECT r.id, r.name, r.is_superadmin FROM {$db}.roles r",
+
             'v_cms_branches' => "SELECT b.id, b.branch_name, b.branch_code, b.status FROM {$db}.branches b",
 
             'v_cms_intakes' => "SELECT s.id, s.branch_id, s.academic_year_id, s.session AS name, s.start_date, s.end_date FROM {$db}.sessions s",

@@ -50,7 +50,23 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | CSP with per-request nonce, frame/sniff/referrer/permissions headers, no caching of signed-in pages                  | `tests/Feature/Security/SecurityBaselineTest.php`                   |
 | Login rate-limited; inactive or SSO-only accounts cannot use password login                                          | `tests/Feature/Security/*`                                          |
 | Mass assignment, lazy loading and missing attributes fail outside production                                         | `AppServiceProvider` (strict models)                                |
+| Permissions: codes live in `Permissions::CATALOGUE`; CMS roles get grants here; scopes limit where they apply           | `tests/Feature/Identity/AccessControlTest.php`                      |
+| Audit log is append-only (DB triggers) and hash-chained; `audit:verify` runs daily; secrets are redacted              | `tests/Feature/Audit/AuditLogTest.php`                              |
 | Static analysis at PHPStan level 7                                                                                   | `composer types:check`                                              |
+
+## Access control and audit
+
+- **Who may do what.** Roles are managed in kmu-cms (Settings → Roles) and read through `v_cms_staff_roles`.
+  kmu-assess grants catalogue permissions to those roles (`sec_role_permissions`), so there is one list
+  of roles for both apps. A CMS role marked Super Admin has every permission.
+- **Where.** `sec_user_scopes` limits a user to everywhere (`all`) or to programmes, professionals or
+  courses. A user without a scope can still see screens but can act on nothing that has a place.
+- **Break-glass.** `php artisan user:break-glass email --reason=...` gives a local account every
+  permission for a CMS outage; granting and revoking are audited.
+- **Audit log.** `AuditLogger::record()` inside the same transaction as the change. Rows can't be
+  updated or deleted (MySQL triggers), each row stores the previous row's hash, and
+  `php artisan audit:verify` (daily, 02:30) reports the first broken row.
+- After changing the catalogue in code, run `php artisan permissions:sync` (migrations also seed it).
 
 ## Decisions
 
@@ -67,7 +83,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB | Done                            |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    | Done                            |
 | 6    | SSO from kmu-cms (ADR-0002) + read-only DB user and views                                                 | both       | Done                            |
-| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess |                                 |
+| 7    | Permissions, scopes, audit log, MFA                                                                       | kmu-assess | 7a done; 7b screens, 7c MFA     |
 | 8    | Question bank tables + immutability triggers                                                              | kmu_assess |                                 |
 | 9    | Question editor, preview, validation                                                                      | kmu-assess |                                 |
 | 10   | Search, versions, diff, timeline                                                                          | kmu-assess |                                 |

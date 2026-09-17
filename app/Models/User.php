@@ -20,6 +20,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $name
  * @property string $email
  * @property bool $is_active
+ * @property bool $is_break_glass Local emergency administrator; set only with `php artisan user:break-glass`.
  * @property Carbon|null $email_verified_at
  * @property string|null $password Null for staff who only sign in through kmu-cms.
  * @property Carbon|null $last_login_at
@@ -44,6 +45,7 @@ class User extends Authenticatable implements PasskeyUser
      */
     protected $attributes = [
         'is_active' => true,
+        'is_break_glass' => false,
     ];
 
     /**
@@ -56,6 +58,7 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'is_active' => 'boolean',
+            'is_break_glass' => 'boolean',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
