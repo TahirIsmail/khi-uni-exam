@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Identity\BranchController;
 use App\Http\Controllers\Identity\LogoutController;
 use Illuminate\Support\Facades\Route;
@@ -8,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 Route::redirect('/', '/dashboard')->name('home');
 
 Route::middleware('auth')->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::put('branch', [BranchController::class, 'update'])->name('branch.update');
 

@@ -263,6 +263,31 @@ try {
         await path(),
     );
 
+    // The way in: the sidebar link and the dashboard.
+    await load('/dashboard');
+    const home = await text();
+    check(
+        'the sidebar offers the question bank',
+        /Question bank/.test(home) && /Back to CMS/.test(home),
+        home.slice(0, 200),
+    );
+    check(
+        'the dashboard counts the campus questions',
+        /Questions in this campus/.test(home) &&
+            /Where the questions stand/.test(home),
+        home.slice(0, 300),
+    );
+    await evaluate(
+        "[...document.querySelectorAll('a')].find(a => a.textContent.trim() === 'Question bank')?.click()",
+    );
+    check(
+        'the sidebar link opens the question bank',
+        await waitFor("location.pathname === '/questions'"),
+        await path(),
+    );
+    await load('/questions/create');
+    await waitFor("!!document.getElementById('type')");
+
     check(
         'the course from the CMS is offered',
         await setSelect('#course', courseId),

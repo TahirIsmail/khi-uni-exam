@@ -10,8 +10,14 @@ export type User = {
     [key: string]: unknown;
 };
 
+export type AuthCan = {
+    viewQuestions?: boolean;
+    createQuestions?: boolean;
+};
+
 export type Auth = {
     user: User;
+    can: AuthCan;
 };
 
 export type Passkey = {

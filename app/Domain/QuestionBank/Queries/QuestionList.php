@@ -91,6 +91,12 @@ final class QuestionList
         return $counts;
     }
 
+    /** How many of the campus's questions this person wrote. */
+    public function mineCount(User $user, int $branchId): int
+    {
+        return $this->query($user, $branchId, ['mine' => true])->count();
+    }
+
     /**
      * @param  array<string, mixed>  $filters
      */

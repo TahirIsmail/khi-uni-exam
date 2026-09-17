@@ -43,6 +43,11 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // Only what the navigation needs; every route and action checks the permission again.
+                'can' => $request->user() === null ? [] : [
+                    'viewQuestions' => $request->user()->can('qbank.question.view'),
+                    'createQuestions' => $request->user()->can('qbank.question.create'),
+                ],
             ],
             // The campus being worked in, and the user's campuses for the switcher.
             'branch' => $request->user() === null ? null : [
