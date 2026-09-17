@@ -62,7 +62,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | Step | Work                                                                                                      | Where      | Status |
 | ---- | --------------------------------------------------------------------------------------------------------- | ---------- | ------ |
 | 1    | App skeleton, security baseline, architecture rules, identity foundation (CMS staff link)                 | kmu-assess | Done   |
-| 2    | CMS security: CSRF, HttpOnly cookies, SHA-1 password path, close open URLs (`/migrate`, test controllers) | kmu-cms    |        |
+| 2    | CMS security: CSRF, HttpOnly cookies, SHA-1 password path, close open URLs (`/migrate`, test controllers) | kmu-cms    | Done   |
 | 3    | Replace ICE seed data with KMU values                                                                     | kmu-cms    |        |
 | 4    | Academic tables: fix existing, add `acad_*`                                                               | kmu-cms DB |        |
 | 5    | Academic screens + delete guard                                                                           | kmu-cms    |        |
