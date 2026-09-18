@@ -11,6 +11,7 @@ use App\Domain\QuestionBank\Enums\VersionStatus;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Queries\QuestionEditorData;
+use App\Domain\QuestionBank\Queries\QuestionExport;
 use App\Domain\QuestionBank\Queries\QuestionHistory;
 use App\Domain\QuestionBank\Queries\QuestionList;
 use App\Domain\QuestionBank\Queries\VersionDiff;
@@ -24,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Writing questions: the list of questions in the campus, the editor, and sending a draft for
@@ -37,9 +39,14 @@ class QuestionController extends Controller
         private readonly QuestionEditorData $editorData,
     ) {}
 
-    public function index(Request $request, QuestionList $list): Response
+    /**
+     * The filters the search screen and the export both accept.
+     *
+     * @return array<string, mixed>
+     */
+    private static function filterRules(): array
     {
-        $filters = $request->validate([
+        return [
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'string', Rule::in(array_column(VersionStatus::cases(), 'value'))],
             'programme_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
@@ -60,7 +67,12 @@ class QuestionController extends Controller
             'duplicates' => ['nullable', 'boolean'],
             'archived' => ['nullable', 'boolean'],
             'page' => ['nullable', 'integer', 'min:1'],
-        ]);
+        ];
+    }
+
+    public function index(Request $request, QuestionList $list): Response
+    {
+        $filters = $request->validate(self::filterRules());
 
         $filters['mine'] = $request->boolean('mine');
         $filters['duplicates'] = $request->boolean('duplicates');
@@ -95,6 +107,7 @@ class QuestionController extends Controller
             'authors' => $list->authors($request->user(), $branchId),
             ...$this->editorData->forSearch($request->user(), $branchId),
             'canCreate' => $request->user()->can('qbank.question.create'),
+            'canExport' => $request->user()->can('qbank.question.export'),
         ]);
     }
 
@@ -116,9 +129,15 @@ class QuestionController extends Controller
         return to_route('questions.edit', [$version->question_id, $version->id]);
     }
 
-    public function edit(Request $request, Question $question, QuestionVersion $version): Response
+    public function edit(Request $request, Question $question, QuestionVersion $version): Response|RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
+
+        // Once it has been sent for review its content is fixed, so the editor is not offered at
+        // all; changing it means a new version. The action behind the form refuses it as well.
+        if (! $version->isEditable()) {
+            return to_route('questions.show', [$question->id, $version->id]);
+        }
 
         return Inertia::render('qbank/QuestionEditor', [
             'version' => $this->editorData->version($version),
@@ -160,6 +179,20 @@ class QuestionController extends Controller
         return to_route('questions.edit', [$question->id, $version->id]);
     }
 
+    /**
+     * The search results as a spreadsheet, answer keys included. Its own permission, because the
+     * file leaves the system; the campus and the user's exam access still decide what is in it.
+     */
+    public function export(Request $request, QuestionExport $export): StreamedResponse
+    {
+        $filters = $request->validate(self::filterRules());
+        $filters['mine'] = $request->boolean('mine');
+        $filters['duplicates'] = $request->boolean('duplicates');
+        $filters['archived'] = $request->boolean('archived');
+
+        return $export->stream($request->user(), $this->branchId($request), $filters);
+    }
+
     /** Live checks while the author types: the same rules that submission applies. */
     public function check(SaveQuestionRequest $request, QuestionValidator $validator): JsonResponse
     {
@@ -196,7 +229,7 @@ class QuestionController extends Controller
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
         abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
 
-        return Inertia::render('qbank/QuestionHistory', $history->for($question));
+        return Inertia::render('qbank/QuestionHistory', $history->for($question, $request->user()));
     }
 
     /** Two versions side by side. */

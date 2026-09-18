@@ -68,6 +68,23 @@ final class QuestionList
     }
 
     /**
+     * The versions an export should contain: exactly what this search would show, newest first,
+     * with a hard limit so one click cannot drain the bank.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<int>
+     */
+    public function versionIdsFor(User $user, int $branchId, array $filters, int $limit): array
+    {
+        $ids = $this->query($user, $branchId, $filters)
+            ->orderByDesc('v.updated_at')
+            ->limit($limit)
+            ->pluck('v.id');
+
+        return array_values(array_map(fn (mixed $id): int => (int) $id, $ids->all()));
+    }
+
+    /**
      * @param  array<int, string>  $courseLabels
      * @return array<string, mixed>
      */

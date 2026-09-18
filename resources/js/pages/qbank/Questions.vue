@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { CopyCheck, Filter, History, Plus, Search, X } from '@lucide/vue';
+import {
+    CopyCheck,
+    Download,
+    Filter,
+    History,
+    Plus,
+    Search,
+    X,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +63,7 @@ const props = defineProps<{
     authors: { id: number; name: string }[];
     statuses: Record<string, number>;
     canCreate: boolean;
+    canExport: boolean;
 }>();
 
 const search = ref(props.filters.search);
@@ -134,6 +143,19 @@ function apply(changes: Partial<Record<keyof Filters, unknown>>): void {
     router.get(index.url(), query, { preserveState: true, replace: true });
 }
 
+// The export takes exactly what the search is showing, so it carries the same filters.
+const exportUrl = computed(() => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(props.filters)) {
+        if (value !== null && value !== '' && value !== false) {
+            query.set(key, value === true ? '1' : String(value));
+        }
+    }
+    const search = query.toString();
+
+    return `/questions/export${search === '' ? '' : `?${search}`}`;
+});
+
 function clear(): void {
     search.value = '';
     router.get(index.url());
@@ -155,9 +177,19 @@ const statusStyles: Record<string, string> = {
                 title="Question bank"
                 description="Questions of the campus you are working in. Search their text, or narrow by where they sit in the CMS academic structure."
             />
-            <Button v-if="canCreate" as-child data-test="new-question">
-                <Link :href="create()"><Plus /> New question</Link>
-            </Button>
+            <div class="flex flex-wrap items-center gap-2">
+                <Button
+                    v-if="canExport"
+                    as-child
+                    variant="outline"
+                    data-test="export-questions"
+                >
+                    <a :href="exportUrl"><Download /> Export these questions</a>
+                </Button>
+                <Button v-if="canCreate" as-child data-test="new-question">
+                    <Link :href="create()"><Plus /> New question</Link>
+                </Button>
+            </div>
         </div>
 
         <form

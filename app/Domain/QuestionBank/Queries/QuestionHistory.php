@@ -3,10 +3,14 @@
 namespace App\Domain\QuestionBank\Queries;
 
 use App\Domain\QuestionBank\Enums\VersionStatus;
+use App\Domain\QuestionBank\Models\PrehocAssessment;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
+use App\Domain\QuestionBank\Models\Review;
 use App\Domain\QuestionBank\Models\VersionStatusLog;
+use App\Models\User;
 use App\Support\Cms\CmsAcademic;
+use App\Support\Cms\CmsSettings;
 use App\Support\Html\QuestionHtml;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -17,12 +21,15 @@ use stdClass;
  */
 final class QuestionHistory
 {
-    public function __construct(private readonly CmsAcademic $academic) {}
+    public function __construct(
+        private readonly CmsAcademic $academic,
+        private readonly CmsSettings $settings,
+    ) {}
 
     /**
      * @return array<string, mixed>
      */
-    public function for(Question $question): array
+    public function for(Question $question, User $viewer): array
     {
         $versions = $question->versions()->with('type:id,name')->orderByDesc('version_no')->get();
         $authors = DB::table('users')->whereIn('id', $versions->pluck('author_id')->merge($versions->pluck('approved_by'))->filter()->unique()->all() ?: [0])
@@ -54,7 +61,7 @@ final class QuestionHistory
                 'approvedAt' => $version->approved_at?->toIso8601String(),
                 'activatedAt' => $version->activated_at?->toIso8601String(),
             ])->values()->all(),
-            'timeline' => $this->timeline($question, $authors->all()),
+            'timeline' => $this->timeline($question, $authors->all(), $viewer),
             'duplicates' => $this->duplicatesOf($question),
         ];
     }
@@ -66,7 +73,7 @@ final class QuestionHistory
      * @param  array<int|string, mixed>  $authors
      * @return list<array<string, mixed>>
      */
-    private function timeline(Question $question, array $authors): array
+    private function timeline(Question $question, array $authors, User $viewer): array
     {
         $entries = [];
 
@@ -101,6 +108,10 @@ final class QuestionHistory
             ];
         }
 
+        foreach ($this->reviewEntries($question, $viewer) as $entry) {
+            $entries[] = $entry;
+        }
+
         usort($entries, fn (array $a, array $b): int => [$b['at'], $b['order'], $b['versionNo']] <=> [$a['at'], $a['order'], $a['versionNo']]);
 
         return array_map(function (array $entry): array {
@@ -108,6 +119,75 @@ final class QuestionHistory
 
             return $entry;
         }, $entries);
+    }
+
+    /**
+     * What the reviewers said and what anybody judged about the question: each reviewer's values
+     * and the consolidated ones the approver settled on are all shown here, not only the outcome.
+     * Reviewer names are hidden from the author when kmu-cms asks for that.
+     *
+     * @return list<array{at: string|null, versionNo: int, what: string, by: string, note: string|null, status: string, order: int}>
+     */
+    private function reviewEntries(Question $question, User $viewer): array
+    {
+        $versionIds = $question->versions->pluck('id')->all() ?: [0];
+        $versionNumbers = $question->versions->pluck('version_no', 'id');
+        $authorIds = $question->versions->pluck('author_id')->unique()->all();
+
+        $reviews = Review::query()->whereIn('version_id', $versionIds)->with('decision:id,name')->orderBy('id')->get();
+        $prehoc = PrehocAssessment::query()->whereIn('version_id', $versionIds)->orderBy('id')->get();
+
+        $people = DB::table('users')
+            ->whereIn('id', $reviews->pluck('reviewer_id')->merge($prehoc->pluck('assessed_by'))->unique()->all() ?: [0])
+            ->pluck('name', 'id');
+        $levels = [
+            'cognitive' => DB::table('qb_cognitive_levels')->pluck('name', 'id'),
+            'difficulty' => DB::table('qb_difficulty_levels')->pluck('name', 'id'),
+        ];
+
+        // The author of any version of this question sees the comments but, when kmu-cms says so,
+        // not who wrote them.
+        $hideNames = $this->settings->reviewerAnonymous() && in_array($viewer->id, $authorIds, true);
+        $name = fn (int $id): string => $hideNames && $id !== $viewer->id ? 'A reviewer' : (string) ($people[$id] ?? 'Unknown');
+
+        $entries = [];
+        foreach ($reviews as $review) {
+            $entries[] = [
+                'at' => $review->submitted_at->toIso8601String(),
+                'versionNo' => (int) ($versionNumbers[$review->version_id] ?? 0),
+                'what' => $review->requestedChanges()
+                    ? 'Reviewed: changes asked for'
+                    : 'Reviewed: '.($review->decision_id === null ? 'no decision recorded' : $review->decision->name),
+                'by' => $name((int) $review->reviewer_id),
+                'note' => $review->comments,
+                'status' => $review->requestedChanges() ? VersionStatus::ChangesRequested->value : VersionStatus::UnderReview->value,
+                'order' => 1_000_000 + $review->id,
+            ];
+        }
+
+        foreach ($prehoc as $row) {
+            $values = array_filter([
+                $row->cognitive_level_id === null ? null : (string) ($levels['cognitive'][$row->cognitive_level_id] ?? ''),
+                $row->difficulty_level_id === null ? null : (string) ($levels['difficulty'][$row->difficulty_level_id] ?? ''),
+                $row->estimated_p === null ? null : 'expected pass rate '.$row->estimated_p,
+            ]);
+
+            $entries[] = [
+                'at' => $row->assessed_at->toIso8601String(),
+                'versionNo' => (int) ($versionNumbers[$row->version_id] ?? 0),
+                'what' => match ($row->source) {
+                    'author' => 'Author proposed: '.implode(' · ', $values),
+                    'consolidated' => 'Settled on approval: '.implode(' · ', $values),
+                    default => 'Reviewer judged: '.implode(' · ', $values),
+                },
+                'by' => $name((int) $row->assessed_by),
+                'note' => $row->reason,
+                'status' => $row->is_consolidated ? VersionStatus::Approved->value : VersionStatus::Submitted->value,
+                'order' => 2_000_000 + $row->id,
+            ];
+        }
+
+        return $entries;
     }
 
     private function describe(?VersionStatus $from, VersionStatus $to): string

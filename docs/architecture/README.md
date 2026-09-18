@@ -211,6 +211,14 @@ question as a candidate would see it, with the answer key.
 - **In the audit log**: `qbank.import.checked`, `qbank.import.committed`, `qbank.import.discarded`,
   and a `qbank.question.created` entry per draft.
 
+### Taking questions out
+
+- **Export** (`/questions/export`): the search results as a CSV, answer keys and all. It is its own
+  permission (Export Questions & Answer Keys in kmu-cms) because the file leaves the system; only
+  what the search itself would show is in it, at most 5,000 questions, and every export is written
+  to the audit log (`qbank.question.exported`). Its columns are the ones the import reads, so a file
+  can be exported, edited in Excel and brought back in.
+
 ## Review, pre-hoc assessment and approval (step 12)
 
 Three things are kept apart, each with its own history and its own authorised role (blueprint 9):
@@ -253,6 +261,18 @@ outcome, and a **pre-hoc assessment** is the expert judgement about the question
 - **In the audit log**: `qbank.review.assigned`, `qbank.review.cancelled`, `qbank.review.submitted`,
   `qbank.review.changes_requested`, `qbank.prehoc.recorded`, `qbank.question.approved`,
   `qbank.question.activated`, `qbank.question.rejected`.
+- **The question's timeline** shows all of it in one place: who wrote it, what each reviewer said
+  and judged, what the approver settled on, and every status change — with reviewer names hidden
+  from the author when kmu-cms asks for that.
+- **Post-hoc decisions** (what a department decides _after_ an examination) have their own tables,
+  `qb_posthoc_decision_types` and `qb_posthoc_decisions`, created in step 13 as placeholders: the
+  three judgements — workflow status, pre-hoc, post-hoc — are separate records from the start. The
+  screens for them belong to the later post-hoc analysis phase.
+
+## Acceptance
+
+- [Acceptance of the first increment](acceptance.md) — the blueprint's fourteen criteria, the test
+  that proves each one, and the result of the run.
 
 ## Decisions
 
@@ -276,7 +296,7 @@ outcome, and a **pre-hoc assessment** is the expert judgement about the question
 | 10   | Search and filters, version history, timeline, side-by-side diff                                          | kmu-assess | Done                            |
 | 11   | Excel/CSV import                                                                                          | kmu-assess | Done                            |
 | 12   | Review, pre-hoc, approval                                                                                 | both       | Done                            |
-| 13   | Acceptance testing of the increment                                                                       | both       |                                 |
+| 13   | Acceptance testing of the increment                                                                       | both       | Done                            |
 
 Exam delivery (including ADR-0003) is built in the later delivery phase, but its tables and
 identity rules are designed now so nothing built earlier has to change.

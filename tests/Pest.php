@@ -19,6 +19,15 @@ pest()->extend(TestCase::class)
     ->in('Feature');
 
 /*
+ * The scale checks (tests/Scale) run against the testing database without a transaction: MySQL only
+ * fills a FULLTEXT index for committed rows, so a search test inside a transaction would not use
+ * its index. Each of those tests cleans up after itself. They are not part of a normal run:
+ *
+ *   php artisan test tests/Scale
+ */
+pest()->extend(TestCase::class)->in('Scale');
+
+/*
 |--------------------------------------------------------------------------
 | Expectations
 |--------------------------------------------------------------------------
