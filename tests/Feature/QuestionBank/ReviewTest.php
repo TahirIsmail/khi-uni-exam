@@ -387,8 +387,8 @@ test('the approval gate holds: enough reviews, no failed rule, an accept decisio
     ]));
 
     $this->actingAs($this->approver)->from('/approvals')->post("/questions/{$clean->question_id}/versions/{$clean->id}/approve", [
-        'decision_id' => (int) PrehocDecision::query()->where('code', 'hold')->value('id'),
-        'comments' => 'Held for the department to discuss.',
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'review')->value('id'),
+        'comments' => 'Kept back for the department to look at again.',
     ])->assertSessionHasErrors('decision_id');
 
     expect($clean->fresh()->status)->toBe(VersionStatus::UnderReview)
@@ -420,8 +420,8 @@ test('when two reviewers decide differently the approver has to say why', functi
     ]));
     $this->actingAs($second)->post($url, reviewPayload([
         'assignment_id' => ReviewAssignment::query()->where('reviewer_id', $second->id)->value('id'),
-        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept_minor')->value('id'),
-        'comments' => 'Shorten the vignette a little; otherwise it is fine.',
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
+        'comments' => 'Shorten the vignette; the second option needs rewording.',
     ]));
 
     $approveUrl = "/questions/{$version->question_id}/versions/{$version->id}/approve";
@@ -434,11 +434,11 @@ test('when two reviewers decide differently the approver has to say why', functi
         'decision_id' => $accept,
         'cognitive_level_id' => 3,
         'difficulty_level_id' => 2,
-        'reason' => 'Both reviewers accept it; the wording point is minor and already fixed.',
+        'reason' => 'One asked for a revision; the wording point is minor and already fixed.',
     ])->assertRedirect('/approvals');
 
     expect($version->fresh()->status)->toBe(VersionStatus::Active)
-        ->and(PrehocAssessment::query()->where('is_consolidated', true)->value('reason'))->toContain('minor');
+        ->and(PrehocAssessment::query()->where('is_consolidated', true)->value('reason'))->toContain('wording');
 });
 
 test('turning a question down archives it with the reason', function () {
@@ -573,7 +573,8 @@ test('the workspace shows the question, the checklist and what the reviewers sai
         ->where('reviewsNeeded', 1)
         ->where('checklistItems', fn ($items) => count($items) === 8)
         ->where('prehoc.0.source', 'author')
-        ->where('decisions', fn ($decisions) => count($decisions) === 5));
+        // Accept, Review, Revise, Remove / Discard — the university's own list.
+        ->where('decisions', fn ($decisions) => count($decisions) === 4));
 
     $this->actingAs($this->reviewer)->post($url, reviewPayload(['assignment_id' => ReviewAssignment::query()->value('id')]));
 

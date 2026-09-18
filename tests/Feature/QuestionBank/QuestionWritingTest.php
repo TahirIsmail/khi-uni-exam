@@ -328,7 +328,8 @@ test('the editor is given the types, courses, topics and lookups it needs', func
         ->where('types', fn ($types) => count($types) === 12 && collect($types)->firstWhere('code', 'single_best_answer')['optionsMax'] === 10)
         ->where('courses', fn ($courses) => collect($courses)->contains('id', $this->course))
         ->where('limits.stemMax', 3000)
-        ->has('cognitiveLevels', 6)
+        // The four levels KMU uses; Evaluation and Synthesis are rows that are switched off.
+        ->has('cognitiveLevels', 4)
         ->has('difficultyLevels', 3));
 
     $this->actingAs($author)->getJson('/questions/curriculum?course_id='.$this->course)

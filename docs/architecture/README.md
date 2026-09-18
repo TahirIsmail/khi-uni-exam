@@ -264,10 +264,17 @@ outcome, and a **pre-hoc assessment** is the expert judgement about the question
 - **The question's timeline** shows all of it in one place: who wrote it, what each reviewer said
   and judged, what the approver settled on, and every status change — with reviewer names hidden
   from the author when kmu-cms asks for that.
+- **The lists themselves are the university's**: the level of thinking is Recall, Understanding,
+  Application and Analysis (Evaluation and Synthesis are rows that are switched off, in case a
+  department wants the full Bloom scale later); the difficulty is Easy, Moderate, Difficult; and the
+  decision is Accept, Review, Revise or Remove / Discard. "Retain in QBank" is a decision taken
+  after an examination, so it belongs to the post-hoc list.
 - **Post-hoc decisions** (what a department decides _after_ an examination) have their own tables,
-  `qb_posthoc_decision_types` and `qb_posthoc_decisions`, created in step 13 as placeholders: the
-  three judgements — workflow status, pre-hoc, post-hoc — are separate records from the start. The
-  screens for them belong to the later post-hoc analysis phase.
+  `qb_posthoc_decision_types` and `qb_posthoc_decisions`, and where a question has been used has
+  `qb_question_usage` — one row per version per examination, with the candidates, the difficulty and
+  discrimination indices and the share of candidates per option. They are placeholders: the three
+  judgements — workflow status, pre-hoc, post-hoc — are separate records from the start, and the
+  screens that fill them belong to the later delivery and post-hoc phases.
 
 ## Acceptance
 

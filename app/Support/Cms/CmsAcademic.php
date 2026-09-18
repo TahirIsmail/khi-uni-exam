@@ -57,15 +57,17 @@ final class CmsAcademic
      * The curriculum tree of a course. `allows_questions` says whether a topic is a level that
      * questions may be attached to (set per programme in kmu-cms).
      *
-     * @return list<array{id: int, parent_id: int|null, name: string, code: string|null, path: string, depth: int, level: string, discipline_id: int|null, allows_questions: bool}>
+     * @return list<array{id: int, parent_id: int|null, name: string, code: string|null, path: string, depth: int, sort_order: int, level: string, discipline_id: int|null, allows_questions: bool}>
      */
     public function curriculum(int $courseId): array
     {
-        return array_values(DB::connection('cms')->table('v_cms_curriculum_nodes')
+        $nodes = DB::connection('cms')->table('v_cms_curriculum_nodes')
             ->where('course_id', $courseId)
             ->where('is_active', 1)
-            ->orderBy('path')
-            ->get(['id', 'parent_id', 'name', 'code', 'path', 'depth', 'level_code', 'discipline_id', 'allow_questions'])
+            ->orderBy('depth')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get(['id', 'parent_id', 'name', 'code', 'path', 'depth', 'sort_order', 'level_code', 'discipline_id', 'allow_questions'])
             ->map(fn (stdClass $row): array => [
                 'id' => (int) $row->id,
                 'parent_id' => $row->parent_id === null ? null : (int) $row->parent_id,
@@ -73,11 +75,51 @@ final class CmsAcademic
                 'code' => $row->code === null ? null : (string) $row->code,
                 'path' => (string) $row->path,
                 'depth' => (int) $row->depth,
+                'sort_order' => (int) $row->sort_order,
                 'level' => (string) $row->level_code,
                 'discipline_id' => $row->discipline_id === null ? null : (int) $row->discipline_id,
                 'allows_questions' => (int) $row->allow_questions === 1,
             ])
-            ->all());
+            ->all();
+
+        return $this->inTreeOrder(array_values($nodes));
+    }
+
+    /**
+     * The curriculum as a reader goes down it: each heading followed by what is under it, in the
+     * order the department put them in. (The stored path cannot do this on its own — it holds ids,
+     * which sort as text, so "/101/" would come before "/99/".)
+     *
+     * @param  list<array{id: int, parent_id: int|null, name: string, code: string|null, path: string, depth: int, sort_order: int, level: string, discipline_id: int|null, allows_questions: bool}>  $nodes
+     * @return list<array{id: int, parent_id: int|null, name: string, code: string|null, path: string, depth: int, sort_order: int, level: string, discipline_id: int|null, allows_questions: bool}>
+     */
+    private function inTreeOrder(array $nodes): array
+    {
+        $children = [];
+        foreach ($nodes as $node) {
+            $children[$node['parent_id'] ?? 0][] = $node;
+        }
+
+        $ordered = [];
+        $walk = function (int $parentId) use (&$walk, &$ordered, $children): void {
+            foreach ($children[$parentId] ?? [] as $node) {
+                $ordered[] = $node;
+                $walk((int) $node['id']);
+            }
+        };
+        $walk(0);
+
+        // A node whose parent is missing (inactive, say) would be lost, so it is added at the end.
+        if (count($ordered) < count($nodes)) {
+            $seen = array_column($ordered, 'id');
+            foreach ($nodes as $node) {
+                if (! in_array($node['id'], $seen, true)) {
+                    $ordered[] = $node;
+                }
+            }
+        }
+
+        return $ordered;
     }
 
     /**

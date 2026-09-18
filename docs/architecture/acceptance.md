@@ -57,8 +57,12 @@ the run on **18 September 2026**. Everything here is repeatable: the commands ar
   candidates, the exam engine, proctoring, results and reports. The identity, campus and audit
   rules they need are already in place, and [ADR-0003](adr-0003-exam-resume-on-another-computer.md)
   records how a candidate's exam will survive a crash.
-- **Post-hoc analysis screens.** The tables exist so the three judgements are already separate
-  records, but nothing writes to them yet.
+- **Post-hoc analysis and its report.** The university's report asks for the examination
+  statistics (mean, median, standard deviation, pass rate), item analysis, distractor analysis,
+  reliability (KR-20, Cronbach's alpha), compliance with the table of specifications, and each
+  question's usage history. All of that is computed from examination results, which the delivery
+  phase produces. The tables that hold the per-question part — `qb_posthoc_decisions` and
+  `qb_question_usage` — exist so the shape is right from the start, but nothing writes to them yet.
 - **Notifying an author by email** when their question is reviewed. The reviewer's queue, the
   approver's queue and the dashboard show what is waiting; email belongs with the delivery phase,
   which is when the system starts writing to candidates as well.
