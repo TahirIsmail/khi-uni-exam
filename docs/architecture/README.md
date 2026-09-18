@@ -182,6 +182,35 @@ question as a candidate would see it, with the answer key.
   change called out, and a table of what else changed (type, marks, course, topic, counts). The word
   diff is a small longest-common-subsequence walk (`TextDiff`), with no dependency.
 
+## Importing questions from a spreadsheet (step 11)
+
+- **Two steps, never one**: an upload is only _checked_ (`qbank.import.run`) — the file is read, every
+  row validated and shown back with its line number — and a separate _commit_
+  (`qbank.import.commit`) writes the good rows into the bank as drafts. Nothing reaches the question
+  bank until someone commits, and a committed file is kept as the record of what was imported.
+- **Files**: CSV, TSV and Excel (`.xlsx`, `.xls` via `phpoffice/phpspreadsheet`), up to 10 MB and
+  2,000 rows. The file is stored on the private local disk under the campus, and deleted when the
+  import is discarded.
+- **Columns** are matched loosely, so "Question", "Stem" and "Question text" all mean the same thing
+  (`SpreadsheetReader::ALIASES`). A course, topic or type can also be chosen once for the whole file;
+  a row that names its own always wins. What the columns hold:
+  `options` = `ECG | Chest radiograph | …`, `correct` = `A` or `A,C` (or `true`/`false`),
+  `items` = `statement = true` (multiple true/false) or `prompt -> B` (matching/ordering),
+  `answers` = accepted wordings separated by `|`, or a number with a tolerance (`7.40 ± 0.05`).
+  A ready-made template with an example row per common type is at `/questions/imports/template`.
+- **Every row is checked as if it were typed into the editor**: the same `QuestionValidator`, the same
+  per-type rules, the same HTML sanitiser, plus the campus and exam-access check. A row for a course
+  outside the user's exam access, or in another campus, is refused.
+- **Repeats**: the same question twice in one file is refused (the second row names the line it
+  repeats); one already in the bank is only a warning, because a question may legitimately be
+  rewritten. Both are found by the `content_hash` the editor already uses.
+- **Partial imports are normal**: a file with bad rows can still be committed — the good rows go in,
+  the rest are corrected in the spreadsheet and uploaded again. Each created draft records
+  `source = 'import'` and the row it came from, and each row records the question and version it
+  became, so the two can always be traced to each other.
+- **In the audit log**: `qbank.import.checked`, `qbank.import.committed`, `qbank.import.discarded`,
+  and a `qbank.question.created` entry per draft.
+
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
@@ -202,7 +231,7 @@ question as a candidate would see it, with the answer key.
 | 8    | Campus context; question bank tables, all question types, immutability triggers                           | both       | Done                            |
 | 9    | Question editor, live validation, candidate preview, versions                                             | kmu-assess | Done                            |
 | 10   | Search and filters, version history, timeline, side-by-side diff                                          | kmu-assess | Done                            |
-| 11   | Excel/CSV import                                                                                          | kmu-assess |                                 |
+| 11   | Excel/CSV import                                                                                          | kmu-assess | Done                            |
 | 12   | Review, pre-hoc, approval                                                                                 | kmu-assess |                                 |
 | 13   | Acceptance testing of the increment                                                                       | both       |                                 |
 

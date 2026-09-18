@@ -13,6 +13,7 @@ export type User = {
 export type AuthCan = {
     viewQuestions?: boolean;
     createQuestions?: boolean;
+    importQuestions?: boolean;
 };
 
 export type Auth = {

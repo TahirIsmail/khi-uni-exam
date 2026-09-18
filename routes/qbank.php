@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\QuestionBank\ImportController;
 use App\Http\Controllers\QuestionBank\MediaController;
 use App\Http\Controllers\QuestionBank\QuestionController;
 use App\Http\Controllers\QuestionBank\TagController;
@@ -14,6 +15,16 @@ Route::middleware('auth')->group(function () {
 
     Route::get('questions/create', [QuestionController::class, 'create'])->middleware('can:qbank.question.create')->name('questions.create');
     Route::post('questions', [QuestionController::class, 'store'])->middleware('can:qbank.question.create')->name('questions.store');
+
+    // Importing from a spreadsheet: checking is one permission, putting them in the bank another.
+    Route::prefix('questions/imports')->name('imports.')->group(function () {
+        Route::get('/', [ImportController::class, 'index'])->middleware('can:qbank.import.run')->name('index');
+        Route::get('template', [ImportController::class, 'template'])->middleware('can:qbank.import.run')->name('template');
+        Route::post('/', [ImportController::class, 'store'])->middleware(['can:qbank.import.run', 'throttle:20,1'])->name('store');
+        Route::get('{import}', [ImportController::class, 'show'])->middleware('can:qbank.import.run')->whereNumber('import')->name('show');
+        Route::post('{import}/commit', [ImportController::class, 'commit'])->middleware(['can:qbank.import.commit', 'throttle:20,1'])->whereNumber('import')->name('commit');
+        Route::delete('{import}', [ImportController::class, 'destroy'])->middleware('can:qbank.import.run')->whereNumber('import')->name('destroy');
+    });
 
     Route::get('questions/curriculum', [QuestionController::class, 'curriculum'])->middleware('can:qbank.question.view')->name('questions.curriculum');
     Route::post('questions/check', [QuestionController::class, 'check'])->middleware(['can:qbank.question.view', 'throttle:120,1'])->name('questions.check');

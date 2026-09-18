@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, FileQuestion, LayoutGrid } from '@lucide/vue';
+import { ArrowLeft, FileQuestion, LayoutGrid, Upload } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -15,6 +15,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as imports } from '@/routes/imports';
 import { index as questions } from '@/routes/questions';
 import type { NavItem } from '@/types';
 
@@ -31,6 +32,14 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Question bank',
             href: questions(),
             icon: FileQuestion,
+        });
+    }
+
+    if (page.props.auth.can?.importQuestions) {
+        items.push({
+            title: 'Import questions',
+            href: imports(),
+            icon: Upload,
         });
     }
 

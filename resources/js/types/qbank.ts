@@ -181,3 +181,45 @@ export type QuestionListRow = {
     summary: string;
     updatedAt: string | null;
 };
+
+export type ImportSummary = {
+    id: number;
+    name: string;
+    format: string;
+    status: string;
+    rowsTotal: number;
+    rowsValid: number;
+    rowsInvalid: number;
+    rowsCommitted: number;
+    uploadedBy?: string | null;
+    uploadedAt: string | null;
+    committable?: boolean;
+    committedAt?: string | null;
+};
+
+export type ImportRowParsed = {
+    type: string;
+    course_id: number;
+    node_id: number;
+    topic: string | null;
+    stem: string;
+    marks: number;
+    options: number;
+    correct: number;
+    items: number;
+    answers: number;
+    references: number;
+    tags: number;
+};
+
+export type ImportRowView = {
+    id: number;
+    rowNumber: number;
+    status: string;
+    raw: Record<string, string> | null;
+    parsed: ImportRowParsed | null;
+    errors: string[];
+    warnings: string[];
+    questionId: number | null;
+    versionId: number | null;
+};

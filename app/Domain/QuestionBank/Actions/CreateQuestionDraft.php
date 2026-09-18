@@ -29,7 +29,7 @@ final class CreateQuestionDraft
         private readonly AuditLogger $audit,
     ) {}
 
-    public function __invoke(User $author, int $branchId, QuestionContent $content): QuestionVersion
+    public function __invoke(User $author, int $branchId, QuestionContent $content, string $source = 'manual', ?int $importRowId = null): QuestionVersion
     {
         $place = $this->academic->placeOfNode($content->nodeId, $content->courseId);
         if ($place === null) {
@@ -42,7 +42,7 @@ final class CreateQuestionDraft
             throw new AuthorizationException('You cannot write questions for this course.');
         }
 
-        return DB::transaction(function () use ($author, $branchId, $content, $place): QuestionVersion {
+        return DB::transaction(function () use ($author, $branchId, $content, $place, $source, $importRowId): QuestionVersion {
             $question = Question::query()->create([
                 'public_ref' => PublicRef::next(),
                 'branch_id' => $branchId,
@@ -74,6 +74,8 @@ final class CreateQuestionDraft
                 'status' => VersionStatus::Draft,
                 'content_hash' => $content->contentHash(),
                 'search_text' => $content->searchText(),
+                'source' => $source,
+                'import_row_id' => $importRowId,
                 'author_id' => $author->id,
                 'created_by' => $author->id,
             ]);
@@ -87,6 +89,7 @@ final class CreateQuestionDraft
                 'course_id' => $question->course_id,
                 'node_id' => $version->node_id,
                 'type' => $content->type->code,
+                'source' => $source,
             ], null, $author, $branchId);
 
             return $version;
