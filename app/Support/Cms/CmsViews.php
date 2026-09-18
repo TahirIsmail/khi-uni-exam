@@ -39,7 +39,9 @@ final class CmsViews
             // Exam access limits (CMS Question Bank & Exams → Exam Access).
             'v_cms_staff_exam_scopes' => "SELECT x.staff_id, x.scope_type, x.scope_id FROM {$db}.acad_staff_exam_scopes x",
 
-            'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
+            'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled, s.kmu_assess_reviews_required, s.kmu_assess_review_days,
+                       s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous
+                FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
 
             // Extra branches a staff member may work in (CMS Settings → Staff); inactive branches excluded.
             'v_cms_staff_branches' => "SELECT sb.staff_id, sb.branch_id

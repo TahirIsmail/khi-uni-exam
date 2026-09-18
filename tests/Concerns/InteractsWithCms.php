@@ -207,9 +207,28 @@ trait InteractsWithCms
     /** Turns two-factor authentication on or off in kmu-cms (Exam Module Settings). */
     protected function cmsMfa(bool $enabled): void
     {
+        $this->cmsExamSettings(['kmu_assess_mfa_enabled' => (int) $enabled]);
+    }
+
+    /**
+     * The exam module settings a Super Admin keeps in kmu-cms: how many reviews a question needs,
+     * how long a reviewer has, whether approval puts it into use, reviewer anonymity.
+     *
+     * @param  array<string, int>  $settings
+     */
+    protected function cmsExamSettings(array $settings = []): void
+    {
         $table = config('database.cms_source_database').'.sch_settings';
         DB::table($table)->delete();
-        DB::table($table)->insert(['id' => 1, 'name' => 'KMU', 'kmu_assess_mfa_enabled' => (int) $enabled]);
+        DB::table($table)->insert(array_merge([
+            'id' => 1,
+            'name' => 'KMU',
+            'kmu_assess_mfa_enabled' => 0,
+            'kmu_assess_reviews_required' => 1,
+            'kmu_assess_review_days' => 7,
+            'kmu_assess_auto_activate' => 1,
+            'kmu_assess_reviewer_anonymous' => 0,
+        ], $settings));
     }
 
     /**

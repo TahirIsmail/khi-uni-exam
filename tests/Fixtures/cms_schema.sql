@@ -371,6 +371,10 @@ CREATE TABLE `sch_settings` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(100) DEFAULT NULL,
   `kmu_assess_mfa_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `kmu_assess_reviews_required` tinyint unsigned NOT NULL DEFAULT '1',
+  `kmu_assess_review_days` tinyint unsigned NOT NULL DEFAULT '7',
+  `kmu_assess_auto_activate` tinyint(1) NOT NULL DEFAULT '1',
+  `kmu_assess_reviewer_anonymous` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 SET FOREIGN_KEY_CHECKS = 1;

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -152,6 +153,41 @@ final class QuestionVersion extends Model
     public function statusLog(): HasMany
     {
         return $this->hasMany(VersionStatusLog::class, 'version_id')->orderBy('id');
+    }
+
+    /**
+     * @return HasMany<ReviewAssignment, $this>
+     */
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(ReviewAssignment::class, 'version_id')->orderBy('id');
+    }
+
+    /**
+     * @return HasMany<Review, $this>
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class, 'version_id')->orderBy('id');
+    }
+
+    /**
+     * Every pre-hoc judgement about this version: the author's proposal, each reviewer's values and
+     * the consolidated row.
+     *
+     * @return HasMany<PrehocAssessment, $this>
+     */
+    public function prehocAssessments(): HasMany
+    {
+        return $this->hasMany(PrehocAssessment::class, 'version_id')->orderBy('id');
+    }
+
+    /**
+     * @return HasOne<PrehocAssessment, $this>
+     */
+    public function consolidatedPrehoc(): HasOne
+    {
+        return $this->hasOne(PrehocAssessment::class, 'version_id')->where('is_consolidated', true);
     }
 
     /**

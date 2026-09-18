@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\QuestionBank\ApprovalController;
 use App\Http\Controllers\QuestionBank\ImportController;
 use App\Http\Controllers\QuestionBank\MediaController;
 use App\Http\Controllers\QuestionBank\QuestionController;
+use App\Http\Controllers\QuestionBank\ReviewController;
 use App\Http\Controllers\QuestionBank\TagController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +28,11 @@ Route::middleware('auth')->group(function () {
         Route::delete('{import}', [ImportController::class, 'destroy'])->middleware('can:qbank.import.run')->whereNumber('import')->name('destroy');
     });
 
+    // Review and approval. The workspace is opened by reviewers, approvers and the author, so it
+    // only needs the right to see the question; each action checks its own permission.
+    Route::get('reviews', [ReviewController::class, 'index'])->middleware('can:qbank.review.perform')->name('reviews.index');
+    Route::get('approvals', [ApprovalController::class, 'index'])->middleware('can:qbank.question.approve')->name('approvals.index');
+
     Route::get('questions/curriculum', [QuestionController::class, 'curriculum'])->middleware('can:qbank.question.view')->name('questions.curriculum');
     Route::post('questions/check', [QuestionController::class, 'check'])->middleware(['can:qbank.question.view', 'throttle:120,1'])->name('questions.check');
 
@@ -45,6 +52,15 @@ Route::middleware('auth')->group(function () {
             Route::get('edit', [QuestionController::class, 'edit'])->name('questions.edit');
             Route::put('/', [QuestionController::class, 'update'])->name('questions.update');
             Route::post('submit', [QuestionController::class, 'submit'])->middleware('can:qbank.question.submit')->name('questions.submit');
+
+            Route::get('review', [ReviewController::class, 'show'])->middleware('can:qbank.question.view')->name('reviews.show');
+            Route::post('review', [ReviewController::class, 'store'])->middleware(['can:qbank.review.perform', 'throttle:60,1'])->name('reviews.store');
+            Route::post('reviewers', [ReviewController::class, 'assign'])->middleware(['can:qbank.review.assign', 'throttle:60,1'])->name('reviews.assign');
+            Route::delete('reviewers/{assignment}', [ReviewController::class, 'cancelAssignment'])->middleware('can:qbank.review.assign')->whereNumber('assignment')->name('reviews.cancel');
+
+            Route::post('approve', [ApprovalController::class, 'approve'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.approve');
+            Route::post('activate', [ApprovalController::class, 'activate'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.activate');
+            Route::post('reject', [ApprovalController::class, 'reject'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.reject');
         });
     });
 });

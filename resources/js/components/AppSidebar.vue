@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { ArrowLeft, FileQuestion, LayoutGrid, Upload } from '@lucide/vue';
+import {
+    ArrowLeft,
+    BadgeCheck,
+    ClipboardCheck,
+    FileQuestion,
+    LayoutGrid,
+    Upload,
+} from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -15,8 +22,10 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as approvals } from '@/routes/approvals';
 import { index as imports } from '@/routes/imports';
 import { index as questions } from '@/routes/questions';
+import { index as reviews } from '@/routes/reviews';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -32,6 +41,22 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Question bank',
             href: questions(),
             icon: FileQuestion,
+        });
+    }
+
+    if (page.props.auth.can?.reviewQuestions) {
+        items.push({
+            title: 'My reviews',
+            href: reviews(),
+            icon: ClipboardCheck,
+        });
+    }
+
+    if (page.props.auth.can?.approveQuestions) {
+        items.push({
+            title: 'Approvals',
+            href: approvals(),
+            icon: BadgeCheck,
         });
     }
 

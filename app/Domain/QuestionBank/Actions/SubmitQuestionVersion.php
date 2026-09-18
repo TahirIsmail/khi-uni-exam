@@ -6,8 +6,10 @@ use App\Domain\Audit\AuditLogger;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\QuestionBank\Enums\VersionStatus;
+use App\Domain\QuestionBank\Models\PrehocAssessment;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\VersionStatusLog;
+use App\Domain\QuestionBank\Review\AssignReviewers;
 use App\Domain\QuestionBank\Validation\QuestionValidator;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Models\User;
@@ -18,6 +20,10 @@ use Illuminate\Validation\ValidationException;
 /**
  * Sends a draft for review. Everything the type requires must be there: the same checks the editor
  * shows are applied again here, because the editor cannot be trusted.
+ *
+ * Submission also starts the review: the author's own level-of-thinking and difficulty are kept as
+ * their proposal (a reviewer's values override it later, and both are stored), and reviewers are
+ * assigned automatically from the course's pool.
  */
 final class SubmitQuestionVersion
 {
@@ -25,6 +31,7 @@ final class SubmitQuestionVersion
         private readonly AccessControl $access,
         private readonly QuestionValidator $validator,
         private readonly VersionContentReader $reader,
+        private readonly AssignReviewers $assignReviewers,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -55,7 +62,27 @@ final class SubmitQuestionVersion
                 'occurred_at' => now(),
             ]);
 
-            $this->audit->record('qbank.version.submitted', 'question_version', $version->id, ['status' => $from->value], ['status' => VersionStatus::Submitted->value], $note, $user, $version->branch_id);
+            if ($version->cognitive_level_id !== null || $version->difficulty_level_id !== null) {
+                PrehocAssessment::query()->create([
+                    'version_id' => $version->id,
+                    'question_id' => $version->question_id,
+                    'branch_id' => $version->branch_id,
+                    'review_id' => null,
+                    'source' => 'author',
+                    'cognitive_level_id' => $version->cognitive_level_id,
+                    'difficulty_level_id' => $version->difficulty_level_id,
+                    'is_consolidated' => false,
+                    'assessed_by' => $user->id,
+                    'assessed_at' => now(),
+                ]);
+            }
+
+            $assigned = $this->assignReviewers->auto($version, $user);
+
+            $this->audit->record('qbank.version.submitted', 'question_version', $version->id, ['status' => $from->value], [
+                'status' => VersionStatus::Submitted->value,
+                'reviewers_assigned' => count($assigned),
+            ], $note, $user, $version->branch_id);
 
             return $version->fresh() ?? $version;
         });

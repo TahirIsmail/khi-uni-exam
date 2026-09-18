@@ -223,3 +223,100 @@ export type ImportRowView = {
     questionId: number | null;
     versionId: number | null;
 };
+
+export type ReviewAssignmentRow = {
+    id: number;
+    status: string;
+    isOverdue: boolean;
+    dueAt: string | null;
+    assignedAt: string;
+    submittedAt: string | null;
+    outcome: string | null;
+    questionId: number;
+    versionId: number;
+    reference: string;
+    versionNo: number;
+    versionStatus: string;
+    type: string;
+    course: string;
+    marks: number;
+    summary: string;
+};
+
+export type ApprovalRow = {
+    questionId: number;
+    versionId: number;
+    reference: string;
+    versionNo: number;
+    status: string;
+    statusLabel: string;
+    type: string;
+    course: string;
+    marks: number;
+    summary: string;
+    submittedAt: string | null;
+    reviewsIn: number;
+    reviewsNeeded: number;
+    isMine: boolean;
+    blockedBecause: string | null;
+};
+
+export type ChecklistItemInfo = {
+    code: string;
+    text: string;
+    guidance: string | null;
+    isRequired: boolean;
+};
+
+export type PrehocDecisionInfo = {
+    id: number;
+    code: string;
+    name: string;
+    description: string | null;
+    isAccept: boolean;
+    needsComment: boolean;
+};
+
+export type PrehocRow = {
+    id: number;
+    source: 'author' | 'reviewer' | 'consolidated';
+    reviewId: number | null;
+    cognitive: string | null;
+    difficulty: string | null;
+    cognitiveLevelId: number | null;
+    difficultyLevelId: number | null;
+    estimatedP: number | null;
+    reason: string | null;
+    isConsolidated: boolean;
+    assessedAt: string;
+};
+
+export type ReviewRow = {
+    id: number;
+    reviewer: string;
+    isMe: boolean;
+    outcome: string;
+    decision: string | null;
+    comments: string | null;
+    checklist: {
+        text: string;
+        pass: boolean;
+        note: string | null;
+        isRequired: boolean;
+    }[];
+    failedRequired: string[];
+    submittedAt: string;
+    prehoc: PrehocRow | null;
+};
+
+export type AssignmentRow = {
+    id: number;
+    reviewer: string;
+    isMe: boolean;
+    status: string;
+    isOverdue: boolean;
+    dueAt: string | null;
+    assignedAt: string;
+    wasAutomatic: boolean;
+    cancelReason: string | null;
+};

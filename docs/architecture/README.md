@@ -211,6 +211,49 @@ question as a candidate would see it, with the answer key.
 - **In the audit log**: `qbank.import.checked`, `qbank.import.committed`, `qbank.import.discarded`,
   and a `qbank.question.created` entry per draft.
 
+## Review, pre-hoc assessment and approval (step 12)
+
+Three things are kept apart, each with its own history and its own authorised role (blueprint 9):
+the **workflow status** says where a version is in the process, a **review** is one reviewer's
+outcome, and a **pre-hoc assessment** is the expert judgement about the question itself.
+
+- **Assignment**: sending a question for review assigns reviewers automatically — round-robin by who
+  has the fewest open reviews, from the staff of the campus who may review that course. The author
+  is never assigned their own question. Somebody with "Assign Reviewers" can take a review back
+  (with a reason) and ask somebody else. The due date comes from the kmu-cms setting.
+- **The reviewer's outcome** is either _request changes_ (a comment is required; the question goes
+  straight back to its author and the other open reviews are called off) or _a review_: the
+  item-writing checklist, a pre-hoc decision, and — for whoever may record it — the level of
+  thinking, the expected difficulty and the expected pass rate. A submitted review can never be
+  changed or deleted (database triggers), so a second opinion means a second review.
+- **The checklist** (`qb_review_checklist_items`) is the NBME item-writing guide: cover-the-options,
+  no negative lead-in, homogeneous options, no absolute terms, no grammatical cues, the key is not
+  the longest, plus two advisory items. Which ones apply depends on the kind of question, and adding
+  a rule is a new row. The required ones must pass before a question can be approved.
+- **The approval gate**: enough reviews for this round, no required checklist item marked as failed,
+  an "accept" decision, an approver who is not the author, and — when the reviewers decided
+  differently — a reason. A review from before the author last changed the question does not count:
+  each submission is its own round.
+- **Approval** stores the consolidated pre-hoc row (the one row per version the database enforces)
+  and copies its level of thinking and difficulty onto the version. A blueprint later draws on those
+  values, never on the author's proposal, which is kept as its own row. Approved questions go into
+  use straight away, or wait, depending on the kmu-cms setting; putting one into use supersedes the
+  version that was in use before.
+- **Turning a question down** archives the version with a reason and, when nothing usable is left,
+  archives the question too. Nothing is deleted.
+- **Screens**: _My reviews_ (`/reviews`), the review workspace
+  (`/questions/{question}/versions/{version}/review` — the question as a candidate sees it, the
+  checklist, the pre-hoc form, the comments, and the approver's decision), and _Approvals_
+  (`/approvals`, split into ready to decide, still in review, and approved but not in use). The
+  dashboard shows how many reviews are waiting for you.
+- **Administered in kmu-cms** (Question Bank & Exams → Exam Module Settings, Super Admin only): how
+  many reviews a question needs, how many days a reviewer has, whether approval puts the question
+  into use straight away, and whether authors see reviewer names. Every change is logged there in
+  words.
+- **In the audit log**: `qbank.review.assigned`, `qbank.review.cancelled`, `qbank.review.submitted`,
+  `qbank.review.changes_requested`, `qbank.prehoc.recorded`, `qbank.question.approved`,
+  `qbank.question.activated`, `qbank.question.rejected`.
+
 ## Decisions
 
 - [ADR-0002 — Staff sign in once, in kmu-cms (SSO)](adr-0002-sso-from-cms.md)
@@ -232,7 +275,7 @@ question as a candidate would see it, with the answer key.
 | 9    | Question editor, live validation, candidate preview, versions                                             | kmu-assess | Done                            |
 | 10   | Search and filters, version history, timeline, side-by-side diff                                          | kmu-assess | Done                            |
 | 11   | Excel/CSV import                                                                                          | kmu-assess | Done                            |
-| 12   | Review, pre-hoc, approval                                                                                 | kmu-assess |                                 |
+| 12   | Review, pre-hoc, approval                                                                                 | both       | Done                            |
 | 13   | Acceptance testing of the increment                                                                       | both       |                                 |
 
 Exam delivery (including ADR-0003) is built in the later delivery phase, but its tables and

@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import { FilePlus2, FileQuestion } from '@lucide/vue';
+import {
+    BadgeCheck,
+    ClipboardCheck,
+    FilePlus2,
+    FileQuestion,
+} from '@lucide/vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { dashboard } from '@/routes';
+import { index as approvals } from '@/routes/approvals';
 import { create, index } from '@/routes/questions';
+import { index as reviews } from '@/routes/reviews';
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Dashboard', href: dashboard() }] },
 });
 
 const props = defineProps<{
+    work: { myReviews: number | null; toApprove: number | null };
     questionBank: {
         visible: boolean;
         total: number;
@@ -54,6 +62,28 @@ const page = usePage();
                     variant="outline"
                 >
                     <Link :href="create()"><FilePlus2 /> Write a question</Link>
+                </Button>
+                <Button
+                    v-if="work.myReviews !== null"
+                    as-child
+                    :variant="work.myReviews > 0 ? 'default' : 'outline'"
+                    data-test="my-reviews"
+                >
+                    <Link :href="reviews()"
+                        ><ClipboardCheck /> My reviews ({{
+                            work.myReviews
+                        }})</Link
+                    >
+                </Button>
+                <Button
+                    v-if="work.toApprove !== null"
+                    as-child
+                    :variant="work.toApprove > 0 ? 'default' : 'outline'"
+                    data-test="to-approve"
+                >
+                    <Link :href="approvals()"
+                        ><BadgeCheck /> To approve ({{ work.toApprove }})</Link
+                    >
                 </Button>
             </div>
 

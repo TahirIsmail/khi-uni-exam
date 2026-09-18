@@ -14,6 +14,8 @@ export type AuthCan = {
     viewQuestions?: boolean;
     createQuestions?: boolean;
     importQuestions?: boolean;
+    reviewQuestions?: boolean;
+    approveQuestions?: boolean;
 };
 
 export type Auth = {

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Dashboard;
 
 use App\Domain\Identity\ActiveBranch;
 use App\Domain\QuestionBank\Enums\VersionStatus;
+use App\Domain\QuestionBank\Models\QuestionVersion;
+use App\Domain\QuestionBank\Models\ReviewAssignment;
 use App\Domain\QuestionBank\Queries\QuestionEditorData;
 use App\Domain\QuestionBank\Queries\QuestionList;
 use App\Http\Controllers\Controller;
@@ -30,6 +32,15 @@ class DashboardController extends Controller
         }
 
         return Inertia::render('Dashboard', [
+            // What is waiting for this person: their own reviews, and questions to decide about.
+            'work' => [
+                'myReviews' => $branchId !== null && $user->can('qbank.review.perform')
+                    ? ReviewAssignment::query()->where('reviewer_id', $user->id)->where('branch_id', $branchId)->where('status', 'open')->count()
+                    : null,
+                'toApprove' => $branchId !== null && $user->can('qbank.question.approve')
+                    ? QuestionVersion::query()->where('branch_id', $branchId)->where('status', VersionStatus::UnderReview)->where('author_id', '!=', $user->id)->count()
+                    : null,
+            ],
             'questionBank' => [
                 'visible' => $canSee,
                 'total' => array_sum($counts),
