@@ -33,10 +33,12 @@ import { index } from '@/routes/questions';
 import type {
     CourseOption,
     CurriculumNode,
+    ExamTypeOption,
     QuestionChecks,
     QuestionDraft,
     QuestionTypeInfo,
     StoredVersion,
+    YearOption,
 } from '@/types';
 
 defineOptions({
@@ -48,6 +50,9 @@ const props = defineProps<{
     reference: string | null;
     types: QuestionTypeInfo[];
     programmes: { id: number; name: string; code: string }[];
+    years: YearOption[];
+    programmeCalendars: Record<number, string>;
+    examTypes: ExamTypeOption[];
     courses: CourseOption[];
     disciplines: { id: number; code: string; name: string }[];
     tags: { id: number; name: string }[];
@@ -68,6 +73,7 @@ const draft = ref<QuestionDraft>(
               course_id: props.version.courseId,
               node_id: props.version.nodeId,
               discipline_id: props.version.disciplineId,
+              exam_type_id: props.version.examTypeId,
               vignette: props.version.vignette,
               stem: props.version.stem,
               lead_in: props.version.leadIn,
@@ -89,6 +95,7 @@ const draft = ref<QuestionDraft>(
               course_id: props.courses[0]?.id ?? null,
               node_id: null,
               discipline_id: null,
+              exam_type_id: null,
               vignette: null,
               stem: '',
               lead_in: null,
@@ -138,10 +145,50 @@ const topics = computed(() =>
 );
 const hasCourses = computed(() => props.courses.length > 0);
 
-// The CMS structure decides the order: programme, then its Course IDs, then the topics inside.
-const coursesOfProgramme = computed(() =>
-    props.courses.filter((course) => course.programme_id === programmeId.value),
+// KMU files a question as Programme → Year / Semester → Examination → Module / Subject → Topic,
+// so the editor asks in that order and each choice narrows the next.
+const yearKey = (professionalId: number | null, termId: number | null) =>
+    `${professionalId ?? ''}${termId === null ? '' : `-${termId}`}`;
+
+const yearsOfProgramme = computed(() =>
+    props.years.filter((year) => year.programme_id === programmeId.value),
 );
+
+const yearId = ref<string | null>(
+    props.version !== null
+        ? yearKey(props.version.professionalId, props.version.termId)
+        : (yearsOfProgramme.value[0]?.id ?? null),
+);
+
+const selectedYear = computed(
+    () => props.years.find((year) => year.id === yearId.value) ?? null,
+);
+
+const coursesOfProgramme = computed(() =>
+    props.courses.filter(
+        (course) =>
+            course.programme_id === programmeId.value &&
+            (selectedYear.value === null ||
+                (course.professional_id ===
+                    selectedYear.value.professional_id &&
+                    course.term_id === selectedYear.value.term_id)),
+    ),
+);
+
+// Annual and Supplementary for annual programmes, Regular and Retake for semester ones.
+const examTypesOfProgramme = computed(() => {
+    const calendar =
+        programmeId.value === null
+            ? null
+            : props.programmeCalendars[programmeId.value];
+
+    return props.examTypes.filter((row) => row.calendar === calendar);
+});
+
+// A new question starts in the first course of the first year of the first programme.
+if (props.version === null) {
+    draft.value.course_id = coursesOfProgramme.value[0]?.id ?? null;
+}
 
 // Topics are shown with their parents (for MBBS: discipline → topic → subtopic).
 const topicOptions = computed(() => {
@@ -256,6 +303,20 @@ async function loadTopics(courseId: number | null): Promise<void> {
 }
 
 watch(programmeId, (id, previous) => {
+    if (previous === undefined || id === previous) {
+        return;
+    }
+    yearId.value = yearsOfProgramme.value[0]?.id ?? null;
+    if (
+        !examTypesOfProgramme.value.some(
+            (row) => row.id === draft.value.exam_type_id,
+        )
+    ) {
+        draft.value.exam_type_id = null;
+    }
+});
+
+watch(yearId, (id, previous) => {
     if (previous === undefined || id === previous) {
         return;
     }
@@ -531,7 +592,79 @@ function submit(): void {
                             </div>
 
                             <div class="grid gap-1.5">
-                                <Label for="course">Course ID *</Label>
+                                <Label for="year">Year / Semester *</Label>
+                                <select
+                                    id="year"
+                                    v-model="yearId"
+                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    :disabled="
+                                        readOnly ||
+                                        yearsOfProgramme.length === 0
+                                    "
+                                    data-test="year"
+                                >
+                                    <option
+                                        v-if="yearsOfProgramme.length === 0"
+                                        :value="null"
+                                    >
+                                        No year with a course yet
+                                    </option>
+                                    <option
+                                        v-for="year in yearsOfProgramme"
+                                        :key="year.id"
+                                        :value="year.id"
+                                    >
+                                        {{ year.name }}
+                                    </option>
+                                </select>
+                                <p class="text-muted-foreground text-xs">
+                                    e.g. First Professional; for DPT, First
+                                    Professional, Semester I.
+                                </p>
+                            </div>
+
+                            <div class="grid gap-1.5">
+                                <Label for="exam-type">Examination *</Label>
+                                <select
+                                    id="exam-type"
+                                    v-model.number="draft.exam_type_id"
+                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    :disabled="readOnly"
+                                    data-test="exam-type"
+                                >
+                                    <option :value="null">Choose…</option>
+                                    <option
+                                        v-for="row in examTypesOfProgramme"
+                                        :key="row.id"
+                                        :value="row.id"
+                                    >
+                                        {{ row.name }}
+                                    </option>
+                                </select>
+                                <p class="text-muted-foreground text-xs">
+                                    {{
+                                        examTypesOfProgramme.length > 0
+                                            ? examTypesOfProgramme
+                                                  .map((row) => row.name)
+                                                  .join(' or ')
+                                            : 'Annual, Supplementary, Regular or Retake'
+                                    }}
+                                    — the examination this question is written
+                                    for.
+                                </p>
+                                <InputError
+                                    v-for="(message, i) in checks.errors[
+                                        'exam_type_id'
+                                    ] ?? []"
+                                    :key="i"
+                                    :message="message"
+                                />
+                            </div>
+
+                            <div class="grid gap-1.5">
+                                <Label for="course"
+                                    >Module / Subject (Course ID) *</Label
+                                >
                                 <select
                                     id="course"
                                     v-model.number="draft.course_id"
@@ -542,7 +675,7 @@ function submit(): void {
                                         v-if="coursesOfProgramme.length === 0"
                                         :value="null"
                                     >
-                                        No course in this programme
+                                        No course in this year
                                     </option>
                                     <option
                                         v-for="course in coursesOfProgramme"
@@ -811,7 +944,7 @@ function submit(): void {
                             <div class="grid gap-4 sm:grid-cols-2">
                                 <div class="grid gap-1.5">
                                     <Label for="cognitive"
-                                        >Level of thinking</Label
+                                        >Cognitive level *</Label
                                     >
                                     <select
                                         id="cognitive"
@@ -835,7 +968,7 @@ function submit(): void {
                                 </div>
                                 <div class="grid gap-1.5">
                                     <Label for="difficulty"
-                                        >Expected difficulty</Label
+                                        >Difficulty level *</Label
                                     >
                                     <select
                                         id="difficulty"

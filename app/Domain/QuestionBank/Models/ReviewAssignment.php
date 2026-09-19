@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  * @property int $question_id
  * @property int $branch_id
  * @property int $reviewer_id
+ * @property string $stage subject or academic
+ * @property int $round the version's round of review
  * @property int|null $assigned_by
  * @property string $status
  * @property Carbon|null $due_at
@@ -26,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $cancelled_at
  * @property string|null $cancel_reason
  */
-#[Fillable(['version_id', 'question_id', 'branch_id', 'reviewer_id', 'assigned_by', 'status', 'due_at', 'assigned_at', 'submitted_at', 'cancelled_at', 'cancel_reason'])]
+#[Fillable(['version_id', 'question_id', 'branch_id', 'reviewer_id', 'stage', 'round', 'assigned_by', 'status', 'due_at', 'assigned_at', 'submitted_at', 'cancelled_at', 'cancel_reason'])]
 final class ReviewAssignment extends Model
 {
     protected $table = 'qb_review_assignments';

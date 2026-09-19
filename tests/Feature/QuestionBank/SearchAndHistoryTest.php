@@ -36,6 +36,9 @@ function payload(array $overrides = []): array
         'lead_in' => 'Which investigation is most useful first?',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
         'options' => [
             ['label' => 'A', 'body' => 'ECG', 'is_correct' => true, 'sort_order' => 1],
             ['label' => 'B', 'body' => 'Chest radiograph', 'is_correct' => false, 'sort_order' => 2],
@@ -193,10 +196,10 @@ test('the history of a question shows every version and step, newest first', fun
         ->where('versions.0.status', 'changes_requested')
         ->where('versions.0.author', $this->author->name)
         ->where('timeline', fn ($timeline) => collect($timeline)->pluck('what')->all() === [
-            'Changes asked for', 'Given to a reviewer', 'Sent for review', 'Question written',
+            'Changes asked for', 'Given to a reviewer', 'Author proposed: Understanding · Moderate', 'Sent for review', 'Question written',
         ])
         ->where('timeline.0.note', 'Two options overlap')
-        ->where('timeline.2.note', 'Ready for review'));
+        ->where('timeline.3.note', 'Ready for review'));
 });
 
 test('the history lists other questions with the same text', function () {
@@ -266,4 +269,46 @@ test('the word diff shows the smallest set of changes', function () {
         ->and(collect($parts)->firstWhere('type', 'added')['text'])->toBe('warm')
         ->and(TextDiff::changed('same words', ' same words '))->toBeFalse()
         ->and(TextDiff::words('', 'new text'))->toBe([['type' => 'added', 'text' => 'new text']]);
+});
+
+test('the search narrows by year or semester, examination, and whether a question has been used', function () {
+    $annual = write();
+    $supplementary = write(['exam_type_id' => $this->cmsExamType('supplementary'), 'stem' => '<p>A supplementary examination question about the cardiac cycle.</p>']);
+
+    $version = QuestionVersion::query()->findOrFail($annual->id);
+    $year = (string) $version->professional_id;
+
+    $this->actingAs($this->author)->get('/questions?year='.$year)->assertInertia(fn ($page) => $page->where('questions.total', 2));
+    $this->actingAs($this->author)->get('/questions?year=999999')->assertInertia(fn ($page) => $page->where('questions.total', 0));
+
+    $this->actingAs($this->author)->get('/questions?exam_type_id='.$this->cmsExamType('supplementary'))->assertInertia(fn ($page) => $page
+        ->where('questions.total', 1)
+        ->where('questions.data.0.id', $supplementary->question_id)
+        ->where('questions.data.0.examType', 'Supplementary'));
+
+    // Neither has been used in an examination yet.
+    $this->actingAs($this->author)->get('/questions?used=unused')->assertInertia(fn ($page) => $page->where('questions.total', 2));
+    $this->actingAs($this->author)->get('/questions?used=used')->assertInertia(fn ($page) => $page->where('questions.total', 0));
+
+    // Once one has, the history of its use finds it by date.
+    DB::table('qb_question_usage')->insert([
+        'version_id' => $annual->id, 'question_id' => $annual->question_id, 'branch_id' => $this->branch,
+        'exam_label' => 'MBBS First Professional Annual Examination 2026', 'used_on' => '2026-05-10',
+        'candidates' => 251, 'observed_p' => 0.72, 'discrimination' => 0.31,
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $this->actingAs($this->author)->get('/questions?used=used')->assertInertia(fn ($page) => $page->where('questions.total', 1));
+    $this->actingAs($this->author)->get('/questions?used_from=2026-05-01&used_to=2026-05-31')->assertInertia(fn ($page) => $page->where('questions.total', 1));
+    $this->actingAs($this->author)->get('/questions?used_from=2026-06-01')->assertInertia(fn ($page) => $page->where('questions.total', 0));
+
+    // And the question's page shows where it was used and how it performed.
+    $this->actingAs($this->author)->get("/questions/{$annual->question_id}")->assertInertia(fn ($page) => $page
+        ->where('usage.exams.0.exam', 'MBBS First Professional Annual Examination 2026')
+        ->where('usage.exams.0.candidates', 251)
+        ->where('usage.exams.0.difficultyIndex', 0.72));
+
+    // Bad values are refused, not ignored.
+    $this->actingAs($this->author)->get('/questions?year=abc')->assertSessionHasErrors('year');
+    $this->actingAs($this->author)->get('/questions?used=sometimes')->assertSessionHasErrors('used');
 });

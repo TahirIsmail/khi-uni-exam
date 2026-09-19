@@ -29,6 +29,23 @@ use Tests\Concerns\PassesMfa;
 
 uses(InteractsWithCms::class, PassesMfa::class);
 
+/** The QBank / academic review that follows the department / subject review(s). */
+function academicReviewOf(QuestionVersion $version, array $overrides = []): void
+{
+    $assignment = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->where('status', 'open')->firstOrFail();
+    $codes = DB::table('qb_review_checklist_items')->where('is_active', true)
+        ->where(fn ($q) => $q->whereNull('applies_to')->orWhere('applies_to', $version->type->family))
+        ->pluck('code');
+
+    test()->actingAs(test()->academic)->post("/questions/{$version->question_id}/versions/{$version->id}/review", array_replace([
+        'assignment_id' => $assignment->id,
+        'outcome' => 'reviewed',
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+        'comments' => 'Suitable for the question bank; language and key checked.',
+        'checklist' => $codes->map(fn (string $code): array => ['code' => $code, 'pass' => true])->all(),
+    ], $overrides))->assertRedirect('/reviews');
+}
+
 beforeEach(function () {
     $this->shareCmsConnection();
     $this->cmsExamSettings();
@@ -63,6 +80,13 @@ beforeEach(function () {
     $this->cmsGrant($approverRole, 'qbank_approve', 'view');
     $this->approverRole = $approverRole;
     $this->approver = $this->staffUser([$approverRole], $this->branch);
+
+    $academicRole = $this->cmsRole('QBank academic reviewer');
+    $this->cmsGrant($academicRole, 'qbank_questions', 'view');
+    $this->cmsGrant($academicRole, 'qbank_review_academic', 'view');
+    $this->cmsGrant($academicRole, 'qbank_prehoc', 'view');
+    $this->academicRole = $academicRole;
+    $this->academic = $this->staffUser([$academicRole], $this->branch);
 });
 
 /** A question of the given type, with everything that type requires. */
@@ -78,6 +102,7 @@ function ofType(string $code, array $overrides = []): array
         'lead_in' => 'Which investigation is most useful first?',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
         'cognitive_level_id' => 2,
         'difficulty_level_id' => 2,
         'options' => [],
@@ -156,7 +181,6 @@ function reviewFor(QuestionVersion $version, array $overrides = []): array
         'checklist' => $codes->map(fn (string $code): array => ['code' => $code, 'pass' => true])->all(),
         'cognitive_level_id' => 3,
         'difficulty_level_id' => 2,
-        'estimated_p' => 0.55,
     ], $overrides);
 }
 
@@ -247,6 +271,7 @@ test('criterion 5: editing a question in use makes v2, v1 stays in use until v2 
         ->and($question->fresh()->active_version_id)->toBe($first->id);
 
     $this->actingAs($this->reviewer)->post("/questions/{$question->id}/versions/{$second->id}/review", reviewFor($second));
+    academicReviewOf($second);
     $this->actingAs($this->approver)->post("/questions/{$question->id}/versions/{$second->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -314,26 +339,24 @@ test('criterion 7: every pre-hoc judgement is stored and shown in the timeline',
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewFor($version, [
         'assignment_id' => (int) ReviewAssignment::query()->where('version_id', $version->id)->where('reviewer_id', $this->reviewer->id)->value('id'),
         'cognitive_level_id' => 3,
-        'estimated_p' => 0.6,
     ]));
     $this->actingAs($second)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewFor($version, [
         'assignment_id' => (int) ReviewAssignment::query()->where('version_id', $version->id)->where('reviewer_id', $second->id)->value('id'),
         'cognitive_level_id' => 4,
-        'estimated_p' => 0.4,
     ]));
+    academicReviewOf($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
         'difficulty_level_id' => 3,
-        'estimated_p' => 0.5,
-        'reason' => 'Both reviewers accept it; I take the middle of their estimates.',
+        'reason' => 'One reviewer said Application, the other Analysis; Application fits the lead-in.',
     ])->assertRedirect();
 
     // One row per judgement: the author's proposal, one per reviewer, and the consolidated one.
     $rows = PrehocAssessment::query()->where('version_id', $version->id)->orderBy('id')->get();
     expect($rows->pluck('source')->all())->toBe(['author', 'reviewer', 'reviewer', 'consolidated'])
         ->and($rows->where('is_consolidated', true)->count())->toBe(1)
-        ->and($rows->pluck('estimated_p')->filter()->values()->all())->toBe([0.6, 0.4, 0.5]);
+        ->and($rows->pluck('cognitive_level_id')->all())->toBe([2, 3, 4, 3]);
 
     // And all of them are visible in the timeline, with what each person judged.
     $this->actingAs($this->author)->get("/questions/{$version->question_id}")
@@ -344,7 +367,8 @@ test('criterion 7: every pre-hoc judgement is stored and shown in the timeline',
                 return str_contains($what, 'Author proposed:')
                     && substr_count($what, 'Reviewer judged:') === 2
                     && str_contains($what, 'Settled on approval:')
-                    && str_contains($what, 'Reviewed: Accept');
+                    && str_contains($what, 'Department / Subject review: Accept')
+                    && str_contains($what, 'QBank / Academic review: Accept');
             }));
 });
 
@@ -365,7 +389,8 @@ test('criterion 8: workflow status, pre-hoc decision and post-hoc decision are s
 
 test('criterion 9: a large import commits the good rows and reports exactly the bad ones', function () {
     $code = DB::table(config('database.cms_source_database').'.acad_courses')->where('id', $this->mbbsCourse)->value('course_code');
-    $header = 'type,course,topic,stem,lead_in,marks,options,correct';
+    $this->cmsExamType('annual');
+    $header = 'type,course,topic,stem,lead_in,marks,options,correct,exam_type,cognitive,difficulty';
     $lines = [$header];
 
     // 500 rows: 480 good, 20 that cannot be imported (10 unknown type, 10 with no key).
@@ -373,12 +398,12 @@ test('criterion 9: a large import commits the good rows and reports exactly the 
         $stem = "A patient presents with symptom number {$i} of this teaching set and needs a decision.";
         if ($i % 50 === 0 && $i <= 500) {
             // Every 50th row: an unknown type (10 rows).
-            $lines[] = "\"not-a-type\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",A";
+            $lines[] = "\"not-a-type\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",A,Annual,Application,Moderate";
         } elseif ($i % 50 === 25) {
             // And another 10 with no answer key.
-            $lines[] = "\"sba\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",";
+            $lines[] = "\"sba\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",,Annual,Application,Moderate";
         } else {
-            $lines[] = "\"sba\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",A";
+            $lines[] = "\"sba\",\"{$code}\",\"Acute coronary syndrome\",\"{$stem}\",\"Which is first?\",1,\"ECG | Chest radiograph\",A,Annual,Application,Moderate";
         }
     }
 
@@ -540,6 +565,7 @@ function approvedQuestion(): QuestionVersion
 
     test()->actingAs(test()->author)->post("/questions/{$version->question_id}/versions/{$version->id}/submit")->assertRedirect();
     test()->actingAs(test()->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewFor($version))->assertRedirect();
+    academicReviewOf($version);
     test()->actingAs(test()->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,

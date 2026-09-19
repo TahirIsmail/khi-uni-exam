@@ -33,7 +33,8 @@ Route::middleware('auth')->group(function () {
 
     // Review and approval. The workspace is opened by reviewers, approvers and the author, so it
     // only needs the right to see the question; each action checks its own permission.
-    Route::get('reviews', [ReviewController::class, 'index'])->middleware('can:qbank.review.perform')->name('reviews.index');
+    // Either level of reviewer may open these; the controller checks which.
+    Route::get('reviews', [ReviewController::class, 'index'])->name('reviews.index');
     Route::get('approvals', [ApprovalController::class, 'index'])->middleware('can:qbank.question.approve')->name('approvals.index');
 
     Route::get('questions/curriculum', [QuestionController::class, 'curriculum'])->middleware('can:qbank.question.view')->name('questions.curriculum');
@@ -57,7 +58,7 @@ Route::middleware('auth')->group(function () {
             Route::post('submit', [QuestionController::class, 'submit'])->middleware('can:qbank.question.submit')->name('questions.submit');
 
             Route::get('review', [ReviewController::class, 'show'])->middleware('can:qbank.question.view')->name('reviews.show');
-            Route::post('review', [ReviewController::class, 'store'])->middleware(['can:qbank.review.perform', 'throttle:60,1'])->name('reviews.store');
+            Route::post('review', [ReviewController::class, 'store'])->middleware('throttle:60,1')->name('reviews.store');
             Route::post('reviewers', [ReviewController::class, 'assign'])->middleware(['can:qbank.review.assign', 'throttle:60,1'])->name('reviews.assign');
             Route::delete('reviewers/{assignment}', [ReviewController::class, 'cancelAssignment'])->middleware('can:qbank.review.assign')->whereNumber('assignment')->name('reviews.cancel');
 

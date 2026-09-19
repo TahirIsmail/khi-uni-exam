@@ -29,9 +29,10 @@ final class Permissions
             'qbank.question.export' => ['Export questions (including answer keys)', 'qbank_questions_export', 'view'],
         ],
         'Review' => [
-            'qbank.review.perform' => ['Review questions', 'qbank_review', 'view'],
+            'qbank.review.perform' => ['Review questions (department / subject level)', 'qbank_review', 'view'],
+            'qbank.review.academic' => ['Review questions (QBank / academic level)', 'qbank_review_academic', 'view'],
             'qbank.review.assign' => ['Assign reviewers', 'qbank_review_assign', 'view'],
-            'qbank.prehoc.record' => ['Record pre-hoc assessment', 'qbank_prehoc', 'view'],
+            'qbank.prehoc.record' => ['Record the cognitive and difficulty level', 'qbank_prehoc', 'view'],
             'qbank.question.approve' => ['Approve questions', 'qbank_approve', 'view'],
         ],
         'Import' => [

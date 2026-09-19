@@ -62,7 +62,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 ## Administration lives in kmu-cms (ADR-0004)
 
 This app is only the question bank & exam module. Everything about who may use it is managed in
-kmu-cms under **Question Bank & Exams** (sidebar) and **Roles → Assign Permission**:
+kmu-cms under **Exams** (sidebar) and **Roles → Assign Permission**:
 
 | What                             | Where in kmu-cms                                                                  | Read here through                                 |
 | -------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -275,6 +275,43 @@ outcome, and a **pre-hoc assessment** is the expert judgement about the question
   discrimination indices and the share of candidates per option. They are placeholders: the three
   judgements — workflow status, pre-hoc, post-hoc — are separate records from the start, and the
   screens that fill them belong to the later delivery and post-hoc phases.
+
+## How this follows the KMU QBank mechanism
+
+KMU described the question bank as a 13-step journey — _create → review → approve → store → select
+for exam → analyse → update status_ — and a filing structure: **Programme → Year / Semester →
+Examination → Module / Subject → Topic → Question**. Where each step stands:
+
+| #    | KMU step                                                                                                                           | Here                                                                                                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | Question entry: contributor prepares, Year Incharge collects in the prescribed format, subject specialist + DME/DDE review         | Editor, and the spreadsheet import (the prescribed format); two levels of review, below                                                                                                    |
+| 2    | Question information                                                                                                               | Saved with every question: ID, programme, year/semester, examination, module/course/subject, Course ID, topic, question and options, answer key, cognitive level, difficulty level, status |
+| 3    | Approved question stored in QBank                                                                                                  | Approval, then "Accept — in QBank"                                                                                                                                                         |
+| 4    | Search and filter approved questions                                                                                               | Programme, year/semester, examination, module/subject, topic, Course ID, cognitive level, difficulty, status, used/unused, previous examination date                                       |
+| 5–10 | Paper setting against the blueprint/TOS, final paper, moderation before LMS upload, upload, activation, computer-based examination | Delivery phase — not built yet                                                                                                                                                             |
+| 11   | Post-hoc review: statistics, item and distractor analysis, reliability                                                             | Post-hoc phase — the per-question tables (`qb_question_usage`, `qb_posthoc_decisions`) exist                                                                                               |
+| 12   | Update question history                                                                                                            | The question page's "Use in examinations" section, filled by the delivery phase                                                                                                            |
+| 13   | Final decision: Retain · Review · Revise · Remove/Discard                                                                          | Post-hoc decision types, in these words                                                                                                                                                    |
+
+What changed to match it:
+
+- **Examination on every question.** Annual or Supplementary for annual programmes, Regular or Retake
+  for semester programmes; chosen in the editor, read from an import file (or its default), exported,
+  searched on, compared between versions, and fixed once the question is sent for review. A question
+  cannot be sent without it, nor without its cognitive and difficulty level.
+- **Year / Semester is its own step** in the editor and the search, between the programme and its
+  Course IDs — "First Professional", or for DPT "First Professional, Semester I".
+- **One status, in KMU's words**: Draft, Submitted for Review, Revise, Accept (and "Accept — in
+  QBank" once in use), Review, Remove / Discard. The workflow's finer steps are still recorded
+  underneath; the search filters and the dashboard count by these.
+- **Two levels of review** before approval, as KMU's roles have them: the Department / Subject
+  Reviewer(s) first, then one QBank / Academic Reviewer (a separate right in kmu-cms, and never the
+  same person), then the Approving Authority. Either level can send the question back to its author.
+  Each submission is a numbered round of review, so reviews from before the author's changes never
+  count towards approval.
+- **Taken out**: the "expected pass rate" field, which KMU's list does not have, and the word
+  "pre-hoc" from the screens — at KMU it means moderating the final paper before it goes to the LMS
+  (step 7), which belongs to the delivery phase.
 
 ## Acceptance
 

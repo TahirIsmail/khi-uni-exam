@@ -37,6 +37,7 @@ use Illuminate\Support\Carbon;
  * @property int $course_id
  * @property int $node_id
  * @property int|null $discipline_id
+ * @property int|null $exam_type_id
  * @property int|null $cognitive_level_id
  * @property int|null $difficulty_level_id
  * @property VersionStatus $status
@@ -46,13 +47,14 @@ use Illuminate\Support\Carbon;
  * @property int|null $import_row_id
  * @property int $author_id
  * @property Carbon|null $submitted_at
+ * @property int $review_round
  * @property Carbon|null $approved_at
  * @property int|null $approved_by
  * @property Carbon|null $activated_at
  * @property int $created_by
  * @property int|null $updated_by
  */
-#[Fillable(['question_id', 'version_no', 'question_type_id', 'branch_id', 'vignette', 'stem', 'lead_in', 'explanation', 'settings', 'marks', 'negative_marks', 'programme_id', 'professional_id', 'term_id', 'course_id', 'node_id', 'discipline_id', 'cognitive_level_id', 'difficulty_level_id', 'status', 'content_hash', 'search_text', 'source', 'import_row_id', 'author_id', 'submitted_at', 'approved_at', 'approved_by', 'activated_at', 'created_by', 'updated_by'])]
+#[Fillable(['question_id', 'version_no', 'question_type_id', 'branch_id', 'vignette', 'stem', 'lead_in', 'explanation', 'settings', 'marks', 'negative_marks', 'programme_id', 'professional_id', 'term_id', 'course_id', 'node_id', 'discipline_id', 'exam_type_id', 'cognitive_level_id', 'difficulty_level_id', 'status', 'content_hash', 'search_text', 'source', 'import_row_id', 'author_id', 'submitted_at', 'review_round', 'approved_at', 'approved_by', 'activated_at', 'created_by', 'updated_by'])]
 final class QuestionVersion extends Model
 {
     /** @use HasFactory<QuestionVersionFactory> */

@@ -113,6 +113,7 @@ export type QuestionDraft = {
     course_id: number | null;
     node_id: number | null;
     discipline_id: number | null;
+    exam_type_id: number | null;
     vignette: string | null;
     stem: string;
     lead_in: string | null;
@@ -141,6 +142,9 @@ export type StoredVersion = {
     courseId: number;
     nodeId: number;
     disciplineId: number | null;
+    examTypeId: number | null;
+    professionalId: number | null;
+    termId: number | null;
     vignette: string | null;
     stem: string;
     leadIn: string | null;
@@ -173,6 +177,7 @@ export type QuestionListRow = {
     statusLabel: string;
     type: string;
     course: string;
+    examType: string | null;
     marks: number;
     author: string;
     isMine: boolean;
@@ -226,6 +231,8 @@ export type ImportRowView = {
 
 export type ReviewAssignmentRow = {
     id: number;
+    stage: 'subject' | 'academic';
+    stageLabel: string;
     status: string;
     isOverdue: boolean;
     dueAt: string | null;
@@ -255,8 +262,9 @@ export type ApprovalRow = {
     marks: number;
     summary: string;
     submittedAt: string | null;
-    reviewsIn: number;
-    reviewsNeeded: number;
+    subjectIn: number;
+    subjectNeeded: number;
+    academicIn: number;
     isMine: boolean;
     blockedBecause: string | null;
 };
@@ -293,6 +301,8 @@ export type PrehocRow = {
 
 export type ReviewRow = {
     id: number;
+    stage: 'subject' | 'academic';
+    stageLabel: string;
     reviewer: string;
     isMe: boolean;
     outcome: string;
@@ -311,6 +321,8 @@ export type ReviewRow = {
 
 export type AssignmentRow = {
     id: number;
+    stage: 'subject' | 'academic';
+    stageLabel: string;
     reviewer: string;
     isMe: boolean;
     status: string;
@@ -319,4 +331,21 @@ export type AssignmentRow = {
     assignedAt: string;
     wasAutomatic: boolean;
     cancelReason: string | null;
+};
+
+/** A year of a programme, or for a semester programme one term of a year. */
+export type YearOption = {
+    id: string;
+    programme_id: number;
+    professional_id: number;
+    term_id: number | null;
+    name: string;
+};
+
+/** Annual and Supplementary belong to annual programmes, Regular and Retake to semester ones. */
+export type ExamTypeOption = {
+    id: number;
+    code: string;
+    name: string;
+    calendar: string;
 };

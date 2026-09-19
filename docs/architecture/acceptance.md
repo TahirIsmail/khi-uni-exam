@@ -2,15 +2,15 @@
 
 The blueprint sets fourteen criteria for this increment (academic structure, question bank, import,
 review and pre-hoc). This page maps each one to the test that proves it and records the result of
-the run on **18 September 2026**. Everything here is repeatable: the commands are in the table.
+the run on **20 September 2026**, after the changes that follow KMU's own description of the QBank. Everything here is repeatable: the commands are in the table.
 
 | Suite                                                       | Result     |
 | ----------------------------------------------------------- | ---------- |
-| kmu-assess `php artisan test`                               | 205 passed |
+| kmu-assess `php artisan test`                               | 210 passed |
 | kmu-assess `php artisan test tests/Scale` (50,000 versions) | 1 passed   |
-| kmu-assess `node tests/browser/question_editor.mjs`         | 33 passed  |
+| kmu-assess `node tests/browser/question_editor.mjs`         | 35 passed  |
 | kmu-assess `node tests/browser/question_import.mjs`         | 24 passed  |
-| kmu-assess `node tests/browser/question_review.mjs`         | 31 passed  |
+| kmu-assess `node tests/browser/question_review.mjs`         | 36 passed  |
 | kmu-cms `node tests/academic/*.mjs` (5 files)               | 120 passed |
 | kmu-cms `bash tests/security/http_smoke.sh`                 | 43 passed  |
 | kmu-cms `node tests/security/browser_csrf_guard.mjs`        | 8 passed   |
@@ -31,7 +31,7 @@ the run on **18 September 2026**. Everything here is repeatable: the commands ar
 | 7   | Pre-hoc values from each reviewer and the consolidated values are all stored and visible in the timeline                                        | Same file — four rows (author proposal, two reviewers, consolidated) and all four visible on the question's timeline                                                                                                                                 | Met         |
 | 8   | Workflow status, pre-hoc decision and (placeholder) post-hoc decision are separate fields in separate tables                                    | Same file — `qb_question_versions.status`, `qb_prehoc_assessments`, `qb_posthoc_decisions` (created in this step as a placeholder; its screens belong to the post-hoc phase)                                                                         | Met         |
 | 9   | Importing a 500-row file with 20 invalid rows commits 480, the report lists exactly those 20 with reasons, and exact duplicates are caught      | Same file (group `slow`) — 480 committed, 20 reported by line with their reason, and re-uploading the same file warns on all 480 as already in the bank                                                                                              | Met         |
-| 10  | Search combining course + topic + Bloom + difficulty + status + author returns correct results in < 1 s on 50,000 versions                      | `tests/Scale/SearchScaleTest.php` — filters 14 ms, filters with words 90 ms, status counts 187 ms                                                                                                                                                    | Met         |
+| 10  | Search combining course + topic + Bloom + difficulty + status + author returns correct results in < 1 s on 50,000 versions                      | `tests/Scale/SearchScaleTest.php` — filters 13 ms, filters with words 92 ms, status counts 180 ms                                                                                                                                                    | Met         |
 | 11  | A user scoped to DPT cannot see, search, export or open MBBS items by URL or API                                                                | `tests/Feature/Acceptance/IncrementOneTest.php` — the search shows only their programme, the MBBS question is 403 by every address, and the export contains only their own questions                                                                 | Met         |
 | 12  | Every action produces an audit row with actor, IP and before/after values; chain verification passes and a manually altered row is detected     | Same file, plus `tests/Feature/Audit/AuditLogTest.php` — rows cannot be updated or deleted at all, and a row written straight into the table breaks the chain, which names its id                                                                    | Met         |
 | 13  | CSRF protection is enabled in kmu-cms and existing CMS workflows pass the regression checklist                                                  | kmu-cms `tests/security/browser_csrf_guard.mjs` (forms, `form.submit()`, XHR, jQuery, fetch, multipart, cross-origin) and `http_smoke.sh` (43 checks), with the academic and SSO suites as the workflow regression                                   | Met         |

@@ -27,14 +27,14 @@ class DashboardController extends Controller
 
         $counts = $canSee ? $list->statusCounts($user, $branchId) : [];
         $statuses = [];
-        foreach ([VersionStatus::Draft, VersionStatus::ChangesRequested, VersionStatus::Submitted, VersionStatus::UnderReview, VersionStatus::Approved, VersionStatus::Active] as $status) {
-            $statuses[] = ['status' => $status->value, 'label' => $status->label(), 'count' => $counts[$status->value] ?? 0];
+        foreach ($canSee ? $list->statusGroupCounts($user, $branchId) : [] as $group) {
+            $statuses[] = ['status' => $group['key'], 'label' => $group['label'], 'count' => $group['count']];
         }
 
         return Inertia::render('Dashboard', [
             // What is waiting for this person: their own reviews, and questions to decide about.
             'work' => [
-                'myReviews' => $branchId !== null && $user->can('qbank.review.perform')
+                'myReviews' => $branchId !== null && ($user->can('qbank.review.perform') || $user->can('qbank.review.academic'))
                     ? ReviewAssignment::query()->where('reviewer_id', $user->id)->where('branch_id', $branchId)->where('status', 'open')->count()
                     : null,
                 'toApprove' => $branchId !== null && $user->can('qbank.question.approve')

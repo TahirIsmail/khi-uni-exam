@@ -162,11 +162,11 @@ cms(`INSERT INTO acad_curriculum_nodes (course_id, parent_id, level_type_id, cod
 // Two good rows, one with a type nobody recognises, and one that repeats the first row.
 const TOPIC = 'Acute coronary syndrome';
 const csv = [
-    'Type of question,Course ID,Topic,Question,Lead-in,Marks,Options,Answer key,Items,References,Tags',
-    `SBA,${COURSE_CODE},${TOPIC},"A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.","Which investigation is most useful first?",1,"ECG | Chest radiograph | Echocardiogram | Coronary angiography",A,,"Harrison, 21st ed p. 1875","ECG"`,
-    `MTF,${COURSE_CODE},${TOPIC},"Regarding the management of an inferior myocardial infarction:",,3,,,"Aspirin reduces mortality = true | Nitrates are given in right ventricular infarction = false | Reperfusion within 90 minutes is the aim = true",,`,
-    `Guess the answer,${COURSE_CODE},${TOPIC},"A question whose type nobody recognises at all.",,1,"Yes | No",A,,,`,
-    `SBA,${COURSE_CODE},${TOPIC},"A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.","Which investigation is most useful first?",1,"ECG | Chest radiograph | Echocardiogram | Coronary angiography",A,,,`,
+    'Type of question,Examination,Course ID,Topic,Question,Lead-in,Marks,Options,Answer key,Items,References,Tags,Bloom,Difficulty level',
+    `SBA,Annual,${COURSE_CODE},${TOPIC},"A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.","Which investigation is most useful first?",1,"ECG | Chest radiograph | Echocardiogram | Coronary angiography",A,,"Harrison, 21st ed p. 1875","ECG",Application,Moderate`,
+    `MTF,Annual,${COURSE_CODE},${TOPIC},"Regarding the management of an inferior myocardial infarction:",,3,,,"Aspirin reduces mortality = true | Nitrates are given in right ventricular infarction = false | Reperfusion within 90 minutes is the aim = true",,,Recall,Easy`,
+    `Guess the answer,Annual,${COURSE_CODE},${TOPIC},"A question whose type nobody recognises at all.",,1,"Yes | No",A,,,,Recall,Easy`,
+    `SBA,Annual,${COURSE_CODE},${TOPIC},"A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.","Which investigation is most useful first?",1,"ECG | Chest radiograph | Echocardiogram | Coronary angiography",A,,,,Application,Moderate`,
 ].join('\n');
 const uploadDir = mkdtempSync(join(tmpdir(), 'qb-import-e2e-file-'));
 const uploadPath = join(uploadDir, 'cardiology-questions.csv');

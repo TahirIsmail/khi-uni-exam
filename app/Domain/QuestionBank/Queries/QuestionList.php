@@ -38,13 +38,17 @@ final class QuestionList
         foreach ($this->academic->courses($branchId) as $course) {
             $courseLabels[$course['id']] = $course['code'].' — '.$course['title'];
         }
+        $examTypes = [];
+        foreach ($this->academic->examTypes() as $examType) {
+            $examTypes[$examType['id']] = $examType['name'];
+        }
 
         return $this->query($user, $branchId, $filters)
             ->select([
                 'q.id', 'q.public_ref', 'q.course_id', 'q.is_archived', 'q.times_used',
                 'v.id as version_id', 'v.version_no', 'v.status', 'v.stem', 'v.marks', 'v.node_id',
                 'v.author_id', 'v.updated_at', 'v.content_hash', 'v.discipline_id',
-                'v.cognitive_level_id', 'v.difficulty_level_id',
+                'v.cognitive_level_id', 'v.difficulty_level_id', 'v.exam_type_id',
                 't.name as type_name', 'u.name as author_name',
             ])
             // How well each row matches the words, so the best matches can come first.
@@ -64,7 +68,7 @@ final class QuestionList
             })
             ->paginate($perPage)
             ->withQueryString()
-            ->through(fn (stdClass $row): array => $this->present($row, $courseLabels, $user));
+            ->through(fn (stdClass $row): array => $this->present($row, $courseLabels, $examTypes, $user));
     }
 
     /**
@@ -86,9 +90,10 @@ final class QuestionList
 
     /**
      * @param  array<int, string>  $courseLabels
+     * @param  array<int, string>  $examTypes
      * @return array<string, mixed>
      */
-    private function present(stdClass $row, array $courseLabels, User $user): array
+    private function present(stdClass $row, array $courseLabels, array $examTypes, User $user): array
     {
         return [
             'id' => (int) $row->id,
@@ -99,6 +104,7 @@ final class QuestionList
             'statusLabel' => VersionStatus::from((string) $row->status)->label(),
             'type' => (string) $row->type_name,
             'course' => $courseLabels[(int) $row->course_id] ?? ('#'.$row->course_id),
+            'examType' => $row->exam_type_id === null ? null : ($examTypes[(int) $row->exam_type_id] ?? null),
             'marks' => (float) $row->marks,
             'author' => (string) $row->author_name,
             'isMine' => (int) $row->author_id === $user->id,
@@ -146,6 +152,27 @@ final class QuestionList
         return $counts;
     }
 
+    /**
+     * How many questions are in each of KMU's statuses, in the university's order.
+     *
+     * @return list<array{key: string, label: string, count: int}>
+     */
+    public function statusGroupCounts(User $user, int $branchId): array
+    {
+        $counts = $this->statusCounts($user, $branchId);
+
+        $groups = [];
+        foreach (VersionStatus::groups() as $key => $group) {
+            $groups[] = [
+                'key' => $key,
+                'label' => $group['label'],
+                'count' => array_sum(array_map(fn (VersionStatus $status): int => $counts[$status->value] ?? 0, $group['statuses'])),
+            ];
+        }
+
+        return $groups;
+    }
+
     /** How many of the campus's questions this person wrote. */
     public function mineCount(User $user, int $branchId): int
     {
@@ -175,13 +202,39 @@ final class QuestionList
             $query->where('q.course_id', (int) $filters['course_id']);
         }
         if (($filters['status'] ?? '') !== '') {
-            $query->where('v.status', (string) $filters['status']);
+            // A KMU status ("submitted", "accept" …) covers one or more workflow steps.
+            $group = VersionStatus::groups()[(string) $filters['status']] ?? null;
+            $query->whereIn('v.status', $group === null ? [(string) $filters['status']] : array_map(fn (VersionStatus $status): string => $status->value, $group['statuses']));
         }
         if (($filters['mine'] ?? false) === true) {
             $query->where('v.author_id', $user->id);
         }
         if (($filters['programme_id'] ?? null) !== null) {
             $query->where('v.programme_id', (int) $filters['programme_id']);
+        }
+        if (($filters['year'] ?? '') !== '') {
+            // "12" is a year of an annual programme, "12-3" one term of a year of a semester programme.
+            [$professionalId, $termId] = array_pad(explode('-', (string) $filters['year'], 2), 2, null);
+            $query->where('v.professional_id', (int) $professionalId);
+            $termId === null ? $query->whereNull('v.term_id') : $query->where('v.term_id', (int) $termId);
+        }
+        if (($filters['exam_type_id'] ?? null) !== null) {
+            $query->where('v.exam_type_id', (int) $filters['exam_type_id']);
+        }
+        if (($filters['used'] ?? '') === 'used') {
+            $query->where(fn (Builder $inner) => $inner->where('q.times_used', '>', 0)
+                ->orWhereExists(fn (Builder $usage) => $usage->from('qb_question_usage as qu')->whereColumn('qu.question_id', 'q.id')));
+        }
+        if (($filters['used'] ?? '') === 'unused') {
+            $query->where('q.times_used', 0)
+                ->whereNotExists(fn (Builder $usage) => $usage->from('qb_question_usage as qu')->whereColumn('qu.question_id', 'q.id'));
+        }
+        if (($filters['used_from'] ?? null) !== null || ($filters['used_to'] ?? null) !== null) {
+            // Used in an examination held between these dates.
+            $query->whereExists(fn (Builder $usage) => $usage->from('qb_question_usage as qu')
+                ->whereColumn('qu.question_id', 'q.id')
+                ->when(($filters['used_from'] ?? null) !== null, fn (Builder $q) => $q->where('qu.used_on', '>=', (string) $filters['used_from']))
+                ->when(($filters['used_to'] ?? null) !== null, fn (Builder $q) => $q->where('qu.used_on', '<=', (string) $filters['used_to'])));
         }
         if (($filters['node_id'] ?? null) !== null) {
             // A topic includes everything under it.

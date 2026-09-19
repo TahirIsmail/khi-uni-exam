@@ -39,6 +39,9 @@ final class SaveQuestionDraft
         if ($place['branch_id'] !== $version->branch_id) {
             throw ValidationException::withMessages(['course_id' => 'A question cannot be moved to another campus.']);
         }
+        if ($content->examTypeId !== null && ! $this->academic->examTypeFits($content->examTypeId, $place['programme_id'])) {
+            throw ValidationException::withMessages(['exam_type_id' => 'That examination type is not used by this programme (Annual and Supplementary are for annual programmes, Regular and Retake for semester programmes).']);
+        }
 
         $permission = (int) $version->author_id === $editor->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any';
         if (! $this->access->allows($editor, $permission, new ScopeTarget($version->branch_id, $place['programme_id'], $place['professional_id'], $place['course_id']))) {
@@ -70,6 +73,7 @@ final class SaveQuestionDraft
                 'discipline_id' => $content->disciplineId ?? $place['discipline_id'],
                 'cognitive_level_id' => $content->cognitiveLevelId,
                 'difficulty_level_id' => $content->difficultyLevelId,
+                'exam_type_id' => $content->examTypeId,
                 'content_hash' => $content->contentHash(),
                 'search_text' => $content->searchText(),
                 'updated_by' => $editor->id,

@@ -8,6 +8,7 @@ use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\Review;
 use App\Domain\QuestionBank\Models\VersionStatusLog;
+use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
 use App\Support\Cms\CmsSettings;
@@ -62,6 +63,7 @@ final class QuestionHistory
                 'activatedAt' => $version->activated_at?->toIso8601String(),
             ])->values()->all(),
             'timeline' => $this->timeline($question, $authors->all(), $viewer),
+            'usage' => $this->usage($question),
             'duplicates' => $this->duplicatesOf($question),
         ];
     }
@@ -155,9 +157,9 @@ final class QuestionHistory
             $entries[] = [
                 'at' => $review->submitted_at->toIso8601String(),
                 'versionNo' => (int) ($versionNumbers[$review->version_id] ?? 0),
-                'what' => $review->requestedChanges()
-                    ? 'Reviewed: changes asked for'
-                    : 'Reviewed: '.($review->decision_id === null ? 'no decision recorded' : $review->decision->name),
+                'what' => ReviewStage::from($review->stage)->label().': '.($review->requestedChanges()
+                    ? 'changes asked for'
+                    : ($review->decision_id === null ? 'no decision recorded' : $review->decision->name)),
                 'by' => $name((int) $review->reviewer_id),
                 'note' => $review->comments,
                 'status' => $review->requestedChanges() ? VersionStatus::ChangesRequested->value : VersionStatus::UnderReview->value,
@@ -204,6 +206,35 @@ final class QuestionHistory
             VersionStatus::Archived => 'Archived',
             VersionStatus::Draft => 'Back to draft',
         };
+    }
+
+    /**
+     * Where the question has been used (KMU QBank "Question history"): how many times, in which
+     * examination and when, how many students attempted it, and how it performed there. Filled in
+     * by the examination and post-hoc phases; until then a question has no uses.
+     *
+     * @return array{timesUsed: int, candidatesTotal: int, lastUsedAt: string|null, exams: list<array{exam: string, usedOn: string|null, candidates: int|null, difficultyIndex: float|null, discriminationIndex: float|null}>}
+     */
+    private function usage(Question $question): array
+    {
+        $rows = DB::table('qb_question_usage')
+            ->where('question_id', $question->id)
+            ->orderByDesc('used_on')
+            ->orderByDesc('id')
+            ->get(['exam_label', 'used_on', 'candidates', 'observed_p', 'discrimination']);
+
+        return [
+            'timesUsed' => $question->times_used,
+            'candidatesTotal' => $question->candidates_total,
+            'lastUsedAt' => $question->last_used_at?->toIso8601String(),
+            'exams' => array_values($rows->map(fn (stdClass $row): array => [
+                'exam' => (string) ($row->exam_label ?? 'Examination'),
+                'usedOn' => $row->used_on === null ? null : (string) $row->used_on,
+                'candidates' => $row->candidates === null ? null : (int) $row->candidates,
+                'difficultyIndex' => $row->observed_p === null ? null : (float) $row->observed_p,
+                'discriminationIndex' => $row->discrimination === null ? null : (float) $row->discrimination,
+            ])->all()),
+        ];
     }
 
     /**

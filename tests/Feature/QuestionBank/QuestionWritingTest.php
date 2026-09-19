@@ -48,6 +48,8 @@ function sba(array $overrides = []): array
         'explanation' => '<p>An ECG is immediate and guides reperfusion.</p>',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
+        'difficulty_level_id' => 2,
         'cognitive_level_id' => 3,
         'options' => [
             ['label' => 'A', 'body' => 'ECG', 'is_correct' => true, 'sort_order' => 1],
@@ -192,7 +194,6 @@ test('the item-writing checklist warns without blocking', function () {
         'lead_in' => 'Which of the following is NOT a feature?',
         'explanation' => null,
         'references' => [],
-        'cognitive_level_id' => null,
         'options' => [
             ['label' => 'A', 'body' => 'All of the above', 'is_correct' => true, 'sort_order' => 1],
             ['label' => 'B', 'body' => 'Never seen in children', 'is_correct' => false, 'sort_order' => 2],
@@ -205,8 +206,28 @@ test('the item-writing checklist warns without blocking', function () {
         ->toContain('all of the above')
         ->toContain('NOT true')
         ->toContain('explanation')
-        ->toContain('reference')
-        ->toContain('level of thinking');
+        ->toContain('reference');
+});
+
+test('a question is filed under an examination and judged for its level before it can go for review', function () {
+    $author = ($this->author)();
+
+    $result = $this->actingAs($author)->postJson('/questions/check', sba([
+        'exam_type_id' => null,
+        'cognitive_level_id' => null,
+        'difficulty_level_id' => null,
+    ]))->json();
+
+    expect($result['errors']['exam_type_id'][0])->toContain('examination type')
+        ->and($result['errors']['cognitive_level_id'][0])->toContain('Recall, Understanding, Application or Analysis')
+        ->and($result['errors']['difficulty_level_id'][0])->toContain('Easy, Moderate or Difficult');
+
+    // Annual and Supplementary belong to annual programmes; Regular and Retake to semester ones.
+    $this->actingAs($author)->from('/questions/create')
+        ->post('/questions', sba(['exam_type_id' => $this->cmsExamType('regular')]))
+        ->assertSessionHasErrors('exam_type_id');
+    $this->actingAs($author)->post('/questions', sba(['exam_type_id' => $this->cmsExamType('supplementary')]))
+        ->assertSessionHasNoErrors();
 });
 
 test('writing needs the permission, the campus and the exam access', function () {
@@ -352,7 +373,10 @@ test('the question list shows the newest version of each question, with filters'
     $this->actingAs($author)->get('/questions')->assertInertia(fn ($page) => $page
         ->component('qbank/Questions')
         ->where('questions.total', 2)
-        ->where('statuses', ['draft' => 1, 'submitted' => 1])
+        // KMU's statuses, in its order: "Submitted for Review" covers submitted and under review.
+        ->where('statuses', fn ($statuses) => collect($statuses)->pluck('count', 'label')->all() === [
+            'Draft' => 1, 'Submitted for Review' => 1, 'Revise' => 0, 'Accept' => 0, 'Review' => 0, 'Remove / Discard' => 0,
+        ])
         ->where('questions.data.0.reference', fn ($ref) => str_starts_with((string) $ref, 'Q-')));
 
     $this->actingAs($author)->get('/questions?status=submitted')->assertInertia(fn ($page) => $page->where('questions.total', 1));

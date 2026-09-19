@@ -10,9 +10,10 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Who may review a given question (blueprint P1.8): staff of the same campus who are allowed to
- * review, whose exam access covers the course, and who did not write it. Whoever has the fewest
- * open reviews comes first, so automatic assignment spreads the work.
+ * Who may review a given question at a given level (blueprint P1.8, KMU QBank mechanism): staff of
+ * the same campus who hold that level's review right, whose exam access covers the course, and who
+ * did not write it. Whoever has the fewest open reviews comes first, so automatic assignment spreads
+ * the work.
  */
 final class ReviewerPool
 {
@@ -21,10 +22,8 @@ final class ReviewerPool
     /**
      * @return list<array{user: User, openLoad: int}>
      */
-    public function forVersion(QuestionVersion $version): array
+    public function forVersion(QuestionVersion $version, ReviewStage $stage = ReviewStage::Subject): array
     {
-        $target = new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id);
-
         $load = ReviewAssignment::query()
             ->where('status', 'open')
             ->groupBy('reviewer_id')
@@ -34,14 +33,9 @@ final class ReviewerPool
 
         $pool = [];
         foreach ($this->candidates() as $user) {
-            if ($user->id === $version->author_id) {
-                continue;
+            if ($this->allows($user, $version, $stage)) {
+                $pool[] = ['user' => $user, 'openLoad' => $load[$user->id] ?? 0];
             }
-            if (! $this->access->allows($user, 'qbank.review.perform', $target)) {
-                continue;
-            }
-
-            $pool[] = ['user' => $user, 'openLoad' => $load[$user->id] ?? 0];
         }
 
         usort($pool, fn (array $a, array $b): int => [$a['openLoad'], $a['user']->id] <=> [$b['openLoad'], $b['user']->id]);
@@ -49,14 +43,20 @@ final class ReviewerPool
         return $pool;
     }
 
-    /** Whether this user may review this version at all — used before opening the workspace. */
-    public function allows(User $user, QuestionVersion $version): bool
+    /** Whether this user may review this version at this level. */
+    public function allows(User $user, QuestionVersion $version, ReviewStage $stage = ReviewStage::Subject): bool
     {
         return $user->id !== $version->author_id && $this->access->allows(
             $user,
-            'qbank.review.perform',
+            $stage->permission(),
             new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id),
         );
+    }
+
+    /** Whether this user may review this version at either level — to open the workspace. */
+    public function allowsAny(User $user, QuestionVersion $version): bool
+    {
+        return $this->allows($user, $version, ReviewStage::Subject) || $this->allows($user, $version, ReviewStage::Academic);
     }
 
     /**

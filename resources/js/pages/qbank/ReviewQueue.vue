@@ -112,7 +112,19 @@ function due(row: ReviewAssignmentRow): string {
                                 v{{ row.versionNo }}
                             </div>
                         </td>
-                        <td class="px-3 py-2">{{ row.summary }}</td>
+                        <td class="px-3 py-2">
+                            {{ row.summary }}
+                            <div class="mt-1">
+                                <Badge
+                                    :variant="
+                                        row.stage === 'academic'
+                                            ? 'default'
+                                            : 'secondary'
+                                    "
+                                    >{{ row.stageLabel }}</Badge
+                                >
+                            </div>
+                        </td>
                         <td class="px-3 py-2">{{ row.type }}</td>
                         <td class="px-3 py-2">{{ row.course }}</td>
                         <td class="px-3 py-2 whitespace-nowrap">

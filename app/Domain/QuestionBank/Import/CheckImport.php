@@ -41,7 +41,7 @@ final class CheckImport
     ) {}
 
     /**
-     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null}  $defaults
+     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null}  $defaults
      */
     public function __invoke(User $user, int $branchId, UploadedFile $file, array $defaults = []): QuestionImport
     {
@@ -140,6 +140,9 @@ final class CheckImport
         $place = $this->academic->placeOfNode($content->nodeId, $content->courseId);
         if ($place === null || $place['branch_id'] !== $branchId) {
             return 'That course and topic are not in this campus.';
+        }
+        if ($content->examTypeId !== null && ! $this->academic->examTypeFits($content->examTypeId, $place['programme_id'])) {
+            return 'That examination type is not used by this programme (Annual and Supplementary are for annual programmes, Regular and Retake for semester programmes).';
         }
 
         return $this->access->allows($user, 'qbank.question.create', new ScopeTarget($branchId, $place['programme_id'], $place['professional_id'], $place['course_id']))

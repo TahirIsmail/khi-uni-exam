@@ -36,7 +36,7 @@ function filter(show: string): void {
     <div class="flex flex-col gap-6 p-4">
         <Heading
             title="Approvals"
-            description="Questions that have been reviewed and are waiting for a decision. Approving records the values the question keeps — the level of thinking and the difficulty an examination is built from."
+            description="Questions that have been reviewed and are waiting for a decision. Each has been through its department / subject review and its QBank / academic review. Approving records the cognitive and difficulty level the question keeps."
         />
 
         <div class="flex flex-wrap items-center gap-2">
@@ -110,7 +110,13 @@ function filter(show: string): void {
                         </td>
                         <td class="px-3 py-2">{{ row.course }}</td>
                         <td class="px-3 py-2 tabular-nums">
-                            {{ row.reviewsIn }} of {{ row.reviewsNeeded }}
+                            <div>
+                                Subject {{ row.subjectIn }} of
+                                {{ row.subjectNeeded }}
+                            </div>
+                            <div class="text-muted-foreground">
+                                Academic {{ row.academicIn }} of 1
+                            </div>
                         </td>
                         <td class="px-3 py-2">
                             <Badge
@@ -146,8 +152,9 @@ function filter(show: string): void {
                             />
                             <p class="font-medium">Nothing to decide</p>
                             <p class="text-muted-foreground mt-1 text-sm">
-                                A question appears here once it has been
-                                reviewed as many times as the settings ask for.
+                                A question appears here once its department /
+                                subject reviews and its QBank / academic review
+                                are in.
                             </p>
                         </td>
                     </tr>

@@ -103,6 +103,7 @@ final class VersionDiff
     {
         $rows = [
             ['Type', $from->type->name, $to->type->name],
+            ['Examination', $this->examTypeName($from->exam_type_id), $this->examTypeName($to->exam_type_id)],
             ['Marks', (string) $from->marks, (string) $to->marks],
             ['Negative marks', (string) $from->negative_marks, (string) $to->negative_marks],
             ['Course', $this->academic->courseLabel($from->course_id) ?? '—', $this->academic->courseLabel($to->course_id) ?? '—'],
@@ -118,6 +119,17 @@ final class VersionDiff
             'after' => $row[2],
             'changed' => $row[1] !== $row[2],
         ], $rows);
+    }
+
+    private function examTypeName(?int $examTypeId): string
+    {
+        foreach ($this->academic->examTypes() as $examType) {
+            if ($examType['id'] === $examTypeId) {
+                return $examType['name'];
+            }
+        }
+
+        return '—';
     }
 
     private function nodeName(int $nodeId): string

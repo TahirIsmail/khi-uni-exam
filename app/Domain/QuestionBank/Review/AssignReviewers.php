@@ -15,9 +15,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Who reviews a submitted question. When an author sends a question for review it is assigned
- * automatically, round-robin by open load, to as many reviewers as kmu-cms asks for; somebody with
- * "Assign Reviewers" can also name a reviewer or hand the job to somebody else.
+ * Who reviews a submitted question. Review has two levels (ReviewStage): when an author sends a
+ * question it goes to as many department / subject reviewers as kmu-cms asks for; when they have all
+ * reviewed it, it goes to one QBank / academic reviewer — somebody who has not reviewed it already.
+ * Both are assigned automatically, round-robin by open load, and somebody with "Assign Reviewers"
+ * can also name a reviewer or hand the job to somebody else.
  */
 final class AssignReviewers
 {
@@ -34,18 +36,19 @@ final class AssignReviewers
      *
      * @return list<ReviewAssignment>
      */
-    public function auto(QuestionVersion $version, ?User $actor = null): array
+    public function auto(QuestionVersion $version, ?User $actor = null, ReviewStage $stage = ReviewStage::Subject): array
     {
         $round = $this->currentRound($version);
-        $wanted = $this->settings->reviewsRequired() - $round->count();
+        $wanted = $this->needed($stage) - $round->where('stage', $stage->value)->count();
         if ($wanted < 1) {
             return [];
         }
 
+        // Nobody reviews the same question twice in a round, whatever the level.
         $taken = $round->pluck('reviewer_id')->all();
         $assignments = [];
 
-        foreach ($this->pool->forVersion($version) as $candidate) {
+        foreach ($this->pool->forVersion($version, $stage) as $candidate) {
             if (count($assignments) >= $wanted) {
                 break;
             }
@@ -53,19 +56,25 @@ final class AssignReviewers
                 continue;
             }
 
-            $assignments[] = $this->create($version, $candidate['user'], $actor, automatic: true);
+            $assignments[] = $this->create($version, $candidate['user'], $actor, $stage, automatic: true);
         }
 
         return $assignments;
     }
 
+    /** How many reviews a level needs: kmu-cms decides for the first, the second is always one. */
+    public function needed(ReviewStage $stage): int
+    {
+        return $stage === ReviewStage::Subject ? $this->settings->reviewsRequired() : 1;
+    }
+
     /** A named reviewer, chosen by somebody who may assign reviewers. */
-    public function to(User $actor, QuestionVersion $version, User $reviewer): ReviewAssignment
+    public function to(User $actor, QuestionVersion $version, User $reviewer, ReviewStage $stage = ReviewStage::Subject): ReviewAssignment
     {
         $this->authoriseAssigning($actor, $version);
 
-        if (! $this->pool->allows($reviewer, $version)) {
-            throw ValidationException::withMessages(['reviewer_id' => 'That person cannot review this question — they wrote it, or it is outside their campus or exam access.']);
+        if (! $this->pool->allows($reviewer, $version, $stage)) {
+            throw ValidationException::withMessages(['reviewer_id' => 'That person cannot do the '.mb_strtolower($stage->label()).' of this question — they wrote it, do not hold that review right, or it is outside their campus or exam access.']);
         }
         $open = ReviewAssignment::query()
             ->where('version_id', $version->id)
@@ -76,7 +85,7 @@ final class AssignReviewers
             throw ValidationException::withMessages(['reviewer_id' => 'They are already reviewing this question.']);
         }
 
-        return $this->create($version, $reviewer, $actor, automatic: false);
+        return $this->create($version, $reviewer, $actor, $stage, automatic: false);
     }
 
     /** Takes the job back, so it can be given to somebody else. */
@@ -123,24 +132,26 @@ final class AssignReviewers
      *
      * @return Collection<int, ReviewAssignment>
      */
-    private function currentRound(QuestionVersion $version): Collection
+    public function currentRound(QuestionVersion $version): Collection
     {
         return ReviewAssignment::query()
             ->where('version_id', $version->id)
+            ->where('round', $version->review_round)
             ->whereIn('status', ['open', 'submitted'])
-            ->when($version->submitted_at !== null, fn ($query) => $query->where('assigned_at', '>=', $version->submitted_at))
             ->orderBy('id')
             ->get();
     }
 
-    private function create(QuestionVersion $version, User $reviewer, ?User $actor, bool $automatic): ReviewAssignment
+    private function create(QuestionVersion $version, User $reviewer, ?User $actor, ReviewStage $stage, bool $automatic): ReviewAssignment
     {
-        return DB::transaction(function () use ($version, $reviewer, $actor, $automatic): ReviewAssignment {
+        return DB::transaction(function () use ($version, $reviewer, $actor, $stage, $automatic): ReviewAssignment {
             $assignment = ReviewAssignment::query()->create([
                 'version_id' => $version->id,
                 'question_id' => $version->question_id,
                 'branch_id' => $version->branch_id,
                 'reviewer_id' => $reviewer->id,
+                'stage' => $stage->value,
+                'round' => $version->review_round,
                 'assigned_by' => $automatic ? null : $actor?->id,
                 'status' => 'open',
                 'due_at' => now()->addDays($this->settings->reviewDays()),
@@ -150,6 +161,7 @@ final class AssignReviewers
             $this->audit->record('qbank.review.assigned', 'review_assignment', $assignment->id, null, [
                 'version_id' => $version->id,
                 'reviewer_id' => $reviewer->id,
+                'stage' => $stage->value,
                 'due_at' => $assignment->due_at?->toIso8601String(),
                 'automatic' => $automatic,
             ], null, $actor, $version->branch_id);

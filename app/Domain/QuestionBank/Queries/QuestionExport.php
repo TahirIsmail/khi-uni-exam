@@ -29,7 +29,7 @@ final class QuestionExport
     public const LIMIT = 5000;
 
     public const COLUMNS = [
-        'reference', 'version', 'status', 'type', 'course', 'topic', 'discipline', 'vignette',
+        'reference', 'version', 'status', 'type', 'exam_type', 'course', 'topic', 'discipline', 'vignette',
         'stem', 'lead_in', 'explanation', 'marks', 'negative_marks', 'cognitive', 'difficulty',
         'options', 'correct', 'answers', 'items', 'references', 'tags', 'author', 'times_used',
     ];
@@ -42,6 +42,9 @@ final class QuestionExport
 
     /** @var array<int, string>|null */
     private ?array $disciplines = null;
+
+    /** @var array<int, string>|null */
+    private ?array $examTypes = null;
 
     /** @var array<int, string>|null */
     private ?array $authors = null;
@@ -99,6 +102,7 @@ final class QuestionExport
             (string) $version->version_no,
             $version->status->label(),
             $version->type->name,
+            $version->exam_type_id === null ? '' : ($this->examTypes()[$version->exam_type_id] ?? ''),
             $this->academic->courseLabel($version->course_id) ?? ('#'.$version->course_id),
             (string) ($this->academic->nodeName($version->node_id) ?? ''),
             $version->discipline_id === null ? '' : ($this->disciplines()[$version->discipline_id] ?? ''),
@@ -173,6 +177,21 @@ final class QuestionExport
         }
 
         return $this->disciplines;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function examTypes(): array
+    {
+        if ($this->examTypes === null) {
+            $this->examTypes = [];
+            foreach ($this->academic->examTypes() as $examType) {
+                $this->examTypes[$examType['id']] = $examType['name'];
+            }
+        }
+
+        return $this->examTypes;
     }
 
     /**

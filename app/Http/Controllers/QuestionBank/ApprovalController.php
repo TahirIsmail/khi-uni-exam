@@ -47,7 +47,6 @@ class ApprovalController extends Controller
             'decision_id' => ['required', 'integer', 'min:1', 'max:255'],
             'cognitive_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
             'difficulty_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
-            'estimated_p' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -55,7 +54,6 @@ class ApprovalController extends Controller
             decisionId: (int) $input['decision_id'],
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
-            estimatedP: isset($input['estimated_p']) ? (float) $input['estimated_p'] : null,
             reason: $input['reason'] ?? null,
         ));
 

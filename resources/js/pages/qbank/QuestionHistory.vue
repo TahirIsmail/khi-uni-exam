@@ -47,6 +47,18 @@ const props = defineProps<{
         note: string | null;
         status: string;
     }[];
+    usage: {
+        timesUsed: number;
+        candidatesTotal: number;
+        lastUsedAt: string | null;
+        exams: {
+            exam: string;
+            usedOn: string | null;
+            candidates: number | null;
+            difficultyIndex: number | null;
+            discriminationIndex: number | null;
+        }[];
+    };
     duplicates: {
         id: number;
         reference: string;
@@ -225,6 +237,70 @@ function startNewVersion(): void {
                             </div>
                         </li>
                     </ul>
+                </section>
+
+                <!-- Where it has been used -->
+                <section class="rounded-xl border shadow-xs" data-test="usage">
+                    <header
+                        class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+                    >
+                        <h2 class="font-medium">Use in examinations</h2>
+                        <span class="text-muted-foreground text-sm">
+                            Used {{ usage.timesUsed }}
+                            {{ usage.timesUsed === 1 ? 'time' : 'times' }}
+                            <template v-if="usage.candidatesTotal > 0"
+                                >· {{ usage.candidatesTotal }} students
+                                attempted it</template
+                            >
+                        </span>
+                    </header>
+                    <div v-if="usage.exams.length > 0" class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50 text-left">
+                                <tr>
+                                    <th class="px-4 py-2 font-medium">
+                                        Examination
+                                    </th>
+                                    <th class="px-4 py-2 font-medium">Date</th>
+                                    <th class="px-4 py-2 font-medium">
+                                        Students
+                                    </th>
+                                    <th class="px-4 py-2 font-medium">
+                                        Difficulty index
+                                    </th>
+                                    <th class="px-4 py-2 font-medium">
+                                        Discrimination index
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(row, i) in usage.exams"
+                                    :key="i"
+                                    class="border-t"
+                                >
+                                    <td class="px-4 py-2">{{ row.exam }}</td>
+                                    <td class="px-4 py-2">
+                                        {{ row.usedOn ?? '—' }}
+                                    </td>
+                                    <td class="px-4 py-2 tabular-nums">
+                                        {{ row.candidates ?? '—' }}
+                                    </td>
+                                    <td class="px-4 py-2 tabular-nums">
+                                        {{ row.difficultyIndex ?? '—' }}
+                                    </td>
+                                    <td class="px-4 py-2 tabular-nums">
+                                        {{ row.discriminationIndex ?? '—' }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p v-else class="text-muted-foreground px-4 py-6 text-sm">
+                        Not used in any examination yet. When it is, each
+                        examination appears here with its date, how many
+                        students attempted the question, and how it performed.
+                    </p>
                 </section>
 
                 <!-- Timeline -->

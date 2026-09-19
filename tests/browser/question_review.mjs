@@ -37,6 +37,11 @@ const PEOPLE = {
         email: 'qbank-review-approver-e2e@kmu.local',
         employee: 'TMP-RV-P',
     },
+    // The QBank / academic reviewer (DME/DDE), the second level of review.
+    academic: {
+        email: 'qbank-review-academic-e2e@kmu.local',
+        employee: 'TMP-RV-D',
+    },
 };
 
 const run = (mysql, query) => {
@@ -166,6 +171,7 @@ function staff(person) {
 const author = staff(PEOPLE.author);
 const reviewer = staff(PEOPLE.reviewer);
 const approver = staff(PEOPLE.approver);
+const academic = staff(PEOPLE.academic);
 
 // Two reviews, so the reviewer and the approver both have to act, and names stay visible.
 const settingsBefore = cms(
@@ -305,6 +311,21 @@ try {
     await send('Page.enable');
     await send('Runtime.enable');
 
+    // A member of staff becomes a user of the module the first time they open it from the CMS, and
+    // only users can be asked to review. Everybody in this test opens it once first.
+    for (const person of [reviewer, approver, academic]) {
+        await signIn(person, '/dashboard');
+    }
+    check(
+        'the reviewer, the academic reviewer and the approver are users of the module',
+        assess(
+            `SELECT COUNT(*) FROM users WHERE email IN ('${PEOPLE.reviewer.email}', '${PEOPLE.approver.email}', '${PEOPLE.academic.email}') AND is_active = 1`,
+        ) === '3',
+        assess(
+            `SELECT GROUP_CONCAT(email) FROM users WHERE email IN (${emails})`,
+        ),
+    );
+
     // ---- the author writes a question and sends it for review ---------------------------------
     check(
         'the author opens the editor from kmu-cms',
@@ -348,7 +369,11 @@ try {
     await sleep(200);
     await type('[aria-label="Reference 1"]', 'Harrison, 21st ed p. 1875');
 
-    // The author's own view of how much thinking it needs and how hard it is: their proposal.
+    // Filed under the Annual examination, with the author's own cognitive and difficulty level.
+    await setSelect(
+        '#exam-type',
+        cms("SELECT id FROM acad_exam_types WHERE code = 'annual'"),
+    );
     await setSelect('#cognitive', 2);
     await setSelect('#difficulty', 2);
     await sleep(1000);
@@ -486,7 +511,7 @@ try {
         )) === 8 &&
             (await evaluate(
                 "document.querySelectorAll('#decision option').length",
-            )) === 6 &&
+            )) === 5 &&
             /cover the options|without seeing the options/i.test(workspace),
         workspace.slice(0, 400),
     );
@@ -517,7 +542,6 @@ try {
     );
     await setSelect('#cognitive', 3);
     await setSelect('#difficulty', 2);
-    await type('#estimated', '0.6');
     await type(
         '#comments',
         'Clean single best answer; the key is defensible from the reference given.',
@@ -539,19 +563,97 @@ try {
         review,
     );
     check(
-        "the reviewer's pre-hoc judgement is stored beside the author's",
+        "the reviewer's cognitive and difficulty level are stored beside the author's",
         assess(
-            `SELECT CONCAT(cognitive_level_id, ':', difficulty_level_id, ':', estimated_p) FROM qb_prehoc_assessments WHERE version_id = ${versionId} AND source = 'reviewer'`,
-        ) === '3:2:0.600',
+            `SELECT CONCAT(cognitive_level_id, ':', difficulty_level_id) FROM qb_prehoc_assessments WHERE version_id = ${versionId} AND source = 'reviewer'`,
+        ) === '3:2',
         assess(
-            `SELECT GROUP_CONCAT(CONCAT(source, '=', IFNULL(estimated_p, '-'))) FROM qb_prehoc_assessments WHERE version_id = ${versionId}`,
+            `SELECT GROUP_CONCAT(CONCAT(source, '=', IFNULL(cognitive_level_id, '-'))) FROM qb_prehoc_assessments WHERE version_id = ${versionId}`,
         ),
     );
     check(
-        'the question is now waiting for an approver',
+        'the subject review in, the question goes on to the QBank / academic review',
         assess(
             `SELECT status FROM qb_question_versions WHERE id = ${versionId}`,
-        ) === 'under_review',
+        ) === 'under_review' &&
+            assess(
+                `SELECT COUNT(*) FROM qb_review_assignments WHERE version_id = ${versionId} AND stage = 'academic' AND status = 'open'`,
+            ) === '1',
+        assess(
+            `SELECT GROUP_CONCAT(CONCAT(stage, ':', status)) FROM qb_review_assignments WHERE version_id = ${versionId}`,
+        ),
+    );
+
+    // ---- the QBank / academic review ----------------------------------------------------------
+    // As before, the head of department gives it to the test's academic reviewer by hand, because
+    // automatic assignment may choose anybody in this database who holds the right.
+    await signIn(
+        approver,
+        `/questions/${questionId}/versions/${versionId}/review`,
+    );
+    await waitFor("!!document.querySelector('[data-test=stage]')");
+    await evaluate(
+        "window.prompt = () => 'Given to the academic reviewer of this test'; window.confirm = () => true;",
+    );
+    const autoAcademic = assess(
+        `SELECT id FROM qb_review_assignments WHERE version_id = ${versionId} AND stage = 'academic' AND status = 'open'`,
+    );
+    await click(`[data-cancel="${autoAcademic}"]`);
+    await sleep(1200);
+    await setSelect('[data-test=stage]', 'academic');
+    await sleep(300);
+    const academicUserId = assess(
+        `SELECT id FROM users WHERE email = '${PEOPLE.academic.email}'`,
+    );
+    await setSelect('[data-test=reviewer]', academicUserId);
+    await sleep(300);
+    await click('[data-test=assign]');
+    await sleep(1200);
+    check(
+        'the academic review is given to the academic reviewer',
+        assess(
+            `SELECT status FROM qb_review_assignments WHERE version_id = ${versionId} AND stage = 'academic' AND reviewer_id = ${academicUserId}`,
+        ) === 'open',
+        assess(
+            `SELECT GROUP_CONCAT(CONCAT(stage, ':', reviewer_id, ':', status)) FROM qb_review_assignments WHERE version_id = ${versionId}`,
+        ),
+    );
+
+    check(
+        'the academic reviewer finds it in the same queue, marked as the academic review',
+        (await signIn(academic, '/reviews')) &&
+            (await waitFor(
+                `document.body.innerText.includes('${reference}') && /QBank \\/ Academic review/.test(document.body.innerText)`,
+            )),
+        (await text()).replace(/\s+/g, ' ').slice(0, 300),
+    );
+    await click('[data-assignment] a');
+    await waitFor("!!document.querySelector('[data-test=review-form]')");
+    check(
+        'the workspace says which level this review is',
+        /QBank \/ Academic review/.test(
+            (await evaluate(
+                "document.querySelector('[data-test=my-stage]')?.innerText ?? ''",
+            )) ?? '',
+        ),
+    );
+    await setSelect(
+        '#decision',
+        assess("SELECT id FROM qb_prehoc_decisions WHERE code = 'accept'"),
+    );
+    await type(
+        '#comments',
+        'Language is clear and the key is correct; suitable for the question bank.',
+    );
+    await sleep(400);
+    await click('[data-test=submit-review]');
+    check(
+        'the academic review is recorded',
+        (await waitFor("location.pathname === '/reviews'")) &&
+            assess(
+                `SELECT CONCAT(stage, ':', outcome) FROM qb_reviews WHERE version_id = ${versionId} AND stage = 'academic'`,
+            ) === 'academic:reviewed',
+        await path(),
     );
     check(
         'a submitted review cannot be edited, even in SQL',
@@ -612,13 +714,13 @@ try {
         approved,
     );
     check(
-        'one consolidated pre-hoc row is stored, and only one',
+        'every judgement is kept — author, subject reviewer, academic reviewer — and one settled on approval',
         assess(
             `SELECT CONCAT(COUNT(*), ':', MAX(source)) FROM qb_prehoc_assessments WHERE version_id = ${versionId} AND is_consolidated = 1`,
         ) === '1:consolidated' &&
             assess(
-                `SELECT COUNT(*) FROM qb_prehoc_assessments WHERE version_id = ${versionId}`,
-            ) === '3',
+                `SELECT GROUP_CONCAT(source ORDER BY id) FROM qb_prehoc_assessments WHERE version_id = ${versionId}`,
+            ) === 'author,reviewer,reviewer,consolidated',
         assess(
             `SELECT GROUP_CONCAT(source) FROM qb_prehoc_assessments WHERE version_id = ${versionId}`,
         ),

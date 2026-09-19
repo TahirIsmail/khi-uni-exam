@@ -67,6 +67,7 @@ class ImportController extends Controller
             'course_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'node_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'type_id' => ['nullable', 'integer', 'min:1', 'max:255'],
+            'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
         ], [
             'file.mimes' => 'Upload a CSV or Excel file (.csv, .tsv, .xlsx).',
             'file.max' => 'The file must be 10 MB or smaller.',
@@ -76,6 +77,7 @@ class ImportController extends Controller
             'course_id' => isset($input['course_id']) ? (int) $input['course_id'] : null,
             'node_id' => isset($input['node_id']) ? (int) $input['node_id'] : null,
             'type_id' => isset($input['type_id']) ? (int) $input['type_id'] : null,
+            'exam_type_id' => isset($input['exam_type_id']) ? (int) $input['exam_type_id'] : null,
         ]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':valid of :total rows are ready to import.', ['valid' => $import->rows_valid, 'total' => $import->rows_total])]);
@@ -157,20 +159,20 @@ class ImportController extends Controller
         $rows = [
             SpreadsheetReader::COLUMNS,
             [
-                'sba', 'CVS-101', 'Acute coronary syndrome', 'Physiology', '', 'A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.',
+                'sba', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', 'Pathology', '', 'A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.',
                 'Which investigation is most useful first?', 'An ECG is immediate and guides reperfusion.', '1', '0', 'apply', 'moderate',
                 'ECG | Chest radiograph | Echocardiogram | Coronary angiography', 'A', '', '', 'Harrison, 21st ed p. 1875', 'ECG, cardiology',
             ],
             [
-                'mtf', 'CVS-101', 'Acute coronary syndrome', '', '', 'Regarding the management of an inferior myocardial infarction:',
+                'mtf', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'Regarding the management of an inferior myocardial infarction:',
                 '', '', '3', '0', '', '', '', '', '', 'Aspirin reduces mortality = true | Nitrates are given in right ventricular infarction = false | Reperfusion within 90 minutes is the aim = true', '', '',
             ],
             [
-                'short_answer', 'CVS-101', 'Acute coronary syndrome', '', '', 'Which enzyme is measured to confirm myocardial injury?',
+                'short_answer', 'supplementary', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'Which enzyme is measured to confirm myocardial injury?',
                 '', '', '1', '0', 'recall', '', '', '', 'troponin | troponin I | troponin T', '', '', '',
             ],
             [
-                'numerical', 'CVS-101', 'Acute coronary syndrome', '', '', 'What is the normal arterial pH?',
+                'numerical', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'What is the normal arterial pH?',
                 '', '', '1', '0', 'recall', 'easy', '', '', '7.40 ± 0.05', '', '', '',
             ],
         ];

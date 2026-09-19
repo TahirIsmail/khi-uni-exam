@@ -19,9 +19,11 @@ import { create, index } from '@/routes/questions';
 import type {
     CourseOption,
     CurriculumNode,
+    ExamTypeOption,
     Paginated,
     QuestionListRow,
     QuestionTypeInfo,
+    YearOption,
 } from '@/types';
 
 defineOptions({
@@ -32,6 +34,11 @@ type Filters = {
     search: string;
     status: string;
     programme_id: number | null;
+    year: string | null;
+    exam_type_id: number | null;
+    used: string;
+    used_from: string | null;
+    used_to: string | null;
     course_id: number | null;
     node_id: number | null;
     discipline_id: number | null;
@@ -54,6 +61,8 @@ const props = defineProps<{
     questions: Paginated<QuestionListRow>;
     filters: Filters;
     programmes: { id: number; name: string; code: string }[];
+    years: YearOption[];
+    examTypes: ExamTypeOption[];
     courses: CourseOption[];
     disciplines: { id: number; code: string; name: string }[];
     tags: { id: number; name: string }[];
@@ -61,14 +70,19 @@ const props = defineProps<{
     cognitiveLevels: { id: number; name: string }[];
     difficultyLevels: { id: number; name: string }[];
     authors: { id: number; name: string }[];
-    statuses: Record<string, number>;
+    statuses: { key: string; label: string; count: number }[];
     canCreate: boolean;
     canExport: boolean;
 }>();
 
 const search = ref(props.filters.search);
 const showMore = ref(
-    props.filters.node_id !== null ||
+    props.filters.year !== null ||
+        props.filters.exam_type_id !== null ||
+        props.filters.used !== '' ||
+        props.filters.used_from !== null ||
+        props.filters.used_to !== null ||
+        props.filters.node_id !== null ||
         props.filters.discipline_id !== null ||
         props.filters.type_id !== null ||
         props.filters.cognitive_level_id !== null ||
@@ -82,12 +96,40 @@ const showMore = ref(
 );
 const topics = ref<CurriculumNode[]>([]);
 
-const coursesOfProgramme = computed(() =>
+const yearsOfProgramme = computed(() =>
     props.filters.programme_id === null
-        ? props.courses
-        : props.courses.filter(
-              (course) => course.programme_id === props.filters.programme_id,
+        ? props.years
+        : props.years.filter(
+              (year) => year.programme_id === props.filters.programme_id,
           ),
+);
+
+// With no programme chosen, a year needs its programme's name to be told apart.
+function yearLabel(year: YearOption): string {
+    if (props.filters.programme_id !== null) {
+        return year.name;
+    }
+    const programme = props.programmes.find(
+        (row) => row.id === year.programme_id,
+    );
+
+    return programme ? `${programme.name} — ${year.name}` : year.name;
+}
+
+const selectedYear = computed(
+    () => props.years.find((year) => year.id === props.filters.year) ?? null,
+);
+
+const coursesOfProgramme = computed(() =>
+    props.courses.filter(
+        (course) =>
+            (props.filters.programme_id === null ||
+                course.programme_id === props.filters.programme_id) &&
+            (selectedYear.value === null ||
+                (course.professional_id ===
+                    selectedYear.value.professional_id &&
+                    course.term_id === selectedYear.value.term_id)),
+    ),
 );
 
 const activeFilterCount = computed(
@@ -164,7 +206,9 @@ function clear(): void {
 const statusStyles: Record<string, string> = {
     draft: 'secondary',
     changes_requested: 'destructive',
+    approved: 'default',
     active: 'default',
+    archived: 'outline',
 };
 </script>
 
@@ -244,16 +288,19 @@ const statusStyles: Record<string, string> = {
                     >All</Button
                 >
                 <Button
-                    v-for="(count, status) in statuses"
-                    :key="status"
+                    v-for="row in statuses"
+                    :key="row.key"
                     type="button"
                     size="sm"
-                    :variant="filters.status === status ? 'default' : 'outline'"
-                    @click="apply({ status })"
+                    :variant="
+                        filters.status === row.key ? 'default' : 'outline'
+                    "
+                    :data-status="row.key"
+                    @click="apply({ status: row.key })"
                 >
-                    {{ status.replace('_', ' ') }}
+                    {{ row.label }}
                     <span class="text-muted-foreground ml-1 tabular-nums">{{
-                        count
+                        row.count
                     }}</span>
                 </Button>
                 <span class="mx-1 h-5 border-l" />
@@ -296,6 +343,7 @@ const statusStyles: Record<string, string> = {
                                 programme_id:
                                     ($event.target as HTMLSelectElement)
                                         .value || null,
+                                year: null,
                                 course_id: null,
                                 node_id: null,
                             })
@@ -312,7 +360,59 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="course">Course ID</Label>
+                    <Label for="year">Year / Semester</Label>
+                    <select
+                        id="year"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        :value="filters.year ?? ''"
+                        data-test="filter-year"
+                        @change="
+                            apply({
+                                year:
+                                    ($event.target as HTMLSelectElement)
+                                        .value || null,
+                                course_id: null,
+                                node_id: null,
+                            })
+                        "
+                    >
+                        <option value="">Any</option>
+                        <option
+                            v-for="row in yearsOfProgramme"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ yearLabel(row) }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="exam-type">Examination</Label>
+                    <select
+                        id="exam-type"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        :value="filters.exam_type_id ?? ''"
+                        data-test="filter-exam-type"
+                        @change="
+                            apply({
+                                exam_type_id:
+                                    ($event.target as HTMLSelectElement)
+                                        .value || null,
+                            })
+                        "
+                    >
+                        <option value="">Any</option>
+                        <option
+                            v-for="row in examTypes"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ row.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="course">Module / Subject (Course ID)</Label>
                     <select
                         id="course"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
@@ -411,7 +511,7 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="cognitive">Level of thinking</Label>
+                    <Label for="cognitive">Cognitive level</Label>
                     <select
                         id="cognitive"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
@@ -435,7 +535,7 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="difficulty">Expected difficulty</Label>
+                    <Label for="difficulty">Difficulty level</Label>
                     <select
                         id="difficulty"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
@@ -573,6 +673,56 @@ const statusStyles: Record<string, string> = {
                     </div>
                 </div>
                 <div class="grid gap-1.5">
+                    <Label for="used">Used in an examination</Label>
+                    <select
+                        id="used"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        :value="filters.used"
+                        data-test="filter-used"
+                        @change="
+                            apply({
+                                used: ($event.target as HTMLSelectElement)
+                                    .value,
+                            })
+                        "
+                    >
+                        <option value="">Used or not</option>
+                        <option value="used">Used before</option>
+                        <option value="unused">Never used</option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="used-from">Previous examination date</Label>
+                    <div class="flex items-center gap-2">
+                        <Input
+                            id="used-from"
+                            type="date"
+                            class="h-9"
+                            :model-value="filters.used_from ?? ''"
+                            @change="
+                                apply({
+                                    used_from:
+                                        ($event.target as HTMLInputElement)
+                                            .value || null,
+                                })
+                            "
+                        />
+                        <Input
+                            type="date"
+                            class="h-9"
+                            aria-label="Previous examination to"
+                            :model-value="filters.used_to ?? ''"
+                            @change="
+                                apply({
+                                    used_to:
+                                        ($event.target as HTMLInputElement)
+                                            .value || null,
+                                })
+                            "
+                        />
+                    </div>
+                </div>
+                <div class="grid gap-1.5">
                     <Label for="sort">Order</Label>
                     <select
                         id="sort"
@@ -605,6 +755,7 @@ const statusStyles: Record<string, string> = {
                         <th class="px-3 py-2 font-medium">Question</th>
                         <th class="px-3 py-2 font-medium">Type</th>
                         <th class="px-3 py-2 font-medium">Course</th>
+                        <th class="px-3 py-2 font-medium">Examination</th>
                         <th class="px-3 py-2 font-medium">Status</th>
                         <th class="px-3 py-2 font-medium">Author</th>
                         <th class="px-3 py-2">
@@ -634,6 +785,7 @@ const statusStyles: Record<string, string> = {
                         <td class="px-3 py-2">{{ row.summary }}</td>
                         <td class="px-3 py-2">{{ row.type }}</td>
                         <td class="px-3 py-2">{{ row.course }}</td>
+                        <td class="px-3 py-2">{{ row.examType ?? '—' }}</td>
                         <td class="px-3 py-2">
                             <Badge
                                 :variant="
@@ -682,7 +834,7 @@ const statusStyles: Record<string, string> = {
                         </td>
                     </tr>
                     <tr v-if="questions.data.length === 0">
-                        <td colspan="7" class="px-3 py-10 text-center">
+                        <td colspan="8" class="px-3 py-10 text-center">
                             <p class="font-medium">No questions found</p>
                             <p class="text-muted-foreground mt-1 text-sm">
                                 {{

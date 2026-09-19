@@ -46,6 +46,7 @@ final readonly class QuestionContent
         public array $rubric = [],
         public array $references = [],
         public array $tagIds = [],
+        public ?int $examTypeId = null,
     ) {}
 
     /**
@@ -149,6 +150,7 @@ final readonly class QuestionContent
             disciplineId: isset($input['discipline_id']) ? (int) $input['discipline_id'] : null,
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
+            examTypeId: isset($input['exam_type_id']) ? (int) $input['exam_type_id'] : null,
             options: $options,
             items: $items,
             answers: $answers,

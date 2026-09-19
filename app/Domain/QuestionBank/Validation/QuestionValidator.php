@@ -49,6 +49,19 @@ final class QuestionValidator
             $errors['negative_marks'][] = "{$type->name} questions cannot have negative marks.";
         }
 
+        // --- where it is filed and how it is judged -------------------------------------------
+        // KMU files every question under an examination type, and judges each one's level of
+        // thinking and difficulty before it can go for review.
+        if ($content->examTypeId === null) {
+            $errors['exam_type_id'][] = 'Choose the examination type (Annual, Supplementary, Regular or Retake).';
+        }
+        if ($content->cognitiveLevelId === null) {
+            $errors['cognitive_level_id'][] = 'Choose the cognitive level (Recall, Understanding, Application or Analysis).';
+        }
+        if ($content->difficultyLevelId === null) {
+            $errors['difficulty_level_id'][] = 'Choose the difficulty level (Easy, Moderate or Difficult).';
+        }
+
         // --- options ------------------------------------------------------------------------
         $optionCount = count($content->options);
         if ($type->has_options) {
@@ -245,10 +258,6 @@ final class QuestionValidator
 
         if ($content->references === [] && config('qbank.require_reference') !== true) {
             $warnings[] = 'No reference given. A source makes review much faster.';
-        }
-
-        if ($content->cognitiveLevelId === null) {
-            $warnings[] = 'No level of thinking chosen (recall, application, analysis ...), which blueprints use to balance a paper.';
         }
 
         return array_values(array_unique($warnings));

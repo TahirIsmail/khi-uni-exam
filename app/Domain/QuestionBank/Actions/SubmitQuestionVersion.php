@@ -51,7 +51,13 @@ final class SubmitQuestionVersion
 
         return DB::transaction(function () use ($user, $version, $note): QuestionVersion {
             $from = $version->status;
-            $version->update(['status' => VersionStatus::Submitted, 'submitted_at' => now(), 'updated_by' => $user->id]);
+            // Each submission is a new round of review; the earlier round's reviews become history.
+            $version->update([
+                'status' => VersionStatus::Submitted,
+                'submitted_at' => now(),
+                'review_round' => $version->review_round + 1,
+                'updated_by' => $user->id,
+            ]);
 
             VersionStatusLog::query()->create([
                 'version_id' => $version->id,

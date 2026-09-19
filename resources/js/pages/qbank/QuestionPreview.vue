@@ -45,6 +45,7 @@ const draft = computed<QuestionDraft>(() => ({
     course_id: props.version.courseId,
     node_id: props.version.nodeId,
     discipline_id: props.version.disciplineId,
+    exam_type_id: props.version.examTypeId,
     vignette: props.version.vignette,
     stem: props.version.stem,
     lead_in: props.version.leadIn,
@@ -115,13 +116,11 @@ function startNewVersion(): void {
             <div class="grid content-start gap-4">
                 <dl class="grid gap-2 rounded-lg border p-4 text-sm">
                     <div class="flex justify-between gap-4">
-                        <dt class="text-muted-foreground">Level of thinking</dt>
+                        <dt class="text-muted-foreground">Cognitive level</dt>
                         <dd>{{ cognitive }}</dd>
                     </div>
                     <div class="flex justify-between gap-4">
-                        <dt class="text-muted-foreground">
-                            Expected difficulty
-                        </dt>
+                        <dt class="text-muted-foreground">Difficulty level</dt>
                         <dd>{{ difficulty }}</dd>
                     </div>
                     <div class="flex justify-between gap-4">

@@ -11,6 +11,7 @@ use App\Domain\QuestionBank\Review\AssignReviewers;
 use App\Domain\QuestionBank\Review\ReviewBoard;
 use App\Domain\QuestionBank\Review\ReviewerPool;
 use App\Domain\QuestionBank\Review\ReviewInput;
+use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Domain\QuestionBank\Review\SubmitReview;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
@@ -35,9 +36,10 @@ class ReviewController extends Controller
         private readonly QuestionEditorData $editorData,
     ) {}
 
-    /** The questions waiting for me. */
+    /** The questions waiting for me, at whichever level of review I do. */
     public function index(Request $request): Response
     {
+        $this->authoriseReviewer($request);
         $input = $request->validate(['show' => ['nullable', 'in:open,done,all']]);
         $show = $input['show'] ?? 'open';
 
@@ -54,19 +56,23 @@ class ReviewController extends Controller
         $this->authoriseVersion($request, $question, $version);
         $user = $request->user();
 
-        $mayReview = $pool->allows($user, $version);
+        $mayReview = $pool->allowsAny($user, $version);
         $mayApprove = $user->can('qbank.question.approve') && $version->author_id !== $user->id;
         $mayAssign = $user->can('qbank.review.assign');
         $isAuthor = $version->author_id === $user->id;
         abort_unless($mayReview || $mayApprove || $mayAssign || $isAuthor, 403, 'You have nothing to do with the review of this question.');
 
-        $reviewers = $mayAssign
-            ? array_map(fn (array $row): array => [
-                'id' => $row['user']->id,
-                'name' => $row['user']->name,
-                'openLoad' => $row['openLoad'],
-            ], $pool->forVersion($version))
-            : [];
+        // Who could be asked, at each level.
+        $reviewers = [];
+        if ($mayAssign) {
+            foreach (ReviewStage::cases() as $stage) {
+                $reviewers[$stage->value] = array_map(fn (array $row): array => [
+                    'id' => $row['user']->id,
+                    'name' => $row['user']->name,
+                    'openLoad' => $row['openLoad'],
+                ], $pool->forVersion($version, $stage));
+            }
+        }
 
         return Inertia::render('qbank/ReviewWorkspace', [
             'reference' => $question->public_ref,
@@ -89,6 +95,7 @@ class ReviewController extends Controller
     public function store(Request $request, Question $question, QuestionVersion $version, SubmitReview $submit): RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
+        $this->authoriseReviewer($request);
 
         $input = $request->validate([
             'assignment_id' => ['required', 'integer', 'min:1'],
@@ -101,7 +108,6 @@ class ReviewController extends Controller
             'checklist.*.note' => ['nullable', 'string', 'max:500'],
             'cognitive_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
             'difficulty_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
-            'estimated_p' => ['nullable', 'numeric', 'min:0', 'max:1'],
         ]);
 
         $assignment = ReviewAssignment::query()
@@ -116,7 +122,6 @@ class ReviewController extends Controller
             checklist: $input['checklist'] ?? [],
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
-            estimatedP: isset($input['estimated_p']) ? (float) $input['estimated_p'] : null,
         ));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $review->requestedChanges()
@@ -131,10 +136,13 @@ class ReviewController extends Controller
     {
         $this->authoriseVersion($request, $question, $version);
 
-        $input = $request->validate(['reviewer_id' => ['required', 'integer', 'min:1']]);
+        $input = $request->validate([
+            'reviewer_id' => ['required', 'integer', 'min:1'],
+            'stage' => ['nullable', 'in:subject,academic'],
+        ]);
         $reviewer = User::query()->where('is_active', true)->findOrFail((int) $input['reviewer_id']);
 
-        $assign->to($request->user(), $version, $reviewer);
+        $assign->to($request->user(), $version, $reviewer, ReviewStage::from($input['stage'] ?? 'subject'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':name was asked to review it.', ['name' => $reviewer->name])]);
 
@@ -153,6 +161,16 @@ class ReviewController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The review was taken back.')]);
 
         return back();
+    }
+
+    /** Reviewers of either level use the same queue and workspace. */
+    private function authoriseReviewer(Request $request): void
+    {
+        abort_unless(
+            $request->user()->can('qbank.review.perform') || $request->user()->can('qbank.review.academic'),
+            403,
+            'You do not review questions.',
+        );
     }
 
     private function authoriseVersion(Request $request, Question $question, QuestionVersion $version): void

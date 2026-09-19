@@ -18,13 +18,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * A reviewer's outcome (blueprint P1.8). Either:
+ * A reviewer's outcome, at either level of review (blueprint P1.8, KMU QBank mechanism). Either:
  *
  *  - "request changes": a comment is required and the question goes straight back to its author as
  *    changes-requested; the other open reviews are called off, because the question will change.
- *  - a review: a pre-hoc decision, the item-writing checklist and, for whoever may record it, the
- *    pre-hoc judgement (level of thinking, difficulty, expected proportion correct). The question
- *    moves to under-review and waits for an approver.
+ *  - a review: a decision, the item-writing checklist and, for whoever may record it, the cognitive
+ *    and difficulty level. The question moves to under-review. When every department / subject
+ *    reviewer has reviewed it, it goes on to a QBank / academic reviewer, and after that review it
+ *    waits for the approving authority.
  *
  * A submitted review is never edited — the database refuses it. Saying something else means a new
  * review, which is what happens after the author has made changes.
@@ -48,8 +49,9 @@ final class SubmitReview
         if (! $assignment->isOpen()) {
             throw ValidationException::withMessages(['assignment' => 'That review has already been submitted or cancelled.']);
         }
-        if (! $this->access->allows($reviewer, 'qbank.review.perform', $this->target($version))) {
-            throw new AuthorizationException('You cannot review questions of this course.');
+        $stage = ReviewStage::from($assignment->stage);
+        if (! $this->access->allows($reviewer, $stage->permission(), $this->target($version))) {
+            throw new AuthorizationException('You cannot do the '.mb_strtolower($stage->label()).' of questions of this course.');
         }
         if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)) {
             throw ValidationException::withMessages(['status' => 'This question is not waiting for review.']);
@@ -77,13 +79,15 @@ final class SubmitReview
 
         $prehoc = $this->prehocValues($reviewer, $version, $input);
 
-        return DB::transaction(function () use ($reviewer, $assignment, $version, $input, $comments, $decision, $checklist, $prehoc): Review {
+        return DB::transaction(function () use ($reviewer, $assignment, $version, $input, $comments, $decision, $checklist, $prehoc, $stage): Review {
             $review = Review::query()->create([
                 'assignment_id' => $assignment->id,
                 'version_id' => $version->id,
                 'question_id' => $version->question_id,
                 'branch_id' => $version->branch_id,
                 'reviewer_id' => $reviewer->id,
+                'stage' => $stage->value,
+                'round' => $assignment->round,
                 'outcome' => $input->requestsChanges() ? 'changes_requested' : 'reviewed',
                 'decision_id' => $decision?->id,
                 'comments' => $comments,
@@ -135,12 +139,27 @@ final class SubmitReview
 
             $this->audit->record('qbank.review.submitted', 'question_version', $version->id, null, [
                 'review_id' => $review->id,
+                'stage' => $stage->value,
                 'decision' => $decision?->code,
                 'failed_required' => $this->checklist->failedRequired($checklist ?? []),
             ], $comments, $reviewer, $version->branch_id);
 
+            // When the department / subject reviews of this round are all in, the question goes on
+            // to the QBank / academic review.
+            if ($stage === ReviewStage::Subject && $this->subjectReviewsComplete($version)) {
+                $this->assignments->auto($version, $reviewer, ReviewStage::Academic);
+            }
+
             return $review;
         });
+    }
+
+    private function subjectReviewsComplete(QuestionVersion $version): bool
+    {
+        $round = $this->assignments->currentRound($version)->where('stage', ReviewStage::Subject->value);
+
+        return $round->where('status', 'open')->isEmpty()
+            && $round->where('status', 'submitted')->count() >= $this->assignments->needed(ReviewStage::Subject);
     }
 
     /**

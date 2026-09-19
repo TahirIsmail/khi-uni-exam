@@ -123,6 +123,96 @@ final class CmsAcademic
     }
 
     /**
+     * The examination types, each with the calendar it belongs to: Annual and Supplementary for
+     * annual programmes, Regular and Retake for semester programmes.
+     *
+     * @return list<array{id: int, code: string, name: string, calendar: string}>
+     */
+    public function examTypes(): array
+    {
+        return array_values(DB::connection('cms')->table('v_cms_exam_types')
+            ->where('is_active', 1)->orderBy('sort_order')->orderBy('id')
+            ->get(['id', 'code', 'name', 'calendar_type'])
+            ->map(fn (stdClass $row): array => [
+                'id' => (int) $row->id,
+                'code' => (string) $row->code,
+                'name' => (string) $row->name,
+                'calendar' => (string) $row->calendar_type,
+            ])
+            ->all());
+    }
+
+    /**
+     * Whether an examination type can be used for a programme: Annual and Supplementary belong to
+     * annual programmes, Regular and Retake to semester ones.
+     */
+    public function examTypeFits(int $examTypeId, int $programmeId): bool
+    {
+        $calendar = $this->programmeCalendar($programmeId);
+        $type = DB::connection('cms')->table('v_cms_exam_types')->where('id', $examTypeId)->where('is_active', 1)->value('calendar_type');
+
+        return $calendar !== null && $type !== null && (string) $type === $calendar;
+    }
+
+    /** Whether a programme runs on an annual or a semester calendar. */
+    public function programmeCalendar(int $programmeId): ?string
+    {
+        $calendar = DB::connection('cms')->table('v_cms_programmes')->where('id', $programmeId)->value('calendar_type');
+
+        return $calendar === null ? null : (string) $calendar;
+    }
+
+    /**
+     * The years (professionals) of the campus's programmes and, for semester programmes, their
+     * terms — the "Year / Semester" step between the programme and its courses.
+     *
+     * @return list<array{id: string, programme_id: int, professional_id: int, term_id: int|null, name: string}>
+     */
+    public function yearsAndTerms(int $branchId): array
+    {
+        $cms = DB::connection('cms');
+        $professionals = $cms->table('v_cms_professionals')
+            ->where('branch_id', $branchId)->where('is_active', 1)
+            ->orderBy('programme_id')->orderBy('sequence')
+            ->get(['id', 'programme_id', 'name']);
+
+        $terms = [];
+        foreach ($cms->table('v_cms_professional_terms')->where('is_active', 1)->orderBy('sequence')->get(['id', 'professional_id', 'name']) as $term) {
+            $terms[(int) $term->professional_id][] = $term;
+        }
+
+        $options = [];
+        foreach ($professionals as $professional) {
+            $professionalId = (int) $professional->id;
+
+            // A semester programme is chosen down to the term; an annual one only to the year.
+            if (isset($terms[$professionalId])) {
+                foreach ($terms[$professionalId] as $term) {
+                    $options[] = [
+                        'id' => $professionalId.'-'.(int) $term->id,
+                        'programme_id' => (int) $professional->programme_id,
+                        'professional_id' => $professionalId,
+                        'term_id' => (int) $term->id,
+                        'name' => $professional->name.', '.$term->name,
+                    ];
+                }
+
+                continue;
+            }
+
+            $options[] = [
+                'id' => (string) $professionalId,
+                'programme_id' => (int) $professional->programme_id,
+                'professional_id' => $professionalId,
+                'term_id' => null,
+                'name' => (string) $professional->name,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
      * @return list<array{id: int, code: string, name: string}>
      */
     public function disciplines(): array

@@ -20,13 +20,15 @@ use Illuminate\Support\Carbon;
  * @property int $question_id
  * @property int $branch_id
  * @property int $reviewer_id
+ * @property string $stage subject or academic
+ * @property int $round the version's round of review
  * @property string $outcome
  * @property int|null $decision_id
  * @property string|null $comments
  * @property list<array{code: string, pass: bool, note?: string|null}>|null $checklist
  * @property Carbon $submitted_at
  */
-#[Fillable(['assignment_id', 'version_id', 'question_id', 'branch_id', 'reviewer_id', 'outcome', 'decision_id', 'comments', 'checklist', 'submitted_at'])]
+#[Fillable(['assignment_id', 'version_id', 'question_id', 'branch_id', 'reviewer_id', 'stage', 'round', 'outcome', 'decision_id', 'comments', 'checklist', 'submitted_at'])]
 final class Review extends Model
 {
     protected $table = 'qb_reviews';

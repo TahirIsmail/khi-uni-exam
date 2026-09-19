@@ -146,6 +146,32 @@ trait InteractsWithCms
         ]);
     }
 
+    /**
+     * One of the four examination types kmu-cms seeds: annual, supplementary (annual programmes),
+     * regular, retake (semester programmes). The test programmes run on the annual calendar.
+     */
+    protected function cmsExamType(string $code = 'annual'): int
+    {
+        $table = config('database.cms_source_database').'.acad_exam_types';
+        $types = [
+            'annual' => ['Annual', 'annual', 0, 1],
+            'supplementary' => ['Supplementary', 'annual', 1, 2],
+            'regular' => ['Regular', 'semester', 0, 3],
+            'retake' => ['Retake', 'semester', 1, 4],
+        ];
+
+        $id = DB::table($table)->where('code', $code)->value('id');
+        if ($id !== null) {
+            return (int) $id;
+        }
+
+        [$name, $calendar, $resit, $sort] = $types[$code];
+
+        return (int) DB::table($table)->insertGetId([
+            'code' => $code, 'name' => $name, 'calendar_type' => $calendar, 'is_resit' => $resit, 'sort_order' => $sort, 'is_active' => 1,
+        ]);
+    }
+
     protected function cmsDiscipline(string $name = 'Physiology'): int
     {
         return (int) DB::table(config('database.cms_source_database').'.acad_disciplines')->insertGetId([

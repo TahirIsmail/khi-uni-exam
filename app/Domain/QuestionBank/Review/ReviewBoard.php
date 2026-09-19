@@ -59,6 +59,8 @@ final class ReviewBoard
     {
         return [
             'id' => $assignment->id,
+            'stage' => $assignment->stage,
+            'stageLabel' => ReviewStage::from($assignment->stage)->label(),
             'status' => $assignment->status,
             'isOverdue' => $assignment->isOverdue(),
             'dueAt' => $assignment->due_at?->toIso8601String(),
@@ -90,20 +92,22 @@ final class ReviewBoard
 
         // How many reviews this round has is counted in SQL, so that "ready" and "still in review"
         // are real pages: filtering after paging would leave holes and empty pages.
-        $reviewsIn = DB::table('qb_reviews')
+        $reviewsIn = fn (ReviewStage $stage) => DB::table('qb_reviews')
             ->selectRaw('COUNT(*)') // raw-sql-reviewed: fixed aggregate, no user input
             ->whereColumn('qb_reviews.version_id', 'qb_question_versions.id')
             ->where('qb_reviews.outcome', 'reviewed')
-            ->whereColumn('qb_reviews.submitted_at', '>=', 'qb_question_versions.submitted_at');
+            ->where('qb_reviews.stage', $stage->value)
+            ->whereColumn('qb_reviews.round', 'qb_question_versions.review_round');
 
         return QuestionVersion::query()
             ->where('branch_id', $branchId)
             ->whereIn('status', $show === 'approved' ? [VersionStatus::Approved] : [VersionStatus::Submitted, VersionStatus::UnderReview])
             ->when($courseIds !== null, fn ($query) => $query->whereIn('course_id', $courseIds ?? []))
             ->select('qb_question_versions.*')
-            ->selectSub($reviewsIn, 'reviews_in')
-            ->when($show === 'ready', fn ($query) => $query->havingRaw('reviews_in >= ? AND author_id <> ?', [$required, $approver->id])) // raw-sql-reviewed: bound values
-            ->when($show === 'waiting', fn ($query) => $query->havingRaw('(reviews_in < ? OR author_id = ?)', [$required, $approver->id])) // raw-sql-reviewed: bound values
+            ->selectSub($reviewsIn(ReviewStage::Subject), 'subject_in')
+            ->selectSub($reviewsIn(ReviewStage::Academic), 'academic_in')
+            ->when($show === 'ready', fn ($query) => $query->havingRaw('subject_in >= ? AND academic_in >= 1 AND author_id <> ?', [$required, $approver->id])) // raw-sql-reviewed: bound values
+            ->when($show === 'waiting', fn ($query) => $query->havingRaw('(subject_in < ? OR academic_in < 1 OR author_id = ?)', [$required, $approver->id])) // raw-sql-reviewed: bound values
             ->with(['type:id,name', 'question:id,public_ref', 'reviews'])
             ->orderBy('submitted_at')
             ->orderBy('id')
@@ -136,8 +140,9 @@ final class ReviewBoard
             'marks' => $version->marks,
             'summary' => mb_substr(QuestionHtml::toText($version->stem), 0, 160),
             'submittedAt' => $version->submitted_at?->toIso8601String(),
-            'reviewsIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges())),
-            'reviewsNeeded' => $this->settings->reviewsRequired(),
+            'subjectIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === ReviewStage::Subject->value)),
+            'subjectNeeded' => $this->settings->reviewsRequired(),
+            'academicIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === ReviewStage::Academic->value)),
             'isMine' => $isMine,
             'blockedBecause' => $isMine ? 'You wrote this question, so somebody else has to approve it.' : ($problem === null ? null : implode(' ', $problem)),
         ];
@@ -172,6 +177,8 @@ final class ReviewBoard
         return [
             'reviews' => $reviews->map(fn (Review $review): array => [
                 'id' => $review->id,
+                'stage' => $review->stage,
+                'stageLabel' => ReviewStage::from($review->stage)->label(),
                 'reviewer' => $namesVisible ? ($names[$review->reviewer_id] ?? 'Unknown') : 'A reviewer',
                 'isMe' => $review->reviewer_id === $viewer->id,
                 'outcome' => $review->outcome,
@@ -184,6 +191,8 @@ final class ReviewBoard
             ])->values()->all(),
             'assignments' => $assignments->map(fn (ReviewAssignment $assignment): array => [
                 'id' => $assignment->id,
+                'stage' => $assignment->stage,
+                'stageLabel' => ReviewStage::from($assignment->stage)->label(),
                 'reviewer' => $namesVisible ? ($names[$assignment->reviewer_id] ?? 'Unknown') : 'A reviewer',
                 'isMe' => $assignment->reviewer_id === $viewer->id,
                 'status' => $assignment->status,
@@ -200,6 +209,8 @@ final class ReviewBoard
                 ->map(fn (PrehocAssessment $row): array => $this->describePrehoc($row, $levels))
                 ->values()->all(),
             'myAssignmentId' => $mine?->id,
+            'myStage' => $mine?->stage,
+            'myStageLabel' => $mine === null ? null : ReviewStage::from($mine->stage)->label(),
             'checklistItems' => array_map(fn ($item): array => [
                 'code' => $item->code,
                 'text' => $item->text,
@@ -216,8 +227,23 @@ final class ReviewBoard
                     'needsComment' => $decision->needs_comment,
                 ])->values()->all(),
             'reviewsNeeded' => $this->settings->reviewsRequired(),
+            'subjectIn' => $this->countReviewed($version, $reviews, ReviewStage::Subject),
+            'academicIn' => $this->countReviewed($version, $reviews, ReviewStage::Academic),
             'autoActivate' => $this->settings->autoActivate(),
         ];
+    }
+
+    /**
+     * Reviews of this round at one level that did not ask for changes.
+     *
+     * @param  iterable<int, Review>  $reviews
+     */
+    private function countReviewed(QuestionVersion $version, iterable $reviews, ReviewStage $stage): int
+    {
+        return count(array_filter(
+            $this->approval->reviewsOfRound($version, $reviews),
+            fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === $stage->value,
+        ));
     }
 
     /** Whether the author of this question may see who reviewed it. */

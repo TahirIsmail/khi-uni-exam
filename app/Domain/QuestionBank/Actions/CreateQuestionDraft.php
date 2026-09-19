@@ -38,6 +38,9 @@ final class CreateQuestionDraft
         if ($place['branch_id'] !== $branchId) {
             throw ValidationException::withMessages(['course_id' => 'That course belongs to another campus.']);
         }
+        if ($content->examTypeId !== null && ! $this->academic->examTypeFits($content->examTypeId, $place['programme_id'])) {
+            throw ValidationException::withMessages(['exam_type_id' => 'That examination type is not used by this programme (Annual and Supplementary are for annual programmes, Regular and Retake for semester programmes).']);
+        }
         if (! $this->access->allows($author, 'qbank.question.create', new ScopeTarget($branchId, $place['programme_id'], $place['professional_id'], $place['course_id']))) {
             throw new AuthorizationException('You cannot write questions for this course.');
         }
@@ -71,6 +74,7 @@ final class CreateQuestionDraft
                 'discipline_id' => $content->disciplineId ?? $place['discipline_id'],
                 'cognitive_level_id' => $content->cognitiveLevelId,
                 'difficulty_level_id' => $content->difficultyLevelId,
+                'exam_type_id' => $content->examTypeId,
                 'status' => VersionStatus::Draft,
                 'content_hash' => $content->contentHash(),
                 'search_text' => $content->searchText(),

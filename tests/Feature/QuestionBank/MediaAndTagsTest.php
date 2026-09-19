@@ -34,6 +34,9 @@ function question(array $overrides = []): array
         'stem' => '<p>A 54-year-old man has crushing chest pain radiating to the jaw.</p>',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
         'options' => [
             ['label' => 'A', 'body' => 'ECG', 'is_correct' => true, 'sort_order' => 1],
             ['label' => 'B', 'body' => 'Chest radiograph', 'is_correct' => false, 'sort_order' => 2],

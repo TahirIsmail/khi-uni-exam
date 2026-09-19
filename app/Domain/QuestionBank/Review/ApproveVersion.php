@@ -18,9 +18,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The approval gate (blueprint 9.2). A version is approved only when:
+ * The approval gate (blueprint 9.2, KMU QBank mechanism). A version is approved only when:
  *
- *  - as many reviews are in as kmu-cms asks for, and none of them asked for changes;
+ *  - as many department / subject reviews are in as kmu-cms asks for, and the QBank / academic
+ *    review after them, and none of them asked for changes;
  *  - no required item of the item-writing checklist was marked as failed;
  *  - the approver's consolidated decision is an "accept" one;
  *  - the approver is not the author (separation of duty);
@@ -118,9 +119,11 @@ final class ApproveVersion
     {
         $reviewed = array_values(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges()));
         $required = $this->settings->reviewsRequired();
+        $subject = count(array_filter($reviewed, fn (Review $review): bool => $review->stage === ReviewStage::Subject->value));
+        $academic = count(array_filter($reviewed, fn (Review $review): bool => $review->stage === ReviewStage::Academic->value));
 
-        if (count($reviewed) < $required) {
-            return ['reviews' => 'This question needs '.$required.' review(s) and has '.count($reviewed).'.'];
+        if ($subject < $required) {
+            return ['reviews' => 'This question needs '.$required.' department / subject review(s) and has '.$subject.'.'];
         }
 
         $failed = [];
@@ -131,6 +134,10 @@ final class ApproveVersion
         }
         if ($failed !== []) {
             return ['checklist' => 'A reviewer marked a required checklist item as failed: '.implode('; ', array_values($failed)).'. Send it back to the author.'];
+        }
+
+        if ($academic < 1) {
+            return ['reviews' => 'This question is waiting for its QBank / academic review.'];
         }
 
         if ($input !== null && $this->reviewersDisagree($reviewed) && ($input->reason === null || mb_strlen(trim($input->reason)) < 10)) {
@@ -150,7 +157,7 @@ final class ApproveVersion
     {
         return array_values(Review::query()
             ->where('version_id', $version->id)
-            ->when($version->submitted_at !== null, fn ($query) => $query->where('submitted_at', '>=', $version->submitted_at))
+            ->where('round', $version->review_round)
             ->orderBy('id')
             ->get()
             ->all());
@@ -162,11 +169,9 @@ final class ApproveVersion
      */
     public function reviewsOfRound(QuestionVersion $version, iterable $reviews): array
     {
-        $since = $version->submitted_at;
-
         $current = [];
         foreach ($reviews as $review) {
-            if ($since === null || ! $review->submitted_at->lessThan($since)) {
+            if ($review->round === $version->review_round) {
                 $current[] = $review;
             }
         }

@@ -16,6 +16,23 @@ use Tests\Concerns\PassesMfa;
 
 uses(InteractsWithCms::class, PassesMfa::class);
 
+/** The QBank / academic review that follows the department / subject review(s). */
+function academicReview(QuestionVersion $version, array $overrides = []): void
+{
+    $assignment = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->where('status', 'open')->firstOrFail();
+    $codes = DB::table('qb_review_checklist_items')->where('is_active', true)
+        ->where(fn ($q) => $q->whereNull('applies_to')->orWhere('applies_to', $version->type->family))
+        ->pluck('code');
+
+    test()->actingAs(test()->academic)->post("/questions/{$version->question_id}/versions/{$version->id}/review", array_replace([
+        'assignment_id' => $assignment->id,
+        'outcome' => 'reviewed',
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+        'comments' => 'Suitable for the question bank; language and key checked.',
+        'checklist' => $codes->map(fn (string $code): array => ['code' => $code, 'pass' => true])->all(),
+    ], $overrides))->assertRedirect('/reviews');
+}
+
 beforeEach(function () {
     $this->shareCmsConnection();
     $this->cmsExamSettings();
@@ -42,6 +59,13 @@ beforeEach(function () {
     $this->cmsGrant($approverRole, 'qbank_review_assign', 'view');
     $this->approverRole = $approverRole;
     $this->approver = $this->staffUser([$approverRole], $this->branch);
+
+    $academicRole = $this->cmsRole('QBank academic reviewer');
+    $this->cmsGrant($academicRole, 'qbank_questions', 'view');
+    $this->cmsGrant($academicRole, 'qbank_review_academic', 'view');
+    $this->cmsGrant($academicRole, 'qbank_prehoc', 'view');
+    $this->academicRole = $academicRole;
+    $this->academic = $this->staffUser([$academicRole], $this->branch);
 });
 
 /** A question the author writes and sends for review, which assigns the reviewers. */
@@ -55,6 +79,7 @@ function sendForReview(array $overrides = []): QuestionVersion
         'lead_in' => 'Which investigation is most useful first?',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
         'cognitive_level_id' => 2,
         'difficulty_level_id' => 2,
         'options' => [
@@ -84,7 +109,6 @@ function reviewPayload(array $overrides = []): array
         'checklist' => $codes->map(fn (string $code): array => ['code' => $code, 'pass' => true])->all(),
         'cognitive_level_id' => 3,
         'difficulty_level_id' => 2,
-        'estimated_p' => 0.6,
     ], $overrides);
 }
 
@@ -160,7 +184,6 @@ test('a reviewer reviews a question, which records the pre-hoc judgement and wai
     $prehoc = PrehocAssessment::query()->where('source', 'reviewer')->firstOrFail();
     expect($prehoc->review_id)->toBe($review->id)
         ->and($prehoc->cognitive_level_id)->toBe(3)
-        ->and($prehoc->estimated_p)->toBe(0.6)
         ->and($version->cognitive_level_id)->toBe(2); // still the author's proposal until approval
 
     expect(DB::table('sec_audit_logs')->whereIn('action', ['qbank.review.submitted', 'qbank.prehoc.recorded'])->count())->toBe(2);
@@ -210,6 +233,9 @@ test('asking for changes sends the question back to its author and calls off the
         'lead_in' => 'Which investigation is most useful first?',
         'marks' => 1,
         'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
         'options' => [
             ['label' => 'A', 'body' => 'ECG', 'is_correct' => true, 'sort_order' => 1],
             ['label' => 'B', 'body' => 'Chest radiograph', 'is_correct' => false, 'sort_order' => 2],
@@ -219,8 +245,9 @@ test('asking for changes sends the question back to its author and calls off the
 
     $this->actingAs($this->author)->post("/questions/{$version->question_id}/versions/{$version->id}/submit")->assertRedirect();
 
+    // A new round: both department / subject reviewers are asked again, since the question changed.
     expect($version->fresh()->status)->toBe(VersionStatus::Submitted)
-        ->and(ReviewAssignment::query()->where('status', 'open')->count())->toBe(1);
+        ->and(ReviewAssignment::query()->where('status', 'open')->where('stage', 'subject')->count())->toBe(2);
 });
 
 test('asking for changes needs a comment, and a review needs a decision', function () {
@@ -280,7 +307,7 @@ test('a reviewer who may not record a pre-hoc assessment can still review', func
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/reviewers", ['reviewer_id' => $plain->id])->assertRedirect();
     $theirs = ReviewAssignment::query()->where('reviewer_id', $plain->id)->firstOrFail();
 
-    $this->actingAs($plain)->post($url, reviewPayload(['assignment_id' => $theirs->id, 'cognitive_level_id' => null, 'difficulty_level_id' => null, 'estimated_p' => null]))
+    $this->actingAs($plain)->post($url, reviewPayload(['assignment_id' => $theirs->id, 'cognitive_level_id' => null, 'difficulty_level_id' => null]))
         ->assertRedirect('/reviews');
 
     expect(Review::query()->count())->toBe(1)
@@ -301,11 +328,11 @@ test('an approver approves a reviewed question, which settles its values and put
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
 
+    academicReview($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
         'difficulty_level_id' => 3,
-        'estimated_p' => 0.55,
     ])->assertRedirect('/approvals');
 
     $version->refresh();
@@ -323,7 +350,6 @@ test('an approver approves a reviewed question, which settles its values and put
     $consolidated = PrehocAssessment::query()->where('is_consolidated', true)->firstOrFail();
     expect($consolidated->source)->toBe('consolidated')
         ->and($consolidated->review_id)->toBeNull()
-        ->and($consolidated->estimated_p)->toBe(0.55)
         ->and($consolidated->assessed_by)->toBe($this->approver->id)
         ->and(PrehocAssessment::query()->count())->toBe(3); // author, reviewer, consolidated
 
@@ -337,6 +363,7 @@ test('when kmu-cms says so, an approved question waits before it can be used', f
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
 
+    academicReview($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -386,13 +413,14 @@ test('the approval gate holds: enough reviews, no failed rule, an accept decisio
         'assignment_id' => ReviewAssignment::query()->where('version_id', $clean->id)->value('id'),
     ]));
 
+    academicReview($clean);
     $this->actingAs($this->approver)->from('/approvals')->post("/questions/{$clean->question_id}/versions/{$clean->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'review')->value('id'),
         'comments' => 'Kept back for the department to look at again.',
     ])->assertSessionHasErrors('decision_id');
 
     expect($clean->fresh()->status)->toBe(VersionStatus::UnderReview)
-        ->and(Review::query()->count())->toBe(2);
+        ->and(Review::query()->count())->toBe(3); // two subject reviews and the clean one's academic review
 });
 
 test('nobody approves their own question, even with the right to approve', function () {
@@ -423,6 +451,8 @@ test('when two reviewers decide differently the approver has to say why', functi
         'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
         'comments' => 'Shorten the vignette; the second option needs rewording.',
     ]));
+
+    academicReview($version->fresh());
 
     $approveUrl = "/questions/{$version->question_id}/versions/{$version->id}/approve";
     $accept = (int) PrehocDecision::query()->where('code', 'accept')->value('id');
@@ -467,6 +497,7 @@ test('a new version of a question in use takes its place when it is approved', f
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
+    academicReview($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -480,6 +511,7 @@ test('a new version of a question in use takes its place when it is approved', f
     $this->actingAs($this->reviewer)->post("/questions/{$second->question_id}/versions/{$second->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->where('version_id', $second->id)->value('id'),
     ]));
+    academicReview($second);
     $this->actingAs($this->approver)->post("/questions/{$second->question_id}/versions/{$second->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -545,13 +577,16 @@ test('the approval queue separates what is ready from what is still in review', 
 
     $this->actingAs($this->approver)->get('/approvals?show=waiting')->assertInertia(fn ($page) => $page
         ->where('versions.data.0.versionId', $version->id)
-        ->where('versions.data.0.reviewsIn', 0)
-        ->where('versions.data.0.reviewsNeeded', 1)
-        ->where('versions.data.0.blockedBecause', fn ($why) => str_contains((string) $why, 'needs 1 review')));
+        ->where('versions.data.0.subjectIn', 0)
+        ->where('versions.data.0.subjectNeeded', 1)
+        ->where('versions.data.0.academicIn', 0)
+        ->where('versions.data.0.blockedBecause', fn ($why) => str_contains((string) $why, 'needs 1 department / subject review')));
 
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
+
+    academicReview($version->fresh());
 
     $this->actingAs($this->approver)->get('/approvals')->assertInertia(fn ($page) => $page
         ->where('versions.data.0.versionId', $version->id)
@@ -585,7 +620,7 @@ test('the workspace shows the question, the checklist and what the reviewers sai
         ->where('reviews.0.reviewer', $this->reviewer->name)
         ->where('reviews.0.decision', 'Accept')
         ->where('reviews.0.comments', fn ($text) => str_contains((string) $text, 'defensible'))
-        ->where('reviews.0.prehoc.estimatedP', 0.6));
+        ->where('reviews.0.prehoc.cognitiveLevelId', 3));
 
     // Somebody with nothing to do with this question cannot open the workspace.
     $this->actingAs($this->staffUser([$this->cmsRole('Reader')], $this->branch))->get($url)->assertForbidden();
@@ -612,6 +647,7 @@ test('the timeline of a question records every step of the review', function () 
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
+    academicReview($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -652,6 +688,7 @@ test('everything in the review is written to the audit log with its campus', fun
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->value('id'),
     ]));
+    academicReview($version);
     $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
         'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
         'cognitive_level_id' => 3,
@@ -669,4 +706,68 @@ test('everything in the review is written to the audit log with its campus', fun
 
     expect(DB::table('sec_audit_logs')->where('action', 'qbank.review.submitted')->value('actor_id'))->toBe($this->reviewer->id)
         ->and(DB::table('sec_audit_logs')->where('action', 'qbank.question.approved')->value('actor_id'))->toBe($this->approver->id);
+});
+
+test('review has two levels: department / subject first, then QBank / academic, then approval', function () {
+    $version = sendForReview();
+
+    // Only the department / subject review is asked for at first.
+    expect(ReviewAssignment::query()->where('version_id', $version->id)->pluck('stage')->all())->toBe(['subject']);
+
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]))->assertRedirect('/reviews');
+
+    // Its review in, the question goes to the QBank / academic reviewer — somebody else.
+    $academic = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->firstOrFail();
+    expect($academic->reviewer_id)->toBe($this->academic->id)
+        ->and($academic->status)->toBe('open');
+
+    // Not approvable yet.
+    $this->actingAs($this->approver)->from('/approvals')->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+    ])->assertSessionHasErrors('reviews');
+
+    // The academic reviewer sees it in the same queue, labelled with its level.
+    $this->actingAs($this->academic)->get('/reviews')->assertOk()->assertInertia(fn ($page) => $page
+        ->where('assignments.data.0.stage', 'academic')
+        ->where('assignments.data.0.stageLabel', 'QBank / Academic review'));
+
+    academicReview($version->fresh());
+
+    $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+        'cognitive_level_id' => 3,
+        'difficulty_level_id' => 2,
+    ])->assertRedirect('/approvals');
+
+    expect($version->fresh()->status)->toBe(VersionStatus::Active)
+        ->and(Review::query()->where('version_id', $version->id)->orderBy('id')->pluck('stage')->all())->toBe(['subject', 'academic']);
+});
+
+test('each level needs its own right, and the academic reviewer can send it back too', function () {
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]));
+    $academic = ReviewAssignment::query()->where('stage', 'academic')->firstOrFail();
+
+    // A subject reviewer cannot be asked for the academic review.
+    $assigner = $this->staffUser([$this->approverRole], $this->branch);
+    $this->cmsGrant($this->approverRole, 'qbank_review_assign', 'view');
+    app(AccessControl::class)->forget($assigner);
+    $this->actingAs($assigner)->from('/approvals')->post("/questions/{$version->question_id}/versions/{$version->id}/reviewers", [
+        'reviewer_id' => $this->staffUser([$this->reviewerRole], $this->branch)->id,
+        'stage' => 'academic',
+    ])->assertSessionHasErrors('reviewer_id');
+
+    // The academic reviewer asks for changes: the question goes back to its author.
+    $this->actingAs($this->academic)->post("/questions/{$version->question_id}/versions/{$version->id}/review", [
+        'assignment_id' => $academic->id,
+        'outcome' => 'changes_requested',
+        'comments' => 'The language of option C is ambiguous; reword it.',
+    ])->assertRedirect('/reviews');
+
+    expect($version->fresh()->status)->toBe(VersionStatus::ChangesRequested)
+        ->and(Review::query()->where('stage', 'academic')->value('outcome'))->toBe('changes_requested');
 });

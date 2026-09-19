@@ -12,6 +12,7 @@ import { index as questionsIndex } from '@/routes/questions';
 import type {
     CourseOption,
     CurriculumNode,
+    ExamTypeOption,
     ImportSummary,
     Paginated,
     QuestionTypeInfo,
@@ -33,6 +34,7 @@ const props = defineProps<{
     programmes: { id: number; name: string; code: string }[];
     courses: CourseOption[];
     types: QuestionTypeInfo[];
+    examTypes: ExamTypeOption[];
 }>();
 
 const form = useForm<{
@@ -40,11 +42,13 @@ const form = useForm<{
     course_id: number | null;
     node_id: number | null;
     type_id: number | null;
+    exam_type_id: number | null;
 }>({
     file: null,
     course_id: null,
     node_id: null,
     type_id: null,
+    exam_type_id: null,
 });
 
 const programmeId = ref<number | null>(null);
@@ -139,13 +143,13 @@ const statusStyles: Record<string, string> = {
                 </p>
             </div>
 
-            <div class="grid gap-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-5">
                 <p
-                    class="text-muted-foreground text-xs sm:col-span-2 lg:col-span-4"
+                    class="text-muted-foreground text-xs sm:col-span-2 lg:col-span-5"
                 >
-                    If the whole file is for one course, topic or type, choose
-                    them here and you can leave those columns out. A row that
-                    names its own course or topic always wins.
+                    If the whole file is for one examination, course, topic or
+                    type, choose them here and you can leave those columns out.
+                    A row that names its own always wins.
                 </p>
                 <div class="grid gap-1.5">
                     <Label for="programme">Programme</Label>
@@ -166,7 +170,25 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="course">Course ID</Label>
+                    <Label for="exam-type">Examination</Label>
+                    <select
+                        id="exam-type"
+                        v-model="form.exam_type_id"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        data-test="default-exam-type"
+                    >
+                        <option :value="null">Named in the file</option>
+                        <option
+                            v-for="row in examTypes"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ row.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="course">Module / Subject (Course ID)</Label>
                     <select
                         id="course"
                         v-model="form.course_id"

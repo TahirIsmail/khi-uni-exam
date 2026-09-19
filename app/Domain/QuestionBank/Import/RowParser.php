@@ -35,7 +35,7 @@ final class RowParser
 
     /**
      * @param  array<string, string>  $row
-     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null}  $defaults
+     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null}  $defaults
      * @return array{content: QuestionContent|null, errors: array<string, list<string>>}
      */
     public function parse(array $row, int $branchId, array $defaults = []): array
@@ -76,6 +76,15 @@ final class RowParser
             $disciplineId = $this->findDiscipline($value('discipline'));
             if ($disciplineId === null) {
                 $errors['discipline'][] = 'There is no discipline "'.$value('discipline').'".';
+            }
+        }
+
+        // Annual, Supplementary, Regular or Retake — by name or code, or the file's default.
+        $examTypeId = $defaults['exam_type_id'] ?? null;
+        if ($value('exam_type') !== '') {
+            $examTypeId = $this->findExamType($value('exam_type'));
+            if ($examTypeId === null) {
+                $errors['exam_type'][] = 'There is no examination type "'.$value('exam_type').'" (Annual, Supplementary, Regular or Retake).';
             }
         }
 
@@ -132,6 +141,7 @@ final class RowParser
                 rubric: [],
                 references: $this->references($value('references')),
                 tagIds: $this->tagIds($value('tags'), $branchId),
+                examTypeId: $examTypeId,
             ),
             'errors' => [],
         ];
@@ -443,6 +453,18 @@ final class RowParser
             }
             if (mb_strtolower((string) $node['code']) === $needle || mb_strtolower($node['name']) === $needle) {
                 return $node['id'];
+            }
+        }
+
+        return null;
+    }
+
+    private function findExamType(string $given): ?int
+    {
+        $needle = mb_strtolower(trim($given));
+        foreach ($this->academic->examTypes() as $examType) {
+            if (mb_strtolower($examType['code']) === $needle || mb_strtolower($examType['name']) === $needle) {
+                return $examType['id'];
             }
         }
 

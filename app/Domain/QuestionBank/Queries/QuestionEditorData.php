@@ -42,6 +42,8 @@ final class QuestionEditorData
                 $this->academic->programmes($branchId),
                 fn (array $programme): bool => in_array($programme['id'], $programmeIds, true),
             )),
+            'years' => $this->yearsFor($courses, $branchId),
+            'programmeCalendars' => $this->calendars($branchId),
             'courses' => $courses,
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             'disciplines' => $this->academic->disciplines(),
@@ -64,6 +66,8 @@ final class QuestionEditorData
                 $this->academic->programmes($branchId),
                 fn (array $programme): bool => in_array($programme['id'], $programmeIds, true),
             )),
+            'years' => $this->yearsFor($courses, $branchId),
+            'programmeCalendars' => $this->calendars($branchId),
             'courses' => $courses,
             'disciplines' => $this->academic->disciplines(),
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
@@ -103,6 +107,7 @@ final class QuestionEditorData
             ])->all(),
             'cognitiveLevels' => CognitiveLevel::query()->where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'description'])->all(),
             'difficultyLevels' => DifficultyLevel::query()->where('is_active', true)->orderBy('sort_order')->get(['id', 'name'])->all(),
+            'examTypes' => $this->academic->examTypes(),
             'limits' => [
                 'stemMin' => (int) config('qbank.stem.min_length'),
                 'stemMax' => (int) config('qbank.stem.max_length'),
@@ -125,6 +130,41 @@ final class QuestionEditorData
         return $allowed === null
             ? $courses
             : array_values(array_filter($courses, fn (array $course): bool => in_array($course['id'], $allowed, true)));
+    }
+
+    /**
+     * The Year / Semester choices that lead to at least one of these courses, so the author is
+     * never offered a year with nothing in it.
+     *
+     * @param  list<array{id: int, code: string, title: string, programme_id: int, professional_id: int|null, term_id: int|null}>  $courses
+     * @return list<array{id: string, programme_id: int, professional_id: int, term_id: int|null, name: string}>
+     */
+    private function yearsFor(array $courses, int $branchId): array
+    {
+        $used = [];
+        foreach ($courses as $course) {
+            $used[$course['professional_id'].'-'.($course['term_id'] ?? '')] = true;
+        }
+
+        return array_values(array_filter(
+            $this->academic->yearsAndTerms($branchId),
+            fn (array $year): bool => isset($used[$year['professional_id'].'-'.($year['term_id'] ?? '')]),
+        ));
+    }
+
+    /**
+     * Each programme's calendar, so the editor offers only the examination types it uses.
+     *
+     * @return array<int, string>
+     */
+    private function calendars(int $branchId): array
+    {
+        $calendars = [];
+        foreach ($this->academic->programmes($branchId) as $programme) {
+            $calendars[$programme['id']] = (string) $this->academic->programmeCalendar($programme['id']);
+        }
+
+        return $calendars;
     }
 
     /**
@@ -157,6 +197,9 @@ final class QuestionEditorData
             'courseId' => $version->course_id,
             'nodeId' => $version->node_id,
             'disciplineId' => $version->discipline_id,
+            'examTypeId' => $version->exam_type_id,
+            'professionalId' => $version->professional_id,
+            'termId' => $version->term_id,
             'vignette' => $content->vignette,
             'stem' => $content->stem,
             'leadIn' => $content->leadIn,

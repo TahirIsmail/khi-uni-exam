@@ -373,6 +373,38 @@ try {
         ),
     );
 
+    // KMU files every question under a year, an examination and a cognitive and difficulty level.
+    const yearOptions = await evaluate(
+        "[...document.querySelectorAll('#year option')].map(o => o.textContent.trim())",
+    );
+    check(
+        'the editor asks for the year or semester, from the CMS structure',
+        Array.isArray(yearOptions) &&
+            yearOptions.some((o) => /Professional/.test(o)),
+        JSON.stringify(yearOptions),
+    );
+    const examOptions = await evaluate(
+        "[...document.querySelectorAll('#exam-type option')].map(o => o.textContent.trim())",
+    );
+    check(
+        'an annual programme is offered Annual and Supplementary only',
+        JSON.stringify(examOptions) ===
+            JSON.stringify(['Choose…', 'Annual', 'Supplementary']),
+        JSON.stringify(examOptions),
+    );
+    await setSelect(
+        '#exam-type',
+        cms("SELECT id FROM acad_exam_types WHERE code = 'annual'"),
+    );
+    await setSelect(
+        '#cognitive',
+        assess("SELECT id FROM qb_cognitive_levels WHERE code = 'apply'"),
+    );
+    await setSelect(
+        '#difficulty',
+        assess("SELECT id FROM qb_difficulty_levels WHERE code = 'moderate'"),
+    );
+
     await click('[data-correct=A]');
     await sleep(1200);
     check(
@@ -498,7 +530,12 @@ try {
             `SELECT status FROM qb_question_versions v JOIN qb_questions q ON q.id = v.question_id WHERE q.public_ref = '${reference}'`,
         ) === 'submitted',
     );
-    check('the list shows it as submitted', /Submitted/.test(await text()));
+    check(
+        "the list shows it in KMU's words, with its examination",
+        /Submitted for Review/.test(await text()) &&
+            /Annual/.test(await text()),
+        (await text()).replace(/\s+/g, ' ').slice(0, 300),
+    );
 
     const questionId = assess(
         `SELECT id FROM qb_questions WHERE public_ref = '${reference}'`,

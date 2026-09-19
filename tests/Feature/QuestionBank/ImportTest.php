@@ -26,6 +26,7 @@ beforeEach(function () {
     $this->course = $this->cmsCourse($this->programme, $this->professional, 'CVS');
     $this->courseCode = DB::table(config('database.cms_source_database').'.acad_courses')->where('id', $this->course)->value('course_code');
     $this->node = $this->cmsCurriculumNode($this->course, $this->programme, 'Acute coronary syndrome');
+    $this->cmsExamType('annual');
 
     $role = $this->cmsRole('Faculty');
     $this->cmsGrant($role, 'qbank_questions', 'view', 'add');
@@ -33,12 +34,25 @@ beforeEach(function () {
     $this->importer = $this->staffUser([$role], $this->branch);
 });
 
-/** A CSV file exactly as an author would export it from Excel. */
-function csv(array $rows, array $header = ['type', 'course', 'topic', 'stem', 'lead_in', 'marks', 'options', 'correct', 'answers', 'items', 'references', 'tags']): UploadedFile
+/**
+ * A CSV file exactly as an author would export it from Excel. Every question is filed under an
+ * examination and judged for its cognitive and difficulty level, so those last three columns are
+ * filled in unless a row gives them.
+ */
+function csv(array $rows, array $header = ['type', 'course', 'topic', 'stem', 'lead_in', 'marks', 'options', 'correct', 'answers', 'items', 'references', 'tags', 'exam_type', 'cognitive', 'difficulty']): UploadedFile
 {
+    $filing = ['exam_type' => 'Annual', 'cognitive' => 'Application', 'difficulty' => 'Moderate'];
+
     $lines = [implode(',', $header)];
     foreach ($rows as $row) {
-        $lines[] = implode(',', array_map(fn (string $cell): string => '"'.str_replace('"', '""', $cell).'"', array_pad($row, count($header), '')));
+        $row = array_pad($row, count($header), '');
+        foreach ($filing as $column => $value) {
+            $index = array_search($column, $header, true);
+            if ($index !== false && $row[$index] === '') {
+                $row[$index] = $value;
+            }
+        }
+        $lines[] = implode(',', array_map(fn (string $cell): string => '"'.str_replace('"', '""', $cell).'"', $row));
     }
 
     return UploadedFile::fake()->createWithContent('questions.csv', implode("\n", $lines));
@@ -149,8 +163,8 @@ test('an Excel file works as well as a CSV', function () {
     $spreadsheet = new Spreadsheet;
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->fromArray([
-        ['Type of question', 'Course ID', 'Topic', 'Question', 'Lead-in', 'Marks', 'Options', 'Answer key'],
-        ['SBA', $this->courseCode, 'Acute coronary syndrome', 'A 54-year-old man has crushing chest pain radiating to the jaw.', 'Which is first?', 1, 'ECG | Chest radiograph', 'A'],
+        ['Type of question', 'Examination', 'Course ID', 'Topic', 'Question', 'Lead-in', 'Marks', 'Options', 'Answer key', 'Bloom', 'Difficulty level'],
+        ['SBA', 'Annual', $this->courseCode, 'Acute coronary syndrome', 'A 54-year-old man has crushing chest pain radiating to the jaw.', 'Which is first?', 1, 'ECG | Chest radiograph', 'A', 'Application', 'Moderate'],
     ]);
     $path = storage_path('app/private/test-import.xlsx');
     @mkdir(dirname($path), 0777, true);
@@ -359,4 +373,34 @@ test('the preview shows the rows, and can show only the ones with a problem', fu
         ->component('qbank/Imports')
         ->where('imports.data.0.rowsInvalid', 1)
         ->where('columns', fn ($columns) => in_array('stem', $columns->all(), true)));
+});
+
+test('the examination is read from the file, or taken from the default, and must suit the programme', function () {
+    $this->cmsExamType('supplementary');
+    $regular = $this->cmsExamType('regular');
+
+    $this->actingAs($this->importer)->post('/questions/imports', [
+        'file' => csv([
+            sbaRow([12 => 'Supplementary']),
+            sbaRow([3 => 'A second question with a different stem about chest pain.', 12 => 'Retake exam of some kind']),
+            sbaRow([3 => 'A third question with a different stem about chest pain.', 12 => 'Regular']),
+        ]),
+    ]);
+    $import = QuestionImport::query()->firstOrFail();
+    $rows = ImportRow::query()->where('import_id', $import->id)->orderBy('row_number')->get();
+
+    expect($rows[0]->status)->toBe('valid')
+        ->and(collect($rows[1]->errors)->flatten()->implode(' '))->toContain('no examination type')
+        ->and(collect($rows[2]->errors)->flatten()->implode(' '))->toContain('not used by this programme');
+
+    // A file with no examination column takes the one chosen for the file.
+    $this->actingAs($this->importer)->post('/questions/imports', [
+        'file' => csv([sbaRow([3 => 'A fourth question, filed by the default examination.'])], ['type', 'course', 'topic', 'stem', 'lead_in', 'marks', 'options', 'correct', 'answers', 'items', 'references', 'tags', 'cognitive', 'difficulty']),
+        'exam_type_id' => $this->cmsExamType('supplementary'),
+    ]);
+    $second = QuestionImport::query()->latest('id')->firstOrFail();
+    $this->actingAs($this->importer)->post("/questions/imports/{$second->id}/commit");
+
+    expect(QuestionVersion::query()->latest('id')->value('exam_type_id'))->toBe($this->cmsExamType('supplementary'))
+        ->and($regular)->toBeInt();
 });

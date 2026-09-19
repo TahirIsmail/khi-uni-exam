@@ -23,6 +23,10 @@ final class SpreadsheetReader
         'topic_name' => 'topic',
         'node' => 'topic',
         'subject' => 'discipline',
+        'examination' => 'exam_type',
+        'examination_type' => 'exam_type',
+        'exam' => 'exam_type',
+        'exam type' => 'exam_type',
         'clinical_scenario' => 'vignette',
         'scenario' => 'vignette',
         'question' => 'stem',
@@ -52,7 +56,7 @@ final class SpreadsheetReader
     ];
 
     public const COLUMNS = [
-        'type', 'course', 'topic', 'discipline', 'vignette', 'stem', 'lead_in', 'explanation',
+        'type', 'exam_type', 'course', 'topic', 'discipline', 'vignette', 'stem', 'lead_in', 'explanation',
         'marks', 'negative_marks', 'cognitive', 'difficulty', 'options', 'correct', 'answers',
         'items', 'references', 'tags',
     ];

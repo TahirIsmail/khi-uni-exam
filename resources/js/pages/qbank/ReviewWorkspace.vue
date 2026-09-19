@@ -45,11 +45,20 @@ const props = defineProps<{
         approve: boolean;
         assign: boolean;
     };
-    reviewers: { id: number; name: string; openLoad: number }[];
+    reviewers: Partial<
+        Record<
+            'subject' | 'academic',
+            { id: number; name: string; openLoad: number }[]
+        >
+    >;
     reviews: ReviewRow[];
     assignments: AssignmentRow[];
     prehoc: PrehocRow[];
     myAssignmentId: number | null;
+    myStage: 'subject' | 'academic' | null;
+    myStageLabel: string | null;
+    subjectIn: number;
+    academicIn: number;
     checklistItems: ChecklistItemInfo[];
     decisions: PrehocDecisionInfo[];
     reviewsNeeded: number;
@@ -70,6 +79,7 @@ const draft = computed<QuestionDraft>(() => ({
     course_id: props.version.courseId,
     node_id: props.version.nodeId,
     discipline_id: props.version.disciplineId,
+    exam_type_id: props.version.examTypeId,
     vignette: props.version.vignette,
     stem: props.version.stem,
     lead_in: props.version.leadIn,
@@ -87,9 +97,6 @@ const draft = computed<QuestionDraft>(() => ({
     tag_ids: props.version.tagIds,
 }));
 
-const reviewsIn = computed(
-    () => props.reviews.filter((row) => row.outcome === 'reviewed').length,
-);
 const consolidated = computed(
     () => props.prehoc.find((row) => row.isConsolidated) ?? null,
 );
@@ -109,7 +116,6 @@ const review = useForm<{
     checklist: { code: string; pass: boolean; note: string | null }[];
     cognitive_level_id: number | null;
     difficulty_level_id: number | null;
-    estimated_p: number | null;
 }>({
     assignment_id: props.myAssignmentId,
     outcome: 'reviewed',
@@ -122,7 +128,6 @@ const review = useForm<{
     })),
     cognitive_level_id: props.version.cognitiveLevelId,
     difficulty_level_id: props.version.difficultyLevelId,
-    estimated_p: null,
 });
 
 const chosenDecision = computed(
@@ -150,19 +155,21 @@ const approval = useForm<{
     decision_id: number | null;
     cognitive_level_id: number | null;
     difficulty_level_id: number | null;
-    estimated_p: number | null;
     reason: string;
 }>({
     decision_id: props.decisions.find((row) => row.isAccept)?.id ?? null,
     cognitive_level_id: props.version.cognitiveLevelId,
     difficulty_level_id: props.version.difficultyLevelId,
-    estimated_p: null,
     reason: '',
 });
 
 const rejection = useForm<{ reason: string }>({ reason: '' });
 const showRejection = ref(false);
 const newReviewer = ref<number | null>(null);
+const newStage = ref<'subject' | 'academic'>(
+    props.subjectIn >= props.reviewsNeeded ? 'academic' : 'subject',
+);
+const reviewersForStage = computed(() => props.reviewers[newStage.value] ?? []);
 
 function assign(): void {
     if (newReviewer.value === null) {
@@ -170,7 +177,7 @@ function assign(): void {
     }
     router.post(
         `${base.value}/reviewers`,
-        { reviewer_id: newReviewer.value },
+        { reviewer_id: newReviewer.value, stage: newStage.value },
         { preserveScroll: true, onSuccess: () => (newReviewer.value = null) },
     );
 }
@@ -208,8 +215,12 @@ const decisionsForApproval = computed(() =>
             />
             <div class="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{{ version.statusLabel }}</Badge>
-                <Badge variant="outline"
-                    >{{ reviewsIn }} of {{ reviewsNeeded }} reviews</Badge
+                <Badge variant="outline" data-test="subject-count"
+                    >Subject review {{ subjectIn }} of
+                    {{ reviewsNeeded }}</Badge
+                >
+                <Badge variant="outline" data-test="academic-count"
+                    >Academic review {{ academicIn }} of 1</Badge
                 >
                 <Button as-child size="sm" variant="ghost">
                     <Link :href="`/questions/${questionId}`"
@@ -255,13 +266,13 @@ const decisionsForApproval = computed(() =>
                     <dl class="grid grid-cols-2 gap-2">
                         <div>
                             <dt class="text-muted-foreground text-xs">
-                                Level of thinking
+                                Cognitive level
                             </dt>
                             <dd>{{ authorProposal?.cognitive ?? '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-muted-foreground text-xs">
-                                Expected difficulty
+                                Difficulty level
                             </dt>
                             <dd>{{ authorProposal?.difficulty ?? '—' }}</dd>
                         </div>
@@ -280,7 +291,14 @@ const decisionsForApproval = computed(() =>
                     data-test="review-form"
                     @submit.prevent="submitReview('reviewed')"
                 >
-                    <h3 class="font-medium">Your review</h3>
+                    <h3 class="font-medium" data-test="my-stage">
+                        Your review
+                        <span
+                            v-if="myStageLabel"
+                            class="text-muted-foreground font-normal"
+                            >— {{ myStageLabel }}</span
+                        >
+                    </h3>
 
                     <fieldset class="grid gap-2">
                         <legend class="text-muted-foreground mb-1 text-xs">
@@ -393,9 +411,9 @@ const decisionsForApproval = computed(() =>
                         </p>
                     </div>
 
-                    <div v-if="can.prehoc" class="grid gap-3 sm:grid-cols-3">
+                    <div v-if="can.prehoc" class="grid gap-3 sm:grid-cols-2">
                         <div class="grid gap-1.5">
-                            <Label for="cognitive">Level of thinking</Label>
+                            <Label for="cognitive">Cognitive level</Label>
                             <select
                                 id="cognitive"
                                 v-model="review.cognitive_level_id"
@@ -413,7 +431,7 @@ const decisionsForApproval = computed(() =>
                             </select>
                         </div>
                         <div class="grid gap-1.5">
-                            <Label for="difficulty">Expected difficulty</Label>
+                            <Label for="difficulty">Difficulty level</Label>
                             <select
                                 id="difficulty"
                                 v-model="review.difficulty_level_id"
@@ -429,19 +447,6 @@ const decisionsForApproval = computed(() =>
                                     {{ level.name }}
                                 </option>
                             </select>
-                        </div>
-                        <div class="grid gap-1.5">
-                            <Label for="estimated">Expected pass rate</Label>
-                            <Input
-                                id="estimated"
-                                v-model.number="review.estimated_p as number"
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                max="1"
-                                placeholder="0.60"
-                                data-test="prehoc-p"
-                            />
                         </div>
                     </div>
 
@@ -506,7 +511,7 @@ const decisionsForApproval = computed(() =>
 
                     <div class="grid gap-3 sm:grid-cols-3">
                         <div class="grid gap-1.5">
-                            <Label for="c-cognitive">Level of thinking</Label>
+                            <Label for="c-cognitive">Cognitive level</Label>
                             <select
                                 id="c-cognitive"
                                 v-model="approval.cognitive_level_id"
@@ -524,9 +529,7 @@ const decisionsForApproval = computed(() =>
                             </select>
                         </div>
                         <div class="grid gap-1.5">
-                            <Label for="c-difficulty"
-                                >Expected difficulty</Label
-                            >
+                            <Label for="c-difficulty">Difficulty level</Label>
                             <select
                                 id="c-difficulty"
                                 v-model="approval.difficulty_level_id"
@@ -542,18 +545,6 @@ const decisionsForApproval = computed(() =>
                                     {{ level.name }}
                                 </option>
                             </select>
-                        </div>
-                        <div class="grid gap-1.5">
-                            <Label for="c-estimated">Expected pass rate</Label>
-                            <Input
-                                id="c-estimated"
-                                v-model.number="approval.estimated_p as number"
-                                type="number"
-                                step="0.05"
-                                min="0"
-                                max="1"
-                                placeholder="0.60"
-                            />
                         </div>
                     </div>
 
@@ -688,6 +679,9 @@ const decisionsForApproval = computed(() =>
                     >
                         <header class="flex flex-wrap items-center gap-2">
                             <span class="font-medium">{{ row.reviewer }}</span>
+                            <Badge variant="outline">{{
+                                row.stageLabel
+                            }}</Badge>
                             <Badge v-if="row.isMe" variant="outline">you</Badge>
                             <Badge
                                 :variant="
@@ -725,10 +719,6 @@ const decisionsForApproval = computed(() =>
                         >
                             {{ row.prehoc.cognitive ?? '—' }} ·
                             {{ row.prehoc.difficulty ?? '—' }}
-                            <span v-if="row.prehoc.estimatedP !== null"
-                                >· expected pass rate
-                                {{ row.prehoc.estimatedP }}</span
-                            >
                         </p>
                     </article>
                     <p
@@ -747,10 +737,6 @@ const decisionsForApproval = computed(() =>
                         <p class="text-muted-foreground">
                             {{ consolidated.cognitive ?? '—' }} ·
                             {{ consolidated.difficulty ?? '—' }}
-                            <span v-if="consolidated.estimatedP !== null"
-                                >· expected pass rate
-                                {{ consolidated.estimatedP }}</span
-                            >
                         </p>
                         <p v-if="consolidated.reason" class="mt-1">
                             {{ consolidated.reason }}
@@ -769,6 +755,9 @@ const decisionsForApproval = computed(() =>
                             :data-assignment="row.id"
                         >
                             <span>{{ row.reviewer }}</span>
+                            <Badge variant="outline">{{
+                                row.stageLabel
+                            }}</Badge>
                             <Badge v-if="row.isMe" variant="outline">you</Badge>
                             <Badge
                                 :variant="
@@ -816,6 +805,23 @@ const decisionsForApproval = computed(() =>
                         v-if="can.assign"
                         class="flex flex-wrap items-end gap-2"
                     >
+                        <div class="grid gap-1.5">
+                            <Label for="stage">Level</Label>
+                            <select
+                                id="stage"
+                                v-model="newStage"
+                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                                data-test="stage"
+                                @change="newReviewer = null"
+                            >
+                                <option value="subject">
+                                    Department / Subject
+                                </option>
+                                <option value="academic">
+                                    QBank / Academic
+                                </option>
+                            </select>
+                        </div>
                         <div
                             class="grid flex-1 gap-1.5"
                             style="min-width: 12rem"
@@ -831,7 +837,7 @@ const decisionsForApproval = computed(() =>
                             >
                                 <option :value="null">Choose…</option>
                                 <option
-                                    v-for="row in reviewers"
+                                    v-for="row in reviewersForStage"
                                     :key="row.id"
                                     :value="row.id"
                                 >

@@ -31,6 +31,7 @@ class SaveQuestionRequest extends FormRequest
             'marks' => ['required', 'numeric', 'min:0', 'max:9999'],
             'negative_marks' => ['required', 'numeric', 'min:0', 'max:9999'],
             'discipline_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'cognitive_level_id' => ['nullable', 'integer', Rule::exists('qb_cognitive_levels', 'id')],
             'difficulty_level_id' => ['nullable', 'integer', Rule::exists('qb_difficulty_levels', 'id')],
 
