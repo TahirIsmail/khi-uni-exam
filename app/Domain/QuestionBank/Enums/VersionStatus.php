@@ -53,22 +53,33 @@ enum VersionStatus: string
     }
 
     /**
-     * The statuses as people filter and count them, in the university's order and words. The
-     * workflow's finer steps are folded together: "Submitted for Review" is submitted or under
-     * review, "Accept" is approved or in use, "Remove / Discard" is retired or archived.
+     * KMU's statuses, in the order people see them (KMU requirements, "Question status"). The
+     * workflow's finer steps are folded together, and the decision taken on a version tells
+     * "Accept" from "Retain in QBank", and "Submitted for Review" from "Review" (reviewed again).
      *
-     * @return array<string, array{label: string, statuses: list<self>}>
+     * @return array<string, string> key => label
      */
     public static function groups(): array
     {
         return [
-            'draft' => ['label' => 'Draft', 'statuses' => [self::Draft]],
-            'submitted' => ['label' => 'Submitted for Review', 'statuses' => [self::Submitted, self::UnderReview]],
-            'revise' => ['label' => 'Revise', 'statuses' => [self::ChangesRequested]],
-            'accept' => ['label' => 'Accept', 'statuses' => [self::Approved, self::Active]],
-            'review' => ['label' => 'Review', 'statuses' => [self::OnHold]],
-            'removed' => ['label' => 'Remove / Discard', 'statuses' => [self::Retired, self::Archived]],
+            'draft' => 'Draft',
+            'submitted' => 'Submitted for Review',
+            'review' => 'Review',
+            'revise' => 'Revise',
+            'accept' => 'Accept',
+            'retain' => 'Retain in QBank',
+            'removed' => 'Remove / Discard',
         ];
+    }
+
+    /** The KMU status of a version, from its workflow step and the decision taken on it. */
+    public static function kmuLabel(self $status, ?string $decision): string
+    {
+        return match ($status) {
+            self::Submitted, self::UnderReview => $decision === 'review' ? 'Review' : 'Submitted for Review',
+            self::Approved, self::Active => $decision === 'retain' ? 'Retain in QBank' : 'Accept',
+            default => $status->label(),
+        };
     }
 
     /**
@@ -81,8 +92,7 @@ enum VersionStatus: string
             self::Draft => 'Draft',
             self::Submitted, self::UnderReview => 'Submitted for Review',
             self::ChangesRequested => 'Revise',
-            self::Approved => 'Accept',
-            self::Active => 'Accept — in QBank',
+            self::Approved, self::Active => 'Accept',
             self::OnHold => 'Review',
             self::Superseded => 'Replaced by a newer version',
             self::Retired, self::Archived => 'Remove / Discard',

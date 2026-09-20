@@ -156,24 +156,28 @@ class ImportController extends Controller
     /** A ready-made file with the column names and one example row per common type. */
     public function template(): StreamedResponse
     {
+        // KMU's own example: an Anatomy MCQ for MBBS First Professional, Annual examination,
+        // Foundation Module → Anatomy → Upper Limb, Application, Moderate.
         $rows = [
             SpreadsheetReader::COLUMNS,
             [
-                'sba', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', 'Pathology', '', 'A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.',
-                'Which investigation is most useful first?', 'An ECG is immediate and guides reperfusion.', '1', '0', 'apply', 'moderate',
-                'ECG | Chest radiograph | Echocardiogram | Coronary angiography', 'A', '', '', 'Harrison, 21st ed p. 1875', 'ECG, cardiology',
+                'sba', 'annual', 'MBBS-1-FND', 'Upper Limb', 'Anatomy', '',
+                'After a fall on an outstretched hand, a 25-year-old man cannot abduct his arm beyond 15 degrees, and the skin over the lower deltoid is numb.',
+                'Which nerve is most likely injured?', 'The axillary nerve supplies the deltoid and the skin over its lower part.', '1', '0', 'apply', 'moderate',
+                'Axillary nerve | Radial nerve | Musculocutaneous nerve | Suprascapular nerve', 'A', '', '', "Snell's Clinical Anatomy, 10th ed p. 450", 'anatomy, upper limb',
             ],
             [
-                'mtf', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'Regarding the management of an inferior myocardial infarction:',
-                '', '', '3', '0', '', '', '', '', '', 'Aspirin reduces mortality = true | Nitrates are given in right ventricular infarction = false | Reperfusion within 90 minutes is the aim = true', '', '',
+                'mtf', 'annual', 'MBBS-1-FND', 'Upper Limb', 'Anatomy', '', 'Regarding the brachial plexus:',
+                '', '', '3', '0', 'understand', 'moderate', '', '', '',
+                'It is formed from the ventral rami of C5 to T1 = true | The axillary nerve arises from the medial cord = false | The ulnar nerve arises from the medial cord = true', '', '',
             ],
             [
-                'short_answer', 'supplementary', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'Which enzyme is measured to confirm myocardial injury?',
-                '', '', '1', '0', 'recall', '', '', '', 'troponin | troponin I | troponin T', '', '', '',
+                'short_answer', 'supplementary', 'MBBS-1-FND', 'Upper Limb', 'Anatomy', '', 'Which muscle is the main flexor of the elbow joint?',
+                '', '', '1', '0', 'recall', 'easy', '', '', 'brachialis', '', '', '',
             ],
             [
-                'numerical', 'annual', 'MBBS-1-CVS', 'Atherosclerosis and ischaemic heart disease', '', '', 'What is the normal arterial pH?',
-                '', '', '1', '0', 'recall', 'easy', '', '', '7.40 ± 0.05', '', '', '',
+                'numerical', 'annual', 'MBBS-1-FND', 'Upper Limb', 'Anatomy', '', 'How many bones form the carpus?',
+                '', '', '1', '0', 'recall', 'easy', '', '', '8', '', '', '',
             ],
         ];
 

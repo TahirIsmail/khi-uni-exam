@@ -2,6 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { CopyCheck, FilePlus2, GitCompare, History } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ type VersionRow = {
 };
 
 const props = defineProps<{
+    can: { edit: boolean; submit: boolean; newVersion: boolean };
     question: {
         id: number;
         reference: string;
@@ -66,6 +68,9 @@ const props = defineProps<{
         summary: string;
     }[];
 }>();
+
+/** The newest version, whose place in Create → Review → Approve → Store is shown at the top. */
+const latest = computed(() => props.versions[0] ?? null);
 
 const compareFrom = ref<number | null>(props.versions.at(-1)?.id ?? null);
 const compareTo = ref<number | null>(props.versions[0]?.id ?? null);
@@ -108,10 +113,11 @@ function startNewVersion(): void {
             />
             <div class="flex flex-wrap items-center gap-2">
                 <Badge v-if="question.isArchived" variant="destructive"
-                    >Archived</Badge
+                    >Removed / discarded</Badge
                 >
                 <Button
                     v-if="
+                        can.newVersion &&
                         !versions.some((version) => editable(version.status)) &&
                         !question.isArchived
                     "
@@ -129,8 +135,16 @@ function startNewVersion(): void {
             v-if="question.isArchived && question.archiveReason"
             class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
         >
-            Archived: {{ question.archiveReason }}
+            Removed / discarded: {{ question.archiveReason }}
         </p>
+
+        <QuestionJourney
+            v-if="latest"
+            :status="question.isArchived ? 'archived' : latest.status"
+            :status-label="
+                question.isArchived ? 'Remove / Discard' : latest.statusLabel
+            "
+        />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div class="grid gap-6">

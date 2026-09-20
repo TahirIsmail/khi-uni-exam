@@ -100,7 +100,7 @@ final class QuestionExport
         return [
             $version->question->public_ref,
             (string) $version->version_no,
-            $version->status->label(),
+            $version->kmuStatus(),
             $version->type->name,
             $version->exam_type_id === null ? '' : ($this->examTypes()[$version->exam_type_id] ?? ''),
             $this->academic->courseLabel($version->course_id) ?? ('#'.$version->course_id),

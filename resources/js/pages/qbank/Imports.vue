@@ -285,7 +285,10 @@ const statusStyles: Record<string, string> = {
                         <dt class="text-foreground font-medium">options</dt>
                         <dd>
                             Separated by <code>|</code>, e.g.
-                            <code>ECG | Chest radiograph | Echocardiogram</code>
+                            <code
+                                >Axillary nerve | Radial nerve |
+                                Musculocutaneous nerve</code
+                            >
                         </dd>
                     </div>
                     <div>

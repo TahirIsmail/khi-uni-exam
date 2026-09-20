@@ -62,6 +62,7 @@ Route::middleware('auth')->group(function () {
             Route::post('reviewers', [ReviewController::class, 'assign'])->middleware(['can:qbank.review.assign', 'throttle:60,1'])->name('reviews.assign');
             Route::delete('reviewers/{assignment}', [ReviewController::class, 'cancelAssignment'])->middleware('can:qbank.review.assign')->whereNumber('assignment')->name('reviews.cancel');
 
+            Route::post('decide', [ApprovalController::class, 'decide'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.decide');
             Route::post('approve', [ApprovalController::class, 'approve'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.approve');
             Route::post('activate', [ApprovalController::class, 'activate'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.activate');
             Route::post('reject', [ApprovalController::class, 'reject'])->middleware(['can:qbank.question.approve', 'throttle:60,1'])->name('approvals.reject');

@@ -282,6 +282,22 @@ final class CmsAcademic
         return $name === null ? null : (string) $name;
     }
 
+    /**
+     * "Code — title" for every course of a campus, retired ones too: a question written for a
+     * course that has since been retired still shows where it belongs.
+     *
+     * @return array<int, string>
+     */
+    public function courseLabels(int $branchId): array
+    {
+        $labels = [];
+        foreach (DB::connection('cms')->table('v_cms_courses')->where('branch_id', $branchId)->get(['id', 'course_code', 'title']) as $course) {
+            $labels[(int) $course->id] = $course->course_code.' — '.$course->title;
+        }
+
+        return $labels;
+    }
+
     /** A course's title and code, for headings and lists. */
     public function courseLabel(int $courseId): ?string
     {

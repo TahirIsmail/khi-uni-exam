@@ -73,6 +73,8 @@ const props = defineProps<{
     statuses: { key: string; label: string; count: number }[];
     canCreate: boolean;
     canExport: boolean;
+    canEditOwn: boolean;
+    canEditAny: boolean;
 }>();
 
 const search = ref(props.filters.search);
@@ -203,6 +205,14 @@ function clear(): void {
     router.get(index.url());
 }
 
+// Only a draft (or one sent back) can be edited, and only by somebody with the right to edit it.
+function mayEdit(row: QuestionListRow): boolean {
+    const editable =
+        row.status === 'draft' || row.status === 'changes_requested';
+
+    return editable && ((row.isMine && props.canEditOwn) || props.canEditAny);
+}
+
 const statusStyles: Record<string, string> = {
     draft: 'secondary',
     changes_requested: 'destructive',
@@ -248,7 +258,7 @@ const statusStyles: Record<string, string> = {
                         v-model="search"
                         type="search"
                         maxlength="100"
-                        placeholder="e.g. chest pain, or Q-2026-000123"
+                        placeholder="e.g. brachial plexus, or Q-2026-000123"
                     />
                 </div>
                 <Button type="submit" variant="outline"
@@ -318,13 +328,6 @@ const statusStyles: Record<string, string> = {
                     data-test="duplicates-filter"
                     @click="apply({ duplicates: !filters.duplicates })"
                     ><CopyCheck /> Same text twice</Button
-                >
-                <Button
-                    type="button"
-                    size="sm"
-                    :variant="filters.archived ? 'default' : 'outline'"
-                    @click="apply({ archived: !filters.archived })"
-                    >Archived</Button
                 >
             </div>
 
@@ -818,17 +821,11 @@ const statusStyles: Record<string, string> = {
                             <Button as-child size="sm" variant="outline">
                                 <Link
                                     :href="
-                                        row.status === 'draft' ||
-                                        row.status === 'changes_requested'
+                                        mayEdit(row)
                                             ? `/questions/${row.id}/versions/${row.versionId}/edit`
                                             : `/questions/${row.id}/versions/${row.versionId}`
                                     "
-                                    >{{
-                                        row.status === 'draft' ||
-                                        row.status === 'changes_requested'
-                                            ? 'Edit'
-                                            : 'Open'
-                                    }}</Link
+                                    >{{ mayEdit(row) ? 'Edit' : 'Open' }}</Link
                                 >
                             </Button>
                         </td>

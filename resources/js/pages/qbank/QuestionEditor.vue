@@ -20,6 +20,7 @@ import AnswersEditor from '@/components/qbank/AnswersEditor.vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import ChecksPanel from '@/components/qbank/ChecksPanel.vue';
 import ItemsEditor from '@/components/qbank/ItemsEditor.vue';
+import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
 import OptionsEditor from '@/components/qbank/OptionsEditor.vue';
 import ReferencesEditor from '@/components/qbank/ReferencesEditor.vue';
 import RichTextField from '@/components/qbank/RichTextField.vue';
@@ -48,6 +49,7 @@ defineOptions({
 const props = defineProps<{
     version: StoredVersion | null;
     reference: string | null;
+    can: { edit: boolean; submit: boolean; newVersion: boolean };
     types: QuestionTypeInfo[];
     programmes: { id: number; name: string; code: string }[];
     years: YearOption[];
@@ -491,6 +493,7 @@ function submit(): void {
                         <Save /> Save draft
                     </Button>
                     <Button
+                        v-if="can.submit"
                         type="button"
                         :disabled="!canSubmit || saving"
                         data-test="submit-question"
@@ -503,6 +506,11 @@ function submit(): void {
         </div>
 
         <div class="flex flex-col gap-6 p-4">
+            <QuestionJourney
+                :status="version?.status ?? 'draft'"
+                :status-label="version?.statusLabel ?? 'Draft'"
+            />
+
             <p
                 v-if="readOnly"
                 class="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
@@ -549,21 +557,27 @@ function submit(): void {
 
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
                 <div class="grid min-w-0 gap-6">
-                    <!-- Where the question belongs -->
+                    <!-- 1. Where the question belongs, in KMU's filing order -->
                     <section class="rounded-xl border shadow-xs">
                         <header
                             class="flex items-center gap-2 border-b px-4 py-3"
                         >
                             <BookMarked class="text-muted-foreground size-4" />
-                            <h2 class="font-medium">Where it belongs</h2>
+                            <h2 class="font-medium">1. Where it belongs</h2>
+                            <span class="text-muted-foreground text-xs"
+                                >Programme → Year / Semester → Examination →
+                                Module / Subject → Topic</span
+                            >
                         </header>
-                        <div class="grid gap-4 p-4 sm:grid-cols-2">
-                            <div class="grid gap-1.5">
+                        <div
+                            class="grid grid-cols-1 content-start gap-x-4 gap-y-4 p-4 md:grid-cols-2"
+                        >
+                            <div class="grid min-w-0 content-start gap-1.5">
                                 <Label for="programme">Programme *</Label>
                                 <select
                                     id="programme"
                                     v-model.number="programmeId"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="
                                         readOnly || programmes.length === 0
                                     "
@@ -580,23 +594,17 @@ function submit(): void {
                                         :key="programme.id"
                                         :value="programme.id"
                                     >
-                                        {{ programme.name }} ({{
-                                            programme.code
-                                        }})
+                                        {{ programme.name }}
                                     </option>
                                 </select>
-                                <p class="text-muted-foreground text-xs">
-                                    MBBS, BDS or DPT, as the CMS academic
-                                    structure has them.
-                                </p>
                             </div>
 
-                            <div class="grid gap-1.5">
+                            <div class="grid min-w-0 content-start gap-1.5">
                                 <Label for="year">Year / Semester *</Label>
                                 <select
                                     id="year"
                                     v-model="yearId"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="
                                         readOnly ||
                                         yearsOfProgramme.length === 0
@@ -617,18 +625,14 @@ function submit(): void {
                                         {{ year.name }}
                                     </option>
                                 </select>
-                                <p class="text-muted-foreground text-xs">
-                                    e.g. First Professional; for DPT, First
-                                    Professional, Semester I.
-                                </p>
                             </div>
 
-                            <div class="grid gap-1.5">
+                            <div class="grid min-w-0 content-start gap-1.5">
                                 <Label for="exam-type">Examination *</Label>
                                 <select
                                     id="exam-type"
                                     v-model.number="draft.exam_type_id"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="readOnly"
                                     data-test="exam-type"
                                 >
@@ -641,17 +645,6 @@ function submit(): void {
                                         {{ row.name }}
                                     </option>
                                 </select>
-                                <p class="text-muted-foreground text-xs">
-                                    {{
-                                        examTypesOfProgramme.length > 0
-                                            ? examTypesOfProgramme
-                                                  .map((row) => row.name)
-                                                  .join(' or ')
-                                            : 'Annual, Supplementary, Regular or Retake'
-                                    }}
-                                    — the examination this question is written
-                                    for.
-                                </p>
                                 <InputError
                                     v-for="(message, i) in checks.errors[
                                         'exam_type_id'
@@ -661,15 +654,16 @@ function submit(): void {
                                 />
                             </div>
 
-                            <div class="grid gap-1.5">
+                            <div class="grid min-w-0 content-start gap-1.5">
                                 <Label for="course"
                                     >Module / Subject (Course ID) *</Label
                                 >
                                 <select
                                     id="course"
                                     v-model.number="draft.course_id"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="readOnly || !hasCourses"
+                                    data-test="course"
                                 >
                                     <option
                                         v-if="coursesOfProgramme.length === 0"
@@ -694,13 +688,16 @@ function submit(): void {
                                 />
                             </div>
 
-                            <div class="grid gap-1.5">
-                                <Label for="topic">Topic *</Label>
+                            <div
+                                class="grid min-w-0 content-start gap-1.5 md:col-span-2"
+                            >
+                                <Label for="topic">Subject → Topic *</Label>
                                 <select
                                     id="topic"
                                     v-model.number="draft.node_id"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
                                     :disabled="readOnly || topics.length === 0"
+                                    data-test="topic"
                                 >
                                     <option :value="null">Choose…</option>
                                     <option
@@ -719,108 +716,12 @@ function submit(): void {
                                     "
                                     class="text-muted-foreground text-xs"
                                 >
-                                    This course has no topic that takes
-                                    questions yet. Add one in the CMS curriculum
-                                    (Academics → Curriculum).
+                                    This course has no topic yet. Add one in the
+                                    CMS: Academics → Courses → Curriculum.
                                 </p>
                                 <InputError
                                     v-for="(message, i) in checks.errors[
                                         'node_id'
-                                    ] ?? []"
-                                    :key="i"
-                                    :message="message"
-                                />
-                            </div>
-
-                            <div class="grid gap-1.5">
-                                <Label for="type">Type of question *</Label>
-                                <select
-                                    id="type"
-                                    v-model.number="draft.question_type_id"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                    :disabled="readOnly"
-                                    data-test="question-type"
-                                >
-                                    <option
-                                        v-for="row in types"
-                                        :key="row.id"
-                                        :value="row.id"
-                                    >
-                                        {{ row.name }}
-                                    </option>
-                                </select>
-                                <p
-                                    v-if="type"
-                                    class="text-muted-foreground text-xs"
-                                >
-                                    {{ type.description }}
-                                </p>
-                            </div>
-
-                            <div class="grid gap-1.5">
-                                <Label for="discipline"
-                                    >Discipline / subject</Label
-                                >
-                                <select
-                                    id="discipline"
-                                    v-model.number="draft.discipline_id"
-                                    class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                    :disabled="readOnly"
-                                >
-                                    <option :value="null">
-                                        From the topic
-                                    </option>
-                                    <option
-                                        v-for="row in disciplines"
-                                        :key="row.id"
-                                        :value="row.id"
-                                    >
-                                        {{ row.name }}
-                                    </option>
-                                </select>
-                                <p class="text-muted-foreground text-xs">
-                                    Blueprints count questions by discipline;
-                                    leave it on the topic's own unless this
-                                    question belongs elsewhere.
-                                </p>
-                            </div>
-
-                            <div class="grid gap-1.5">
-                                <Label for="marks">Marks *</Label>
-                                <Input
-                                    id="marks"
-                                    v-model.number="draft.marks"
-                                    type="number"
-                                    step="0.5"
-                                    min="0"
-                                    :max="limits.marksMax"
-                                    :disabled="readOnly"
-                                />
-                                <InputError
-                                    v-for="(message, i) in checks.errors[
-                                        'marks'
-                                    ] ?? []"
-                                    :key="i"
-                                    :message="message"
-                                />
-                            </div>
-
-                            <div
-                                v-if="type?.supportsNegativeMarks"
-                                class="grid gap-1.5"
-                            >
-                                <Label for="negative">Negative marks</Label>
-                                <Input
-                                    id="negative"
-                                    v-model.number="draft.negative_marks"
-                                    type="number"
-                                    step="0.25"
-                                    min="0"
-                                    :disabled="readOnly"
-                                />
-                                <InputError
-                                    v-for="(message, i) in checks.errors[
-                                        'negative_marks'
                                     ] ?? []"
                                     :key="i"
                                     :message="message"
@@ -835,9 +736,77 @@ function submit(): void {
                             class="flex items-center gap-2 border-b px-4 py-3"
                         >
                             <ListChecks class="text-muted-foreground size-4" />
-                            <h2 class="font-medium">The question</h2>
+                            <h2 class="font-medium">2. The question</h2>
                         </header>
                         <div class="grid gap-4 p-4">
+                            <div
+                                class="grid grid-cols-1 content-start gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
+                            >
+                                <div class="grid min-w-0 content-start gap-1.5">
+                                    <Label for="type">Type of question *</Label>
+                                    <select
+                                        id="type"
+                                        v-model.number="draft.question_type_id"
+                                        class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
+                                        :disabled="readOnly"
+                                        data-test="question-type"
+                                    >
+                                        <option
+                                            v-for="row in types"
+                                            :key="row.id"
+                                            :value="row.id"
+                                        >
+                                            {{ row.name }}
+                                        </option>
+                                    </select>
+                                    <p
+                                        v-if="type"
+                                        class="text-muted-foreground text-xs"
+                                    >
+                                        {{ type.description }}
+                                    </p>
+                                </div>
+                                <div class="grid min-w-0 content-start gap-1.5">
+                                    <Label for="marks">Marks *</Label>
+                                    <Input
+                                        id="marks"
+                                        v-model.number="draft.marks"
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        :max="limits.marksMax"
+                                        :disabled="readOnly"
+                                    />
+                                    <InputError
+                                        v-for="(message, i) in checks.errors[
+                                            'marks'
+                                        ] ?? []"
+                                        :key="i"
+                                        :message="message"
+                                    />
+                                </div>
+                                <div
+                                    v-if="type?.supportsNegativeMarks"
+                                    class="grid min-w-0 content-start gap-1.5"
+                                >
+                                    <Label for="negative">Negative marks</Label>
+                                    <Input
+                                        id="negative"
+                                        v-model.number="draft.negative_marks"
+                                        type="number"
+                                        step="0.25"
+                                        min="0"
+                                        :disabled="readOnly"
+                                    />
+                                    <InputError
+                                        v-for="(message, i) in checks.errors[
+                                            'negative_marks'
+                                        ] ?? []"
+                                        :key="i"
+                                        :message="message"
+                                    />
+                                </div>
+                            </div>
                             <RichTextField
                                 id="vignette"
                                 v-model="draft.vignette"
@@ -929,67 +898,92 @@ function submit(): void {
                             <SlidersHorizontal
                                 class="text-muted-foreground size-4"
                             />
-                            <h2 class="font-medium">Explanation and level</h2>
+                            <h2 class="font-medium">Explanation</h2>
                         </header>
                         <div class="grid gap-4 p-4">
                             <RichTextField
                                 id="explanation"
                                 v-model="draft.explanation"
-                                label="Explanation"
+                                label="Why the answer is right (optional)"
                                 hint="Why the answer is right, and why the others are not. Reviewers read this first."
                                 :rows="3"
                                 allow-images
                                 :disabled="readOnly"
                             />
-                            <div class="grid gap-4 sm:grid-cols-2">
-                                <div class="grid gap-1.5">
-                                    <Label for="cognitive"
-                                        >Cognitive level *</Label
+                        </div>
+                    </section>
+
+                    <!-- 3. Pre-hoc assessment: the author's own view, which reviewers confirm -->
+                    <section
+                        class="rounded-xl border shadow-xs"
+                        data-test="prehoc"
+                    >
+                        <header
+                            class="flex flex-wrap items-center gap-2 border-b px-4 py-3"
+                        >
+                            <SlidersHorizontal
+                                class="text-muted-foreground size-4"
+                            />
+                            <h2 class="font-medium">3. Pre-hoc assessment</h2>
+                            <span class="text-muted-foreground text-xs"
+                                >Your judgement; the reviewers confirm it and
+                                decide its quality.</span
+                            >
+                        </header>
+                        <div
+                            class="grid grid-cols-1 content-start gap-4 p-4 sm:grid-cols-2"
+                        >
+                            <div class="grid min-w-0 content-start gap-1.5">
+                                <Label for="cognitive">Cognitive level *</Label>
+                                <select
+                                    id="cognitive"
+                                    v-model.number="draft.cognitive_level_id"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    :disabled="readOnly"
+                                >
+                                    <option :value="null">Choose…</option>
+                                    <option
+                                        v-for="level in cognitiveLevels"
+                                        :key="level.id"
+                                        :value="level.id"
                                     >
-                                    <select
-                                        id="cognitive"
-                                        v-model.number="
-                                            draft.cognitive_level_id
-                                        "
-                                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                        :disabled="readOnly"
+                                        {{ level.name }}
+                                    </option>
+                                </select>
+                                <InputError
+                                    v-for="(message, i) in checks.errors[
+                                        'cognitive_level_id'
+                                    ] ?? []"
+                                    :key="i"
+                                    :message="message"
+                                />
+                            </div>
+                            <div class="grid min-w-0 content-start gap-1.5">
+                                <Label for="difficulty"
+                                    >Difficulty level *</Label
+                                >
+                                <select
+                                    id="difficulty"
+                                    v-model.number="draft.difficulty_level_id"
+                                    class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm disabled:opacity-50"
+                                    :disabled="readOnly"
+                                >
+                                    <option :value="null">Choose…</option>
+                                    <option
+                                        v-for="level in difficultyLevels"
+                                        :key="level.id"
+                                        :value="level.id"
                                     >
-                                        <option :value="null">
-                                            Not chosen
-                                        </option>
-                                        <option
-                                            v-for="level in cognitiveLevels"
-                                            :key="level.id"
-                                            :value="level.id"
-                                        >
-                                            {{ level.name }}
-                                        </option>
-                                    </select>
-                                </div>
-                                <div class="grid gap-1.5">
-                                    <Label for="difficulty"
-                                        >Difficulty level *</Label
-                                    >
-                                    <select
-                                        id="difficulty"
-                                        v-model.number="
-                                            draft.difficulty_level_id
-                                        "
-                                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                        :disabled="readOnly"
-                                    >
-                                        <option :value="null">
-                                            Not chosen
-                                        </option>
-                                        <option
-                                            v-for="level in difficultyLevels"
-                                            :key="level.id"
-                                            :value="level.id"
-                                        >
-                                            {{ level.name }}
-                                        </option>
-                                    </select>
-                                </div>
+                                        {{ level.name }}
+                                    </option>
+                                </select>
+                                <InputError
+                                    v-for="(message, i) in checks.errors[
+                                        'difficulty_level_id'
+                                    ] ?? []"
+                                    :key="i"
+                                    :message="message"
+                                />
                             </div>
                         </div>
                     </section>

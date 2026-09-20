@@ -1,16 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import {
-    BadgeCheck,
-    Check,
-    History,
-    Play,
-    Undo2,
-    UserPlus,
-    X,
-} from '@lucide/vue';
+import { Check, History, Play, UserPlus, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
+import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -107,7 +100,12 @@ const base = computed(
     () => `/questions/${props.questionId}/versions/${props.version.id}`,
 );
 
-// ---- the reviewer's form ----------------------------------------------------------------------
+/** Both levels of review are in, so the approving authority is the next step. */
+const awaitingApproval = computed(
+    () => props.subjectIn >= props.reviewsNeeded && props.academicIn >= 1,
+);
+
+// ---- the reviewer's pre-hoc assessment ---------------------------------------------------------
 const review = useForm<{
     assignment_id: number | null;
     outcome: 'reviewed' | 'changes_requested';
@@ -145,26 +143,54 @@ const failedRequired = computed(() =>
         .map((item) => item.text),
 );
 
-function submitReview(outcome: 'reviewed' | 'changes_requested'): void {
-    review.outcome = outcome;
+const failedCount = computed(
+    () => review.checklist.filter((row) => !row.pass).length,
+);
+
+function submitReview(): void {
     review.post(`${base.value}/review`, { preserveScroll: true });
 }
 
-// ---- the approver's form ----------------------------------------------------------------------
+// ---- the approving authority's decision --------------------------------------------------------
 const approval = useForm<{
     decision_id: number | null;
     cognitive_level_id: number | null;
     difficulty_level_id: number | null;
     reason: string;
 }>({
-    decision_id: props.decisions.find((row) => row.isAccept)?.id ?? null,
+    decision_id:
+        props.decisions.find((row) => row.code === 'accept')?.id ?? null,
     cognitive_level_id: props.version.cognitiveLevelId,
     difficulty_level_id: props.version.difficultyLevelId,
     reason: '',
 });
 
-const rejection = useForm<{ reason: string }>({ reason: '' });
-const showRejection = ref(false);
+const approverDecision = computed(
+    () =>
+        props.decisions.find((row) => row.id === approval.decision_id) ?? null,
+);
+
+/** Anything but "store it" has to say why, so the author and the reviewers know. */
+const reasonRequired = computed(
+    () =>
+        approverDecision.value !== null &&
+        !['accept', 'retain'].includes(approverDecision.value.code),
+);
+
+const reasonLabel = computed(() => {
+    switch (approverDecision.value?.code) {
+        case 'revise':
+            return 'What does the author have to change?';
+        case 'review':
+            return 'What should the reviewers look at again?';
+        case 'remove':
+            return 'Why can this question not be used?';
+        default:
+            return 'Note (needed only when the reviewers disagreed)';
+    }
+});
+
+// ---- who is reviewing it -----------------------------------------------------------------------
 const newReviewer = ref<number | null>(null);
 const newStage = ref<'subject' | 'academic'>(
     props.subjectIn >= props.reviewsNeeded ? 'academic' : 'subject',
@@ -194,10 +220,6 @@ function cancelAssignment(id: number): void {
         preserveScroll: true,
     });
 }
-
-const decisionsForApproval = computed(() =>
-    props.decisions.filter((row) => row.isAccept),
-);
 </script>
 
 <template>
@@ -210,18 +232,10 @@ const decisionsForApproval = computed(() =>
                 :description="
                     isAuthor
                         ? 'Your question, as its reviewers see it. Their comments appear below once they have reviewed it.'
-                        : 'Read the question as a candidate would see it, then work through the checklist and say what you think.'
+                        : 'Read the question as a candidate would see it, then record your pre-hoc assessment.'
                 "
             />
             <div class="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{{ version.statusLabel }}</Badge>
-                <Badge variant="outline" data-test="subject-count"
-                    >Subject review {{ subjectIn }} of
-                    {{ reviewsNeeded }}</Badge
-                >
-                <Badge variant="outline" data-test="academic-count"
-                    >Academic review {{ academicIn }} of 1</Badge
-                >
                 <Button as-child size="sm" variant="ghost">
                     <Link :href="`/questions/${questionId}`"
                         ><History /> History</Link
@@ -240,6 +254,12 @@ const decisionsForApproval = computed(() =>
                 </Button>
             </div>
         </div>
+
+        <QuestionJourney
+            :status="version.status"
+            :status-label="version.statusLabel"
+            :awaiting-approval="awaitingApproval"
+        />
 
         <div class="grid gap-6 lg:grid-cols-2">
             <div class="flex flex-col gap-6">
@@ -262,7 +282,9 @@ const decisionsForApproval = computed(() =>
                 </div>
 
                 <div class="rounded-xl border p-4 text-sm shadow-xs">
-                    <h3 class="mb-3 font-medium">What the author proposed</h3>
+                    <h3 class="mb-3 font-medium">
+                        What the author said about it
+                    </h3>
                     <dl class="grid grid-cols-2 gap-2">
                         <div>
                             <dt class="text-muted-foreground text-xs">
@@ -284,108 +306,73 @@ const decisionsForApproval = computed(() =>
             </div>
 
             <div class="flex flex-col gap-6">
-                <!-- The reviewer's own form. -->
+                <!-- The reviewer's pre-hoc assessment: cognitive level, difficulty level, decision. -->
                 <form
                     v-if="can.review"
                     class="grid gap-4 rounded-xl border p-4 shadow-xs"
                     data-test="review-form"
-                    @submit.prevent="submitReview('reviewed')"
+                    @submit.prevent="submitReview"
                 >
-                    <h3 class="font-medium" data-test="my-stage">
-                        Your review
-                        <span
-                            v-if="myStageLabel"
-                            class="text-muted-foreground font-normal"
-                            >— {{ myStageLabel }}</span
-                        >
-                    </h3>
-
-                    <fieldset class="grid gap-2">
-                        <legend class="text-muted-foreground mb-1 text-xs">
-                            Item-writing checklist
-                        </legend>
-                        <div
-                            v-for="(item, i) in checklistItems"
-                            :key="item.code"
-                            class="grid gap-1 border-b pb-2 last:border-0"
-                            :data-checklist="item.code"
-                        >
-                            <div class="flex items-start justify-between gap-2">
-                                <span class="text-sm"
-                                    >{{ item.text
-                                    }}<Badge
-                                        v-if="item.isRequired"
-                                        variant="outline"
-                                        class="ml-1"
-                                        >required</Badge
-                                    ></span
-                                >
-                                <div class="flex shrink-0 gap-1">
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        :variant="
-                                            review.checklist[i].pass
-                                                ? 'default'
-                                                : 'outline'
-                                        "
-                                        :data-pass="item.code"
-                                        @click="review.checklist[i].pass = true"
-                                        ><Check
-                                    /></Button>
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        :variant="
-                                            review.checklist[i].pass
-                                                ? 'outline'
-                                                : 'destructive'
-                                        "
-                                        :data-fail="item.code"
-                                        @click="
-                                            review.checklist[i].pass = false
-                                        "
-                                        ><X
-                                    /></Button>
-                                </div>
-                            </div>
-                            <p
-                                v-if="item.guidance"
-                                class="text-muted-foreground text-xs"
+                    <div>
+                        <h3 class="font-medium" data-test="my-stage">
+                            Pre-hoc assessment
+                            <span
+                                v-if="myStageLabel"
+                                class="text-muted-foreground font-normal"
+                                >— {{ myStageLabel }}</span
                             >
-                                {{ item.guidance }}
-                            </p>
-                            <Input
-                                v-if="!review.checklist[i].pass"
-                                v-model="review.checklist[i].note as string"
-                                placeholder="What is wrong with it?"
-                                maxlength="500"
-                            />
-                        </div>
-                        <p
-                            v-if="review.errors.checklist"
-                            class="text-destructive text-sm"
-                        >
-                            {{ review.errors.checklist }}
+                        </h3>
+                        <p class="text-muted-foreground text-xs">
+                            Before the question is used: how hard it is, what it
+                            tests, and what should happen to it.
                         </p>
-                    </fieldset>
+                    </div>
 
-                    <p
-                        v-if="failedRequired.length > 0"
-                        class="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-3 text-xs"
-                        data-test="failed-required"
-                    >
-                        A required rule fails, so this question cannot be
-                        approved as it is. Send it back to its author with your
-                        comments.
-                    </p>
+                    <div v-if="can.prehoc" class="grid gap-3 sm:grid-cols-2">
+                        <div class="grid gap-1.5">
+                            <Label for="cognitive">Cognitive level</Label>
+                            <select
+                                id="cognitive"
+                                v-model="review.cognitive_level_id"
+                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
+                                data-test="prehoc-cognitive"
+                            >
+                                <option :value="null">—</option>
+                                <option
+                                    v-for="level in cognitiveLevels"
+                                    :key="level.id"
+                                    :value="level.id"
+                                >
+                                    {{ level.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <Label for="difficulty">Difficulty level</Label>
+                            <select
+                                id="difficulty"
+                                v-model="review.difficulty_level_id"
+                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
+                                data-test="prehoc-difficulty"
+                            >
+                                <option :value="null">—</option>
+                                <option
+                                    v-for="level in difficultyLevels"
+                                    :key="level.id"
+                                    :value="level.id"
+                                >
+                                    {{ level.name }}
+                                </option>
+                            </select>
+                        </div>
+                    </div>
 
                     <div class="grid gap-1.5">
-                        <Label for="decision">What should happen to it?</Label>
+                        <Label for="decision">Question quality</Label>
                         <select
                             id="decision"
                             v-model="review.decision_id"
-                            class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                            class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
                             data-test="decision"
                         >
                             <option :value="null">Choose…</option>
@@ -411,45 +398,6 @@ const decisionsForApproval = computed(() =>
                         </p>
                     </div>
 
-                    <div v-if="can.prehoc" class="grid gap-3 sm:grid-cols-2">
-                        <div class="grid gap-1.5">
-                            <Label for="cognitive">Cognitive level</Label>
-                            <select
-                                id="cognitive"
-                                v-model="review.cognitive_level_id"
-                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                data-test="prehoc-cognitive"
-                            >
-                                <option :value="null">—</option>
-                                <option
-                                    v-for="level in cognitiveLevels"
-                                    :key="level.id"
-                                    :value="level.id"
-                                >
-                                    {{ level.name }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="grid gap-1.5">
-                            <Label for="difficulty">Difficulty level</Label>
-                            <select
-                                id="difficulty"
-                                v-model="review.difficulty_level_id"
-                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                                data-test="prehoc-difficulty"
-                            >
-                                <option :value="null">—</option>
-                                <option
-                                    v-for="level in difficultyLevels"
-                                    :key="level.id"
-                                    :value="level.id"
-                                >
-                                    {{ level.name }}
-                                </option>
-                            </select>
-                        </div>
-                    </div>
-
                     <div class="grid gap-1.5">
                         <Label for="comments">Comments for the author</Label>
                         <textarea
@@ -469,7 +417,107 @@ const decisionsForApproval = computed(() =>
                         </p>
                     </div>
 
-                    <div class="flex flex-wrap gap-2">
+                    <!-- The item-writing rules, out of the way until they are wanted. -->
+                    <details class="rounded-lg border px-3 py-2">
+                        <summary
+                            class="cursor-pointer text-sm font-medium"
+                            data-test="checklist-toggle"
+                        >
+                            Item-writing checklist
+                            <span
+                                v-if="failedCount > 0"
+                                class="text-destructive"
+                                >({{ failedCount }} marked wrong)</span
+                            >
+                            <span
+                                v-else
+                                class="text-muted-foreground font-normal"
+                                >(optional)</span
+                            >
+                        </summary>
+                        <fieldset class="mt-3 grid gap-2">
+                            <div
+                                v-for="(item, i) in checklistItems"
+                                :key="item.code"
+                                class="grid gap-1 border-b pb-2 last:border-0"
+                                :data-checklist="item.code"
+                            >
+                                <div
+                                    class="flex items-start justify-between gap-2"
+                                >
+                                    <span class="text-sm"
+                                        >{{ item.text
+                                        }}<Badge
+                                            v-if="item.isRequired"
+                                            variant="outline"
+                                            class="ml-1"
+                                            >required</Badge
+                                        ></span
+                                    >
+                                    <div class="flex shrink-0 gap-1">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            :variant="
+                                                review.checklist[i].pass
+                                                    ? 'default'
+                                                    : 'outline'
+                                            "
+                                            :data-pass="item.code"
+                                            @click="
+                                                review.checklist[i].pass = true
+                                            "
+                                            ><Check
+                                        /></Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            :variant="
+                                                review.checklist[i].pass
+                                                    ? 'outline'
+                                                    : 'destructive'
+                                            "
+                                            :data-fail="item.code"
+                                            @click="
+                                                review.checklist[i].pass = false
+                                            "
+                                            ><X
+                                        /></Button>
+                                    </div>
+                                </div>
+                                <p
+                                    v-if="item.guidance"
+                                    class="text-muted-foreground text-xs"
+                                >
+                                    {{ item.guidance }}
+                                </p>
+                                <Input
+                                    v-if="!review.checklist[i].pass"
+                                    v-model="review.checklist[i].note as string"
+                                    placeholder="What is wrong with it?"
+                                    maxlength="500"
+                                />
+                            </div>
+                            <p
+                                v-if="review.errors.checklist"
+                                class="text-destructive text-sm"
+                            >
+                                {{ review.errors.checklist }}
+                            </p>
+                        </fieldset>
+                    </details>
+
+                    <p
+                        v-if="failedRequired.length > 0"
+                        class="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-3 text-xs"
+                        data-test="failed-required"
+                    >
+                        A required rule fails, so this question cannot be
+                        approved as it is. Choose "Revise" and say what the
+                        author has to change.
+                    </p>
+
+                    <div>
                         <Button
                             type="submit"
                             :disabled="review.processing"
@@ -477,45 +525,40 @@ const decisionsForApproval = computed(() =>
                         >
                             <Check /> Submit review
                         </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            :disabled="review.processing"
-                            data-test="request-changes"
-                            @click="submitReview('changes_requested')"
-                        >
-                            <Undo2 /> Send back to the author
-                        </Button>
+                        <p class="text-muted-foreground mt-2 text-xs">
+                            Choosing "Revise" sends the question back to its
+                            author. A submitted review cannot be changed
+                            afterwards.
+                        </p>
                     </div>
-                    <p class="text-muted-foreground text-xs">
-                        A submitted review cannot be changed afterwards.
-                    </p>
                 </form>
 
-                <!-- The approver's decision. -->
+                <!-- The approving authority's decision: one choice, one button. -->
                 <form
                     v-if="can.approve && version.status === 'under_review'"
                     class="grid gap-4 rounded-xl border p-4 shadow-xs"
                     data-test="approval-form"
                     @submit.prevent="
-                        approval.post(`${base}/approve`, {
+                        approval.post(`${base}/decide`, {
                             preserveScroll: true,
                         })
                     "
                 >
-                    <h3 class="font-medium">Your decision</h3>
-                    <p class="text-muted-foreground text-xs">
-                        The values you settle on are the ones the question
-                        keeps, and are what an examination is built from.
-                    </p>
+                    <div>
+                        <h3 class="font-medium">Your decision</h3>
+                        <p class="text-muted-foreground text-xs">
+                            The levels you settle on are the ones the question
+                            keeps in the QBank.
+                        </p>
+                    </div>
 
-                    <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="grid gap-3 sm:grid-cols-2">
                         <div class="grid gap-1.5">
                             <Label for="c-cognitive">Cognitive level</Label>
                             <select
                                 id="c-cognitive"
                                 v-model="approval.cognitive_level_id"
-                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
                                 data-test="approve-cognitive"
                             >
                                 <option :value="null">—</option>
@@ -533,7 +576,7 @@ const decisionsForApproval = computed(() =>
                             <select
                                 id="c-difficulty"
                                 v-model="approval.difficulty_level_id"
-                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
                                 data-test="approve-difficulty"
                             >
                                 <option :value="null">—</option>
@@ -549,32 +592,36 @@ const decisionsForApproval = computed(() =>
                     </div>
 
                     <div class="grid gap-1.5">
-                        <Label for="c-decision">Decision</Label>
+                        <Label for="c-decision">Question quality</Label>
                         <select
                             id="c-decision"
                             v-model="approval.decision_id"
-                            class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                            class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
                             data-test="approve-decision"
                         >
                             <option
-                                v-for="row in decisionsForApproval"
+                                v-for="row in decisions"
                                 :key="row.id"
                                 :value="row.id"
                             >
                                 {{ row.name }}
                             </option>
                         </select>
+                        <p
+                            v-if="approverDecision?.description"
+                            class="text-muted-foreground text-xs"
+                        >
+                            {{ approverDecision.description }}
+                        </p>
                     </div>
 
                     <div class="grid gap-1.5">
-                        <Label for="c-reason"
-                            >Why these values (needed when the reviewers
-                            disagreed)</Label
-                        >
+                        <Label for="c-reason">{{ reasonLabel }}</Label>
                         <Input
                             id="c-reason"
                             v-model="approval.reason"
                             maxlength="500"
+                            :required="reasonRequired"
                             data-test="approve-reason"
                         />
                         <p
@@ -587,61 +634,21 @@ const decisionsForApproval = computed(() =>
                         </p>
                     </div>
 
-                    <div class="flex flex-wrap gap-2">
-                        <Button
-                            type="submit"
-                            :disabled="approval.processing"
-                            data-test="approve"
-                        >
-                            <BadgeCheck />
-                            {{
-                                autoActivate
-                                    ? 'Approve and put into use'
-                                    : 'Approve'
-                            }}
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            @click="showRejection = !showRejection"
-                        >
-                            <X /> Turn it down
-                        </Button>
-                    </div>
-
-                    <div
-                        v-if="showRejection"
-                        class="grid gap-1.5 border-t pt-3"
+                    <Button
+                        type="submit"
+                        class="justify-self-start"
+                        :disabled="approval.processing"
+                        data-test="approve"
                     >
-                        <Label for="reject-reason"
-                            >Why can this question not be used?</Label
-                        >
-                        <Input
-                            id="reject-reason"
-                            v-model="rejection.reason"
-                            maxlength="500"
-                            data-test="reject-reason"
-                        />
-                        <p
-                            v-if="rejection.errors.reason"
-                            class="text-destructive text-sm"
-                        >
-                            {{ rejection.errors.reason }}
-                        </p>
-                        <Button
-                            type="button"
-                            variant="destructive"
-                            class="justify-self-start"
-                            data-test="reject"
-                            @click="
-                                rejection.post(`${base}/reject`, {
-                                    preserveScroll: true,
-                                })
-                            "
-                        >
-                            Turn down and archive
-                        </Button>
-                    </div>
+                        <Check />
+                        {{
+                            approverDecision !== null && !reasonRequired
+                                ? autoActivate
+                                    ? 'Store in the QBank and put into use'
+                                    : 'Store in the QBank'
+                                : 'Save decision'
+                        }}
+                    </Button>
                 </form>
 
                 <div
@@ -670,7 +677,16 @@ const decisionsForApproval = computed(() =>
 
                 <!-- What the reviewers said. -->
                 <div class="grid gap-3 rounded-xl border p-4 shadow-xs">
-                    <h3 class="font-medium">Reviews</h3>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="font-medium">Reviews</h3>
+                        <Badge variant="outline" data-test="subject-count"
+                            >Department / Subject {{ subjectIn }} of
+                            {{ reviewsNeeded }}</Badge
+                        >
+                        <Badge variant="outline" data-test="academic-count"
+                            >QBank / Academic {{ academicIn }} of 1</Badge
+                        >
+                    </div>
                     <article
                         v-for="row in reviews"
                         :key="row.id"
@@ -689,11 +705,7 @@ const decisionsForApproval = computed(() =>
                                         ? 'destructive'
                                         : 'secondary'
                                 "
-                                >{{
-                                    row.outcome === 'changes_requested'
-                                        ? 'sent back for changes'
-                                        : (row.decision ?? 'reviewed')
-                                }}</Badge
+                                >{{ row.decision ?? 'reviewed' }}</Badge
                             >
                             <span class="text-muted-foreground text-xs">{{
                                 new Date(row.submittedAt).toLocaleString()
@@ -744,10 +756,18 @@ const decisionsForApproval = computed(() =>
                     </div>
                 </div>
 
-                <!-- Who is reviewing it. -->
-                <div class="grid gap-3 rounded-xl border p-4 shadow-xs">
-                    <h3 class="font-medium">Reviewers</h3>
-                    <ul class="grid gap-2 text-sm">
+                <!-- Who is reviewing it — only wanted when somebody asks. -->
+                <details class="rounded-xl border px-4 py-3 shadow-xs">
+                    <summary
+                        class="cursor-pointer font-medium"
+                        data-test="reviewers-toggle"
+                    >
+                        Reviewers
+                        <span class="text-muted-foreground font-normal"
+                            >({{ assignments.length }})</span
+                        >
+                    </summary>
+                    <ul class="mt-3 grid gap-2 text-sm">
                         <li
                             v-for="row in assignments"
                             :key="row.id"
@@ -803,7 +823,7 @@ const decisionsForApproval = computed(() =>
 
                     <div
                         v-if="can.assign"
-                        class="flex flex-wrap items-end gap-2"
+                        class="mt-3 flex flex-wrap items-end gap-2"
                     >
                         <div class="grid gap-1.5">
                             <Label for="stage">Level</Label>
@@ -832,7 +852,7 @@ const decisionsForApproval = computed(() =>
                             <select
                                 id="reviewer"
                                 v-model="newReviewer"
-                                class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
                                 data-test="reviewer"
                             >
                                 <option :value="null">Choose…</option>
@@ -855,7 +875,7 @@ const decisionsForApproval = computed(() =>
                             <UserPlus /> Ask
                         </Button>
                     </div>
-                </div>
+                </details>
             </div>
         </div>
     </div>

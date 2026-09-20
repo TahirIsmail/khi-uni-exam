@@ -8,6 +8,7 @@ use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Review\ActivateVersion;
 use App\Domain\QuestionBank\Review\ApproveVersion;
 use App\Domain\QuestionBank\Review\ConsolidatedPrehoc;
+use App\Domain\QuestionBank\Review\DecideOnVersion;
 use App\Domain\QuestionBank\Review\RejectVersion;
 use App\Domain\QuestionBank\Review\ReviewBoard;
 use App\Http\Controllers\Controller;
@@ -60,6 +61,38 @@ class ApprovalController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => $approved->status->isUsableInExams()
             ? __('Approved and in use.')
             : __('Approved. Put it into use when you are ready.')]);
+
+        return to_route('approvals.index');
+    }
+
+    /**
+     * The approving authority's decision, one of KMU's five: Accept or Retain in QBank store it,
+     * Review sends it round again, Revise sends it back to its author, Remove / Discard archives it.
+     */
+    public function decide(Request $request, Question $question, QuestionVersion $version, DecideOnVersion $decide): RedirectResponse
+    {
+        $this->authoriseVersion($request, $question, $version);
+
+        $input = $request->validate([
+            'decision_id' => ['required', 'integer', 'min:1', 'max:255'],
+            'cognitive_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
+            'difficulty_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $decided = $decide($request->user(), $version, new ConsolidatedPrehoc(
+            decisionId: (int) $input['decision_id'],
+            cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
+            difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
+            reason: $input['reason'] ?? null,
+        ));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => match ($decided->kmuStatus()) {
+            'Accept', 'Retain in QBank' => __('Stored in the QBank as :status.', ['status' => $decided->kmuStatus()]),
+            'Revise' => __('Sent back to the author to revise.'),
+            'Review' => __('Sent for another round of review.'),
+            default => __('Removed / discarded.'),
+        }]);
 
         return to_route('approvals.index');
     }

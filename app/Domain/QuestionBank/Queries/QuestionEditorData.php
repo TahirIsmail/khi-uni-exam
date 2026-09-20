@@ -191,7 +191,7 @@ final class QuestionEditorData
             'questionId' => $version->question_id,
             'versionNo' => $version->version_no,
             'status' => $version->status->value,
-            'statusLabel' => $version->status->label(),
+            'statusLabel' => $version->kmuStatus(),
             'editable' => $version->isEditable(),
             'questionTypeId' => $version->question_type_id,
             'courseId' => $version->course_id,
@@ -216,6 +216,24 @@ final class QuestionEditorData
             'references' => $content->references,
             'tagIds' => $content->tagIds,
             'authorId' => $version->author_id,
+        ];
+    }
+
+    /**
+     * What this user may do with this version, so the screens offer only that — the actions check
+     * the same rights again. Editing one's own question and anybody's are separate rights in kmu-cms.
+     *
+     * @return array{edit: bool, submit: bool, newVersion: bool}
+     */
+    public function abilities(User $user, QuestionVersion $version): array
+    {
+        $editRight = $version->author_id === $user->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any';
+        $mayEdit = $this->allows($user, $editRight, $version);
+
+        return [
+            'edit' => $mayEdit && $version->isEditable(),
+            'submit' => $mayEdit && $version->isEditable() && $this->allows($user, 'qbank.question.submit', $version),
+            'newVersion' => $mayEdit,
         ];
     }
 

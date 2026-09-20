@@ -56,6 +56,7 @@ final class SubmitQuestionVersion
                 'status' => VersionStatus::Submitted,
                 'submitted_at' => now(),
                 'review_round' => $version->review_round + 1,
+                'decision_code' => null,
                 'updated_by' => $user->id,
             ]);
 

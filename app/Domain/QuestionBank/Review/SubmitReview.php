@@ -60,6 +60,19 @@ final class SubmitReview
             throw new AuthorizationException('You cannot review your own question.');
         }
 
+        // Choosing "Revise" is how a reviewer sends the question back to its author.
+        if (! $input->requestsChanges() && $input->decisionId !== null
+            && PrehocDecision::query()->whereKey($input->decisionId)->value('code') === 'revise') {
+            $input = new ReviewInput(
+                outcome: 'changes_requested',
+                decisionId: $input->decisionId,
+                comments: $input->comments,
+                checklist: $input->checklist,
+                cognitiveLevelId: $input->cognitiveLevelId,
+                difficultyLevelId: $input->difficultyLevelId,
+            );
+        }
+
         $comments = $input->comments === null || trim($input->comments) === '' ? null : trim($input->comments);
         $decision = null;
         $checklist = null;
@@ -68,6 +81,7 @@ final class SubmitReview
             if ($comments === null || mb_strlen($comments) < 10) {
                 throw ValidationException::withMessages(['comments' => 'Say what the author has to change (at least 10 characters).']);
             }
+            $decision = $input->decisionId === null ? null : $this->decision($input->decisionId);
         } else {
             $decision = $this->decision($input->decisionId);
             if ($decision->needs_comment && ($comments === null || mb_strlen($comments) < 10)) {
@@ -123,6 +137,7 @@ final class SubmitReview
 
             if ($input->requestsChanges()) {
                 $this->moveTo($version, VersionStatus::ChangesRequested, $reviewer, $comments);
+                $version->update(['decision_code' => 'revise']);
                 $this->assignments->cancelOpenFor($version, $reviewer, 'The question went back to its author for changes.', $assignment->id);
 
                 $this->audit->record('qbank.review.changes_requested', 'question_version', $version->id, ['status' => VersionStatus::Submitted->value], [
@@ -167,7 +182,7 @@ final class SubmitReview
      */
     private function prehocValues(User $reviewer, QuestionVersion $version, ReviewInput $input): ?array
     {
-        if ($input->requestsChanges() || ! $input->hasPrehocValues()) {
+        if (! $input->hasPrehocValues()) {
             return null;
         }
         if (! $this->access->allows($reviewer, 'qbank.prehoc.record', $this->target($version))) {

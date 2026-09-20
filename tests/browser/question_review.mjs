@@ -290,6 +290,11 @@ const type = async (selector, value) => {
     await send('Input.insertText', { text: value });
     await sleep(150);
 };
+/** Opens the collapsed panels (the checklist, the reviewers), as a user does when they want them. */
+const openPanels = async () =>
+    evaluate(
+        "(() => { document.querySelectorAll('details').forEach((d) => { d.open = true; }); return true; })()",
+    );
 const setSelect = async (selector, value) =>
     evaluate(
         `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.value = ${JSON.stringify(String(value))}; el.dispatchEvent(new Event('change', { bubbles: true })); return el.value === ${JSON.stringify(String(value))}; })()`,
@@ -438,6 +443,7 @@ try {
         `/questions/${questionId}/versions/${versionId}/review`,
     );
     await waitFor("!!document.querySelector('[data-test=reviewer]')");
+    await openPanels();
     await evaluate(
         "window.prompt = () => 'Away on leave for a month'; window.confirm = () => true;",
     );
@@ -503,21 +509,31 @@ try {
         await path(),
     );
 
+    check(
+        'the workspace shows where the question is: Create → Review → Approve → Stored in QBank',
+        (await evaluate(
+            "!!document.querySelector('[data-test=journey] [data-step=current]')",
+        )) && /Create.*Review.*Approve.*Stored in QBank/s.test(await text()),
+        (await text()).replace(/\s+/g, ' ').slice(0, 300),
+    );
+
+    await openPanels();
+    await sleep(200);
     const workspace = (await text()).replace(/\s+/g, ' ');
     check(
-        'the checklist and the decisions come from the database',
+        "the checklist and KMU's five decisions come from the database",
         (await evaluate(
             "document.querySelectorAll('[data-checklist]').length",
         )) === 8 &&
             (await evaluate(
                 "document.querySelectorAll('#decision option').length",
-            )) === 5 &&
+            )) === 6 &&
             /cover the options|without seeing the options/i.test(workspace),
         workspace.slice(0, 400),
     );
     check(
-        'the reviewer sees what the author proposed',
-        /What the author proposed/.test(workspace),
+        'the reviewer sees what the author said about it',
+        /What the author said about it/.test(workspace),
         workspace.slice(0, 400),
     );
 
@@ -592,6 +608,7 @@ try {
         `/questions/${questionId}/versions/${versionId}/review`,
     );
     await waitFor("!!document.querySelector('[data-test=stage]')");
+    await openPanels();
     await evaluate(
         "window.prompt = () => 'Given to the academic reviewer of this test'; window.confirm = () => true;",
     );
@@ -672,7 +689,7 @@ try {
         'the author reads the review and sees who wrote it',
         /defensible from the reference/.test(authorView) &&
             new RegExp(PEOPLE.reviewer.employee).test(authorView) &&
-            !/Your review/.test(authorView),
+            !/Pre-hoc assessment/.test(authorView),
         authorView.slice(0, 500),
     );
 

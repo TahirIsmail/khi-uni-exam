@@ -34,10 +34,7 @@ final class QuestionList
     {
         $sort = (string) ($filters['sort'] ?? '');
         $search = (string) ($filters['search'] ?? '');
-        $courseLabels = [];
-        foreach ($this->academic->courses($branchId) as $course) {
-            $courseLabels[$course['id']] = $course['code'].' — '.$course['title'];
-        }
+        $courseLabels = $this->academic->courseLabels($branchId);
         $examTypes = [];
         foreach ($this->academic->examTypes() as $examType) {
             $examTypes[$examType['id']] = $examType['name'];
@@ -47,7 +44,7 @@ final class QuestionList
             ->select([
                 'q.id', 'q.public_ref', 'q.course_id', 'q.is_archived', 'q.times_used',
                 'v.id as version_id', 'v.version_no', 'v.status', 'v.stem', 'v.marks', 'v.node_id',
-                'v.author_id', 'v.updated_at', 'v.content_hash', 'v.discipline_id',
+                'v.author_id', 'v.updated_at', 'v.content_hash', 'v.discipline_id', 'v.decision_code',
                 'v.cognitive_level_id', 'v.difficulty_level_id', 'v.exam_type_id',
                 't.name as type_name', 'u.name as author_name',
             ])
@@ -101,7 +98,7 @@ final class QuestionList
             'versionId' => (int) $row->version_id,
             'versionNo' => (int) $row->version_no,
             'status' => (string) $row->status,
-            'statusLabel' => VersionStatus::from((string) $row->status)->label(),
+            'statusLabel' => VersionStatus::kmuLabel(VersionStatus::from((string) $row->status), $row->decision_code === null ? null : (string) $row->decision_code),
             'type' => (string) $row->type_name,
             'course' => $courseLabels[(int) $row->course_id] ?? ('#'.$row->course_id),
             'examType' => $row->exam_type_id === null ? null : ($examTypes[(int) $row->exam_type_id] ?? null),
@@ -153,20 +150,48 @@ final class QuestionList
     }
 
     /**
+     * Narrows the search to one of KMU's statuses (VersionStatus::groups()).
+     */
+    private function whereKmuStatus(Builder $query, string $key): void
+    {
+        $in = fn (VersionStatus ...$statuses): array => array_map(fn (VersionStatus $status): string => $status->value, $statuses);
+        $reviewing = $in(VersionStatus::Submitted, VersionStatus::UnderReview);
+        $stored = $in(VersionStatus::Approved, VersionStatus::Active);
+
+        if ($key === 'removed') {
+            $query->where(fn (Builder $inner) => $inner->where('q.is_archived', true)
+                ->orWhereIn('v.status', $in(VersionStatus::Archived, VersionStatus::Retired)));
+
+            return;
+        }
+
+        $query->where('q.is_archived', false);
+
+        match ($key) {
+            'draft' => $query->where('v.status', VersionStatus::Draft->value),
+            'submitted' => $query->whereIn('v.status', $reviewing)->where(fn (Builder $inner) => $inner->whereNull('v.decision_code')->orWhere('v.decision_code', '!=', 'review')),
+            'review' => $query->where(fn (Builder $inner) => $inner->where('v.status', VersionStatus::OnHold->value)
+                ->orWhere(fn (Builder $again) => $again->whereIn('v.status', $reviewing)->where('v.decision_code', 'review'))),
+            'revise' => $query->where('v.status', VersionStatus::ChangesRequested->value),
+            'accept' => $query->whereIn('v.status', $stored)->where(fn (Builder $inner) => $inner->whereNull('v.decision_code')->orWhere('v.decision_code', '!=', 'retain')),
+            'retain' => $query->whereIn('v.status', $stored)->where('v.decision_code', 'retain'),
+            default => null,
+        };
+    }
+
+    /**
      * How many questions are in each of KMU's statuses, in the university's order.
      *
      * @return list<array{key: string, label: string, count: int}>
      */
     public function statusGroupCounts(User $user, int $branchId): array
     {
-        $counts = $this->statusCounts($user, $branchId);
-
         $groups = [];
-        foreach (VersionStatus::groups() as $key => $group) {
+        foreach (VersionStatus::groups() as $key => $label) {
             $groups[] = [
                 'key' => $key,
-                'label' => $group['label'],
-                'count' => array_sum(array_map(fn (VersionStatus $status): int => $counts[$status->value] ?? 0, $group['statuses'])),
+                'label' => $label,
+                'count' => $this->query($user, $branchId, ['status' => $key])->count(),
             ];
         }
 
@@ -201,11 +226,10 @@ final class QuestionList
         if (($filters['course_id'] ?? null) !== null) {
             $query->where('q.course_id', (int) $filters['course_id']);
         }
-        if (($filters['status'] ?? '') !== '') {
-            // A KMU status ("submitted", "accept" …) covers one or more workflow steps.
-            $group = VersionStatus::groups()[(string) $filters['status']] ?? null;
-            $query->whereIn('v.status', $group === null ? [(string) $filters['status']] : array_map(fn (VersionStatus $status): string => $status->value, $group['statuses']));
-        }
+        // A KMU status covers one or more workflow steps, and the decision taken tells some apart.
+        // "Remove / Discard" is also where archived questions are found; every other view leaves them out.
+        $status = ($filters['archived'] ?? false) === true ? 'removed' : (string) ($filters['status'] ?? '');
+        $this->whereKmuStatus($query, $status);
         if (($filters['mine'] ?? false) === true) {
             $query->where('v.author_id', $user->id);
         }
@@ -273,7 +297,6 @@ final class QuestionList
         if (($filters['updated_to'] ?? null) !== null) {
             $query->where('v.updated_at', '<=', (string) $filters['updated_to'].' 23:59:59');
         }
-        $query->where('q.is_archived', ($filters['archived'] ?? false) === true);
 
         if (($filters['duplicates'] ?? false) === true) {
             // Questions whose text matches another question in this campus.

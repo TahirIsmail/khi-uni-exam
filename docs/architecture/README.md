@@ -286,12 +286,12 @@ Examination → Module / Subject → Topic → Question**. Where each step stand
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1    | Question entry: contributor prepares, Year Incharge collects in the prescribed format, subject specialist + DME/DDE review         | Editor, and the spreadsheet import (the prescribed format); two levels of review, below                                                                                                    |
 | 2    | Question information                                                                                                               | Saved with every question: ID, programme, year/semester, examination, module/course/subject, Course ID, topic, question and options, answer key, cognitive level, difficulty level, status |
-| 3    | Approved question stored in QBank                                                                                                  | Approval, then "Accept — in QBank"                                                                                                                                                         |
+| 3    | Approved question stored in QBank                                                                                                  | The approving authority's decision, then "Accept" or "Retain in QBank"                                                                                                                     |
 | 4    | Search and filter approved questions                                                                                               | Programme, year/semester, examination, module/subject, topic, Course ID, cognitive level, difficulty, status, used/unused, previous examination date                                       |
 | 5–10 | Paper setting against the blueprint/TOS, final paper, moderation before LMS upload, upload, activation, computer-based examination | Delivery phase — not built yet                                                                                                                                                             |
 | 11   | Post-hoc review: statistics, item and distractor analysis, reliability                                                             | Post-hoc phase — the per-question tables (`qb_question_usage`, `qb_posthoc_decisions`) exist                                                                                               |
 | 12   | Update question history                                                                                                            | The question page's "Use in examinations" section, filled by the delivery phase                                                                                                            |
-| 13   | Final decision: Retain · Review · Revise · Remove/Discard                                                                          | Post-hoc decision types, in these words                                                                                                                                                    |
+| 13   | Final decision: Retain · Review · Revise · Remove/Discard                                                                          | The same five decisions are already taken pre-hoc, by the reviewers and the approving authority; the post-hoc decision types repeat them after an examination                              |
 
 What changed to match it:
 
@@ -301,17 +301,31 @@ What changed to match it:
   cannot be sent without it, nor without its cognitive and difficulty level.
 - **Year / Semester is its own step** in the editor and the search, between the programme and its
   Course IDs — "First Professional", or for DPT "First Professional, Semester I".
-- **One status, in KMU's words**: Draft, Submitted for Review, Revise, Accept (and "Accept — in
-  QBank" once in use), Review, Remove / Discard. The workflow's finer steps are still recorded
-  underneath; the search filters and the dashboard count by these.
+- **One status, in KMU's words**: Draft · Submitted for Review · Review · Revise · Accept · Retain
+  in QBank · Remove / Discard. The workflow's finer steps are still recorded underneath; the search
+  filters and the dashboard count by these seven. There is no separate "Archived" view: a question
+  that was turned down is **Remove / Discard**, and it is kept, never deleted, with the reason.
 - **Two levels of review** before approval, as KMU's roles have them: the Department / Subject
   Reviewer(s) first, then one QBank / Academic Reviewer (a separate right in kmu-cms, and never the
   same person), then the Approving Authority. Either level can send the question back to its author.
   Each submission is a numbered round of review, so reviews from before the author's changes never
   count towards approval.
-- **Taken out**: the "expected pass rate" field, which KMU's list does not have, and the word
-  "pre-hoc" from the screens — at KMU it means moderating the final paper before it goes to the LMS
-  (step 7), which belongs to the delivery phase.
+- **The pre-hoc assessment, in full.** Before a question is ever used, three things are recorded
+  about it — its **cognitive level** (Recall, Understanding, Application, Analysis), its
+  **difficulty level** (Easy, Moderate, Difficult) and its **question quality decision** (Accept ·
+  Retain in QBank · Review · Revise · Remove / Discard). The author proposes the first two; every
+  reviewer records all three; the approving authority settles the values the question keeps. Each
+  judgement is kept separately in `qb_prehoc_assessments`, and the question's own page shows them
+  side by side.
+- **One decision, one outcome.** Whoever takes it — a reviewer or the approving authority — the
+  five decisions always mean the same thing: _Accept_ and _Retain in QBank_ store the question,
+  _Review_ starts another round of review, _Revise_ sends it back to its author, and
+  _Remove / Discard_ takes it out of use with the reason. The decision is kept on the version
+  (`decision_code`), which is why its status can read "Retain in QBank" rather than "Accept".
+- **The journey is on the screen.** Every question page shows the same four steps — Create → Review
+  → Approve → Stored in QBank — with where this question stands and one line saying what happens
+  next. The checklist and the list of reviewers are folded away until somebody wants them.
+- **Taken out**: the "expected pass rate" field, which KMU's list does not have.
 
 ## Acceptance
 

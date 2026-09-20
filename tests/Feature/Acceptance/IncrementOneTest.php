@@ -384,7 +384,9 @@ test('criterion 8: workflow status, pre-hoc decision and post-hoc decision are s
     // Each one has its own history: a version's status log, a pre-hoc row per judgement, and a
     // post-hoc row per examination.
     expect(DB::getSchemaBuilder()->hasTable('qb_version_status_log'))->toBeTrue()
-        ->and(DB::table('qb_posthoc_decision_types')->orderBy('sort_order')->pluck('code')->all())->toBe(['retain', 'retain_watch', 'revise', 'discard']);
+        // After an examination the decision is said in KMU's same five words as before it.
+        ->and(DB::table('qb_posthoc_decision_types')->where('is_active', true)->orderBy('sort_order')->pluck('name')->all())
+        ->toBe(['Accept', 'Retain in QBank', 'Review', 'Revise', 'Remove / Discard']);
 });
 
 test('criterion 9: a large import commits the good rows and reports exactly the bad ones', function () {

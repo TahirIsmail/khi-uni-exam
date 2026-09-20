@@ -4,8 +4,8 @@ import { FilePlus2 } from '@lucide/vue';
 import { computed } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import ChecksPanel from '@/components/qbank/ChecksPanel.vue';
+import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
 import Heading from '@/components/Heading.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { index } from '@/routes/questions';
 import type {
@@ -22,6 +22,7 @@ defineOptions({
 const props = defineProps<{
     reference: string;
     version: StoredVersion;
+    can: { edit: boolean; submit: boolean; newVersion: boolean };
     checks: QuestionChecks;
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
@@ -91,15 +92,14 @@ function startNewVersion(): void {
                 :description="`${type?.name ?? ''} · ${version.marks} mark${version.marks === 1 ? '' : 's'}`"
             />
             <div class="flex items-center gap-2">
-                <Badge variant="outline">{{ version.statusLabel }}</Badge>
-                <Button v-if="version.editable" as-child variant="outline">
+                <Button v-if="can.edit" as-child variant="outline">
                     <Link
                         :href="`/questions/${version.questionId}/versions/${version.id}/edit`"
                         >Edit draft</Link
                     >
                 </Button>
                 <Button
-                    v-else
+                    v-else-if="can.newVersion"
                     type="button"
                     variant="outline"
                     data-test="new-version"
@@ -109,6 +109,11 @@ function startNewVersion(): void {
                 </Button>
             </div>
         </div>
+
+        <QuestionJourney
+            :status="version.status"
+            :status-label="version.statusLabel"
+        />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <CandidatePreview :draft="draft" :type="type" show-answers />

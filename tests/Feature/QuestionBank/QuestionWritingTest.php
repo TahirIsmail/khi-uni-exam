@@ -375,7 +375,8 @@ test('the question list shows the newest version of each question, with filters'
         ->where('questions.total', 2)
         // KMU's statuses, in its order: "Submitted for Review" covers submitted and under review.
         ->where('statuses', fn ($statuses) => collect($statuses)->pluck('count', 'label')->all() === [
-            'Draft' => 1, 'Submitted for Review' => 1, 'Revise' => 0, 'Accept' => 0, 'Review' => 0, 'Remove / Discard' => 0,
+            'Draft' => 1, 'Submitted for Review' => 1, 'Review' => 0, 'Revise' => 0,
+            'Accept' => 0, 'Retain in QBank' => 0, 'Remove / Discard' => 0,
         ])
         ->where('questions.data.0.reference', fn ($ref) => str_starts_with((string) $ref, 'Q-')));
 
@@ -398,4 +399,34 @@ test('question references are handed out one at a time', function () {
     $year = now()->year;
 
     expect($refs)->toBe(["Q-{$year}-000001", "Q-{$year}-000002", "Q-{$year}-000003"]);
+});
+
+/**
+ * What the screens offer is what the CMS role allows, and nothing more: the menu, the buttons on
+ * the question list, and the routes behind them all read the same permissions.
+ */
+test('the screens offer only what the CMS role permits', function () {
+    $reader = ($this->author)(['qbank_questions' => ['view']]);
+
+    $this->actingAs($reader)->get('/questions')->assertOk()->assertInertia(fn ($page) => $page
+        ->where('auth.can.viewQuestions', true)
+        ->where('auth.can.createQuestions', false)
+        ->where('auth.can.importQuestions', false)
+        ->where('auth.can.reviewQuestions', false)
+        ->where('auth.can.approveQuestions', false)
+        ->where('canEditOwn', false)
+        ->where('canEditAny', false));
+
+    // Every route behind a button it does not offer refuses them as well.
+    $this->actingAs($reader)->get('/questions/create')->assertForbidden();
+    $this->actingAs($reader)->get('/questions/imports')->assertForbidden();
+    $this->actingAs($reader)->get('/reviews')->assertForbidden();
+    $this->actingAs($reader)->get('/approvals')->assertForbidden();
+
+    // An author of their own questions may edit their own, not anybody else's.
+    $author = ($this->author)();
+    $this->actingAs($author)->get('/questions')->assertInertia(fn ($page) => $page
+        ->where('auth.can.createQuestions', true)
+        ->where('canEditOwn', true)
+        ->where('canEditAny', false));
 });

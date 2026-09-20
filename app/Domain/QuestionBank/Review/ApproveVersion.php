@@ -56,7 +56,7 @@ final class ApproveVersion
 
         $decision = $this->decision($input->decisionId);
         if (! $decision->is_accept) {
-            throw ValidationException::withMessages(['decision_id' => 'A question can only be approved with an "accept" decision. Send it back to the author, or archive it, instead.']);
+            throw ValidationException::withMessages(['decision_id' => 'A question is approved with Accept or Retain in QBank. Choose Review, Revise or Remove / Discard to do something else with it.']);
         }
 
         return DB::transaction(function () use ($approver, $version, $input, $decision): QuestionVersion {
@@ -79,6 +79,7 @@ final class ApproveVersion
             $from = $version->status;
             $version->update([
                 'status' => VersionStatus::Approved,
+                'decision_code' => $decision->code,
                 'cognitive_level_id' => $input->cognitiveLevelId ?? $version->cognitive_level_id,
                 'difficulty_level_id' => $input->difficultyLevelId ?? $version->difficulty_level_id,
                 'approved_at' => now(),

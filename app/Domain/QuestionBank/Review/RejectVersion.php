@@ -45,7 +45,7 @@ final class RejectVersion
             $this->assignments->cancelOpenFor($version, $approver, 'The question was turned down.');
 
             $from = $version->status;
-            $version->update(['status' => VersionStatus::Archived, 'updated_by' => $approver->id]);
+            $version->update(['status' => VersionStatus::Archived, 'decision_code' => 'remove', 'updated_by' => $approver->id]);
 
             VersionStatusLog::query()->create([
                 'version_id' => $version->id,

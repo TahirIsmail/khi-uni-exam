@@ -51,7 +51,7 @@ final class QuestionHistory
                 'id' => $version->id,
                 'versionNo' => $version->version_no,
                 'status' => $version->status->value,
-                'statusLabel' => $version->status->label(),
+                'statusLabel' => $version->kmuStatus(),
                 'type' => $version->type->name,
                 'marks' => $version->marks,
                 'author' => $authors[$version->author_id] ?? 'Unknown',

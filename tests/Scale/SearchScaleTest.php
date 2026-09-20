@@ -238,7 +238,8 @@ test('a search combining course, topic, thinking, difficulty, status and author 
             'node_id' => $nodes[$courses[1]][2],
             'cognitive_level_id' => 2,
             'difficulty_level_id' => 2,
-            'status' => VersionStatus::Active->value,
+            // KMU's own status: "Accept" covers approved and in use.
+            'status' => 'accept',
             'author_id' => $authors[1]->id,
             'sort' => 'updated',
         ]));
@@ -247,14 +248,14 @@ test('a search combining course, topic, thinking, difficulty, status and author 
         [$searched, $withWords] = $time(fn () => $list->paginate($user, $branch, [
             'search' => 'chest pain ST elevation',
             'course_id' => $courses[1],
-            'status' => VersionStatus::Active->value,
+            'status' => 'accept',
         ]));
 
         [$counts, $countsMs] = $time(fn () => $list->statusCounts($user, $branch));
 
         // Every row that came back really matches, and the timings are inside the budget.
         foreach ($page->items() as $row) {
-            expect($row['status'])->toBe(VersionStatus::Active->value);
+            expect($row['status'])->toBeIn([VersionStatus::Approved->value, VersionStatus::Active->value]);
         }
 
         expect($page->total())->toBeGreaterThan(0)

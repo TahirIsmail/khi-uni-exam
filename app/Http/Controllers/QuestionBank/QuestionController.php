@@ -118,6 +118,8 @@ class QuestionController extends Controller
             ...$this->editorData->forSearch($request->user(), $branchId),
             'canCreate' => $request->user()->can('qbank.question.create'),
             'canExport' => $request->user()->can('qbank.question.export'),
+            'canEditOwn' => $request->user()->can('qbank.question.edit_own'),
+            'canEditAny' => $request->user()->can('qbank.question.edit_any'),
         ]);
     }
 
@@ -126,6 +128,7 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionEditor', [
             'version' => null,
             'reference' => null,
+            'can' => ['edit' => true, 'submit' => $request->user()->can('qbank.question.submit'), 'newVersion' => false],
             ...$this->editorData->forCreate($request->user(), $this->branchId($request)),
         ]);
     }
@@ -152,6 +155,7 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionEditor', [
             'version' => $this->editorData->version($version),
             'reference' => $question->public_ref,
+            'can' => $this->editorData->abilities($request->user(), $version),
             ...$this->editorData->forCreate($request->user(), $this->branchId($request)),
         ]);
     }
@@ -228,6 +232,7 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionPreview', [
             'reference' => $question->public_ref,
             'version' => $this->editorData->version($version),
+            'can' => $this->editorData->abilities($request->user(), $version),
             'checks' => $validator->check($reader->read($version)),
             ...$this->editorData->lookups(),
         ]);
@@ -239,7 +244,12 @@ class QuestionController extends Controller
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
         abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
 
-        return Inertia::render('qbank/QuestionHistory', $history->for($question, $request->user()));
+        $latest = $question->versions()->orderByDesc('version_no')->firstOrFail();
+
+        return Inertia::render('qbank/QuestionHistory', [
+            ...$history->for($question, $request->user()),
+            'can' => $this->editorData->abilities($request->user(), $latest),
+        ]);
     }
 
     /** Two versions side by side. */
@@ -260,11 +270,11 @@ class QuestionController extends Controller
             'reference' => $question->public_ref,
             'questionId' => $question->id,
             'diff' => $diff->between($from, $to),
-            'versions' => $question->versions()->orderByDesc('version_no')->get(['id', 'version_no', 'status'])
+            'versions' => $question->versions()->orderByDesc('version_no')->get(['id', 'version_no', 'status', 'decision_code'])
                 ->map(fn (QuestionVersion $version): array => [
                     'id' => $version->id,
                     'versionNo' => $version->version_no,
-                    'statusLabel' => $version->status->label(),
+                    'statusLabel' => $version->kmuStatus(),
                 ])->values()->all(),
         ]);
     }

@@ -448,7 +448,8 @@ test('when two reviewers decide differently the approver has to say why', functi
     ]));
     $this->actingAs($second)->post($url, reviewPayload([
         'assignment_id' => ReviewAssignment::query()->where('reviewer_id', $second->id)->value('id'),
-        'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
+        // "Review" — this one wants it looked at again, where the other accepted it.
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'review')->value('id'),
         'comments' => 'Shorten the vignette; the second option needs rewording.',
     ]));
 
@@ -608,8 +609,10 @@ test('the workspace shows the question, the checklist and what the reviewers sai
         ->where('reviewsNeeded', 1)
         ->where('checklistItems', fn ($items) => count($items) === 8)
         ->where('prehoc.0.source', 'author')
-        // Accept, Review, Revise, Remove / Discard — the university's own list.
-        ->where('decisions', fn ($decisions) => count($decisions) === 4));
+        // Accept, Retain in QBank, Review, Revise, Remove / Discard — the university's own list.
+        ->where('decisions', fn ($decisions) => collect($decisions)->pluck('name')->all() === [
+            'Accept', 'Retain in QBank', 'Review', 'Revise', 'Remove / Discard',
+        ]));
 
     $this->actingAs($this->reviewer)->post($url, reviewPayload(['assignment_id' => ReviewAssignment::query()->value('id')]));
 
@@ -771,3 +774,99 @@ test('each level needs its own right, and the academic reviewer can send it back
     expect($version->fresh()->status)->toBe(VersionStatus::ChangesRequested)
         ->and(Review::query()->where('stage', 'academic')->value('outcome'))->toBe('changes_requested');
 });
+
+/**
+ * KMU's five decisions, taken by the approving authority on one screen (KMU requirements, "Question
+ * Quality / Decision"). Each one has its own outcome, and each is recorded on the version.
+ */
+test('the approving authority stores a question with Retain in QBank', function () {
+    $version = reviewedTwice();
+
+    $this->actingAs($this->approver)->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'retain')->value('id'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
+    ])->assertRedirect('/approvals');
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::Active)
+        ->and($version->decision_code)->toBe('retain')
+        ->and($version->kmuStatus())->toBe('Retain in QBank');
+});
+
+test('Revise sends the question back to its author with what to change', function () {
+    $version = reviewedTwice();
+
+    $this->actingAs($this->approver)->from('/approvals')->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
+        'reason' => 'short',
+    ])->assertSessionHasErrors('reason');
+
+    $this->actingAs($this->approver)->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
+        'reason' => 'Shorten the vignette and give the units for the sodium value.',
+    ])->assertRedirect('/approvals');
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::ChangesRequested)
+        ->and($version->kmuStatus())->toBe('Revise')
+        ->and(ReviewAssignment::query()->where('status', 'open')->count())->toBe(0);
+});
+
+test('Review starts another round and asks the subject reviewers afresh', function () {
+    $version = reviewedTwice();
+    $roundBefore = $version->review_round;
+
+    $this->actingAs($this->approver)->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'review')->value('id'),
+        'reason' => 'Look at the distractors again; two of them say the same thing.',
+    ])->assertRedirect('/approvals');
+
+    $version->refresh();
+    expect($version->review_round)->toBe($roundBefore + 1)
+        ->and($version->status)->toBe(VersionStatus::UnderReview)
+        ->and($version->kmuStatus())->toBe('Review')
+        ->and(ReviewAssignment::query()->where('round', $version->review_round)->where('status', 'open')->count())->toBeGreaterThan(0);
+});
+
+test('Remove / Discard archives the question with the reason', function () {
+    $version = reviewedTwice();
+
+    $this->actingAs($this->approver)->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'remove')->value('id'),
+        'reason' => 'The topic is already covered by two questions in the bank.',
+    ])->assertRedirect('/approvals');
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::Archived)
+        ->and($version->kmuStatus())->toBe('Remove / Discard')
+        ->and(Question::query()->findOrFail($version->question_id)->archive_reason)->toContain('already covered');
+});
+
+test('nobody decides about their own question, whatever the decision', function () {
+    $version = reviewedTwice();
+    $this->cmsGrant($this->cmsRole('Faculty'), 'qbank_approve', 'view');
+
+    $this->actingAs($this->author->fresh())->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+    ])->assertForbidden();
+
+    expect($version->fresh()->status)->toBe(VersionStatus::UnderReview);
+});
+
+function decideUrl(QuestionVersion $version): string
+{
+    return "/questions/{$version->question_id}/versions/{$version->id}/decide";
+}
+
+/** A question through both levels of review, waiting for the approving authority. */
+function reviewedTwice(): QuestionVersion
+{
+    $version = sendForReview();
+    test()->actingAs(test()->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]));
+    academicReview($version->fresh());
+
+    return $version->fresh();
+}
