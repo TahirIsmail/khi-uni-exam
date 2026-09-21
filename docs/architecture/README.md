@@ -327,6 +327,12 @@ What changed to match it:
   next. The checklist and the list of reviewers are folded away until somebody wants them.
 - **Taken out**: the "expected pass rate" field, which KMU's list does not have.
 
+## The examination phase
+
+- [How an exam is built, sat and marked](exam-phase.md) — the plan for KMU's steps 5 to 12: the
+  blueprint, the paper, moderation, sitting the exam, marking, results and the analysis that goes
+  back to the question bank.
+
 ## Acceptance
 
 - [Acceptance of the first increment](acceptance.md) — the blueprint's fourteen criteria, the test
@@ -356,5 +362,6 @@ What changed to match it:
 | 12   | Review, pre-hoc, approval                                                                                 | both       | Done                            |
 | 13   | Acceptance testing of the increment                                                                       | both       | Done                            |
 
-Exam delivery (including ADR-0003) is built in the later delivery phase, but its tables and
-identity rules are designed now so nothing built earlier has to change.
+Steps 14 onwards are the examination phase: see [exam-phase.md](exam-phase.md). Its permissions,
+campus rules and audit log were built in step 7, and ADR-0003 settled how a candidate's exam
+survives a crash, so nothing built in the first increment has to change.
