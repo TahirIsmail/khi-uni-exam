@@ -4,6 +4,7 @@ import {
     ArrowLeft,
     BadgeCheck,
     ClipboardCheck,
+    ClipboardList,
     FileQuestion,
     LayoutGrid,
     Upload,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as approvals } from '@/routes/approvals';
+import { index as exams } from '@/routes/exams';
 import { index as imports } from '@/routes/imports';
 import { index as questions } from '@/routes/questions';
 import { index as reviews } from '@/routes/reviews';
@@ -65,6 +67,15 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Import questions',
             href: imports(),
             icon: Upload,
+        });
+    }
+
+    // Building an examination: its details, its blueprint and, next, its paper.
+    if (page.props.auth.can?.viewExams) {
+        items.push({
+            title: 'Create exam',
+            href: exams(),
+            icon: ClipboardList,
         });
     }
 

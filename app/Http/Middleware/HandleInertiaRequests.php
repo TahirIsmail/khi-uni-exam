@@ -50,6 +50,8 @@ class HandleInertiaRequests extends Middleware
                     'importQuestions' => $request->user()->can('qbank.import.run'),
                     'reviewQuestions' => $request->user()->can('qbank.review.perform') || $request->user()->can('qbank.review.academic'),
                     'approveQuestions' => $request->user()->can('qbank.question.approve'),
+                    'viewExams' => $request->user()->can('exam.access'),
+                    'createExams' => $request->user()->can('exam.create'),
                 ],
             ],
             // The campus being worked in, and the user's campuses for the switcher.

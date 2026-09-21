@@ -25,11 +25,14 @@ Everything is administered in kmu-cms and done in this module, as
 | -------------------------- | -------------------- | --------------------------------------------------- |
 | Open Question Bank & Exams | the question bank    | `qbank_questions`                                   |
 | **Create Exam**            | `/exams`             | `exam_blueprints` or `exam_papers`                  |
-| **Conduct Exam**           | `/exams/conduct`     | `exam_candidates`, `exam_checkin` or `exam_monitor` |
-| **Results & Marks**        | `/results`           | `exam_results` or `exam_item_analysis`              |
+| Conduct Exam               | `/exams/conduct`     | `exam_candidates`, `exam_checkin` or `exam_monitor` |
+| Results & Marks            | `/results`           | `exam_results` or `exam_item_analysis`              |
 | Exam Access                | the CMS's own screen | `exam_access`                                       |
 | Exam Audit Log             | the CMS's own screen | `exam_audit_log`                                    |
 | Exam Module Settings       | the CMS's own screen | Super Admin                                         |
+
+**Create Exam** is in the menu now. Conduct Exam and Results & Marks are added in the step that builds
+what they open (17 and 20–21), so nobody is ever shown a button with nothing behind it.
 
 Each link carries a single-use SSO ticket, so nobody signs in twice
 ([ADR-0002](adr-0002-sso-from-cms.md)). Every permission already exists in the CMS: the
@@ -121,6 +124,44 @@ The analysis is KMU's heading 9: overall statistics, item analysis (difficulty a
 index), distractor analysis, KR-20 and Cronbach's alpha, compliance with the table of
 specifications, and each question's usage history. It writes to `qb_question_usage` and
 `qb_posthoc_decisions`, which already exist.
+
+## What step 14 built: the examination and its blueprint
+
+**The examination** (`exm_examinations`) is one sitting of one Course ID. It is set up by choosing, in
+KMU's order, the programme, the year or semester, the examination (Annual, Supplementary, Regular or
+Retake — only those the programme holds) and the Course ID. The programme, year and term are then read
+from the course, so they can never disagree with it. Besides that: a title (written from the choices
+until somebody writes their own), an optional academic session, the date and start time, the duration,
+the total marks, the pass percentage, whether a wrong answer loses marks and how much, and
+instructions to candidates. Its reference is `EX-2026-0001`, handed out one at a time and never reused.
+
+Times are typed and shown in the examination time zone (`EXAM_TIMEZONE`, Asia/Karachi by default) and
+stored in UTC, so the server's clock — the only one that matters while an exam is sat — is never in
+doubt.
+
+**The blueprint** (`exm_blueprints`, `exm_blueprint_rows`, `exm_blueprint_targets`, `exm_sections`)
+is written on one screen: optional sections, then rows — a topic (or a whole heading, whose subtopics
+count too), a type of question, how many, and what each is worth — and the two overall mixes. Beside
+the rows the screen shows, live, how many marks are planned against the total, and for every row how
+many questions the bank holds for it (in use, not archived, filed under this examination and topic). A
+shortage is a warning, not a bar: the questions can still be written before the paper is built.
+
+**Approval** follows the same rule as the question bank. A blueprint is a draft, is submitted by the
+person who wrote it once its rows add up to the total marks and its mixes to 100%, and is approved —
+or sent back with a reason — by somebody else who holds the approving right; nobody approves what
+they wrote or submitted. Approving records a fingerprint (SHA-256) of the blueprint, which the paper
+is later checked against. An approved blueprint can be reopened, with a reason, until a paper is
+finalised; every step is in the audit log.
+
+**What is frozen, and where:** a submitted or approved blueprint's rows, mixes and sections, and the
+examination's course, examination type and total marks, are refused by the database itself, so a
+direct `UPDATE` fails too. Blueprints follow draft → submitted → approved (→ draft again) and no
+other order, and nothing past the blueprint stage is ever deleted.
+
+**Who may do what** (all CMS checkboxes that already existed): see and list — `exam_papers` View or
+`exam_blueprints` View; set an examination up — `exam_papers` Add; write and submit a blueprint —
+`exam_blueprints` Edit; approve, send back or reopen — `exam_blueprints_approve`. Every action is also
+limited to the campus being worked in and to the courses the person's exam access allows.
 
 ## Security while an exam is being sat
 

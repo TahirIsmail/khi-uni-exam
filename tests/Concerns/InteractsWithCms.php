@@ -118,7 +118,7 @@ trait InteractsWithCms
     /**
      * A topic of a course that questions may be attached to (level template with allow_questions).
      */
-    protected function cmsCurriculumNode(int $courseId, int $programmeId, string $name = 'Ischaemic heart disease', bool $allowQuestions = true, ?int $disciplineId = null): int
+    protected function cmsCurriculumNode(int $courseId, int $programmeId, string $name = 'Ischaemic heart disease', bool $allowQuestions = true, ?int $disciplineId = null, ?int $parentId = null): int
     {
         $cms = config('database.cms_source_database');
         // Two levels, as kmu-cms has them: topics take questions, the section above them does not.
@@ -133,13 +133,19 @@ trait InteractsWithCms
             ]);
         }
 
+        $path = '/';
+        if ($parentId !== null) {
+            $path = DB::table("{$cms}.acad_curriculum_nodes")->where('id', $parentId)->value('path').$parentId.'/';
+        }
+
         return (int) DB::table("{$cms}.acad_curriculum_nodes")->insertGetId([
             'course_id' => $courseId,
+            'parent_id' => $parentId,
             'level_type_id' => $levelType,
             'discipline_id' => $disciplineId,
             'code' => 'T-'.bin2hex(random_bytes(3)),
             'name' => $name,
-            'path' => '/',
+            'path' => $path,
             'depth' => $depth,
             'sort_order' => 1,
             'is_active' => 1,

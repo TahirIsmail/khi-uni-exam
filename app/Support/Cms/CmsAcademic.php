@@ -213,6 +213,93 @@ final class CmsAcademic
     }
 
     /**
+     * Each programme's calendar, so a screen offers only the examination types it uses.
+     *
+     * @return array<int, string> programme id => annual|semester
+     */
+    public function calendars(int $branchId): array
+    {
+        $calendars = [];
+        foreach ($this->programmes($branchId) as $programme) {
+            $calendars[$programme['id']] = (string) $this->programmeCalendar($programme['id']);
+        }
+
+        return $calendars;
+    }
+
+    /**
+     * The Year / Semester choices that lead to at least one of the given courses, so nobody is
+     * offered a year with nothing in it.
+     *
+     * @param  list<array{id: int, code: string, title: string, programme_id: int, professional_id: int|null, term_id: int|null}>  $courses
+     * @return list<array{id: string, programme_id: int, professional_id: int, term_id: int|null, name: string}>
+     */
+    public function yearsWithCourses(int $branchId, array $courses): array
+    {
+        $used = [];
+        foreach ($courses as $course) {
+            $used[$course['professional_id'].'-'.($course['term_id'] ?? '')] = true;
+        }
+
+        return array_values(array_filter(
+            $this->yearsAndTerms($branchId),
+            fn (array $year): bool => isset($used[$year['professional_id'].'-'.($year['term_id'] ?? '')]),
+        ));
+    }
+
+    /**
+     * Where a course sits: its campus, programme, year and term. Null when there is no such course.
+     *
+     * @return array{branch_id: int, programme_id: int, professional_id: int|null, term_id: int|null, course_id: int, status: string, label: string}|null
+     */
+    public function placeOfCourse(int $courseId): ?array
+    {
+        $course = DB::connection('cms')->table('v_cms_courses')->where('id', $courseId)
+            ->first(['branch_id', 'programme_id', 'professional_id', 'term_id', 'status', 'course_code', 'title']);
+        if ($course === null || $course->branch_id === null) {
+            return null;
+        }
+
+        return [
+            'branch_id' => (int) $course->branch_id,
+            'programme_id' => (int) $course->programme_id,
+            'professional_id' => $course->professional_id === null ? null : (int) $course->professional_id,
+            'term_id' => $course->term_id === null ? null : (int) $course->term_id,
+            'course_id' => $courseId,
+            'status' => (string) $course->status,
+            'label' => $course->course_code.' — '.$course->title,
+        ];
+    }
+
+    /**
+     * The academic sessions (intakes) of a campus, newest first.
+     *
+     * @return list<array{id: int, name: string}>
+     */
+    public function intakes(int $branchId): array
+    {
+        return array_values(DB::connection('cms')->table('v_cms_intakes')
+            ->where('branch_id', $branchId)->orderByDesc('start_date')->orderByDesc('id')
+            ->get(['id', 'name'])
+            ->map(fn (stdClass $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name])
+            ->all());
+    }
+
+    /**
+     * "Year, Semester" for a professional (and term), as the Year / Semester lists name it.
+     */
+    public function yearName(int $branchId, int $professionalId, ?int $termId): ?string
+    {
+        foreach ($this->yearsAndTerms($branchId) as $year) {
+            if ($year['professional_id'] === $professionalId && $year['term_id'] === $termId) {
+                return $year['name'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return list<array{id: int, code: string, name: string}>
      */
     public function disciplines(): array

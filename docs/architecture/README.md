@@ -57,6 +57,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | Question versions are frozen once approved; workflow steps, one active version, append-only log                        | `tests/Feature/QuestionBank/SchemaRulesTest.php`                    |
 | Question text is sanitised before storing; type rules and the campus/exam access are enforced server-side              | `tests/Feature/QuestionBank/QuestionWritingTest.php`                |
 | Search filters are validated and never reach beyond the campus and exam access                                         | `tests/Feature/QuestionBank/SearchAndHistoryTest.php`               |
+| A blueprint is frozen once submitted; it moves draft → submitted → approved only, by two different people              | `tests/Feature/Exam/BlueprintTest.php`                              |
 | Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
 ## Administration lives in kmu-cms (ADR-0004)
@@ -362,6 +363,7 @@ What changed to match it:
 | 12   | Review, pre-hoc, approval                                                                                 | both       | Done                            |
 | 13   | Acceptance testing of the increment                                                                       | both       | Done                            |
 
-Steps 14 onwards are the examination phase: see [exam-phase.md](exam-phase.md). Its permissions,
+Steps 14 onwards are the examination phase — step 14, "Create Exam", the examination and its
+blueprint, is built and waiting for approval: see [exam-phase.md](exam-phase.md). Its permissions,
 campus rules and audit log were built in step 7, and ADR-0003 settled how a candidate's exam
 survives a crash, so nothing built in the first increment has to change.

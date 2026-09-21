@@ -85,6 +85,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (User $user, string $ability): ?bool {
             return Permissions::exists($ability) ? app(AccessControl::class)->has($user, $ability) : null;
         });
+
+        // "Create Exam" opens for anybody who may see examinations or blueprints (not a CMS checkbox of its own).
+        Gate::define('exam.access', fn (User $user): bool => app(AccessControl::class)->has($user, 'exam.view')
+            || app(AccessControl::class)->has($user, 'exam.blueprint.view'));
     }
 
     /**
