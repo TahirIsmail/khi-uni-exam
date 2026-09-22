@@ -19,3 +19,4 @@ Route::middleware('auth')->group(function () {
 require __DIR__.'/mfa.php';
 require __DIR__.'/qbank.php';
 require __DIR__.'/exams.php';
+require __DIR__.'/conduct.php';

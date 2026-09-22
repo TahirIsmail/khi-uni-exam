@@ -31,8 +31,8 @@ Everything is administered in kmu-cms and done in this module, as
 | Exam Audit Log             | the CMS's own screen | `exam_audit_log`                                    |
 | Exam Module Settings       | the CMS's own screen | Super Admin                                         |
 
-**Create Exam** is in the menu now. Conduct Exam and Results & Marks are added in the step that builds
-what they open (17 and 20–21), so nobody is ever shown a button with nothing behind it.
+**Create Exam and Conduct Exam are in the menu now.** Results & Marks is added in the step that
+builds it (20–21), so nobody is ever shown a button with nothing behind it.
 
 Each link carries a single-use SSO ticket, so nobody signs in twice
 ([ADR-0002](adr-0002-sso-from-cms.md)). Every permission already exists in the CMS: the
@@ -268,6 +268,52 @@ the reason said in words — when the paper itself is not ready.
 `paper.published`, `paper.version_started`, `paper.comment_added`, `paper.comment_resolved`,
 `paper.comment_reopened`.
 
+## What step 17 built: candidates, centres, rooms, allocation and check-in
+
+**Centres and rooms** (`cand_centres`, `cand_rooms`) are campus infrastructure — a hall or a building,
+and the rooms in it, with how many candidates each holds — reused across every examination held on
+that campus. They are not tied to any one course, so managing them needs only `exam_centres` Edit for
+the campus being worked in, not the course-scoped exam access blueprints and papers already check.
+
+**The candidate roster** (`cand_candidates`) is imported once per examination from a CSV file, as
+exam-phase.md's settled questions said it would be: candidate number, name and, optionally, roll
+number, CNIC, email and phone. A candidate number already on the roster is skipped, not overwritten,
+so importing the same file twice — or a corrected file with rows added — is safe. Registering
+candidates needs `exam_candidates` Edit.
+
+**Allocation, extra time, the PIN and check-in all live on that one row**, the same way a paper's
+moderation columns live on `exm_papers`: a candidate's way to their seat is one small, mostly empty
+record until each step happens to it, not a family of joined tables.
+
+- **Allocation** (`centre.allocate`) fills a chosen centre's active rooms, in name order, up to their
+  capacity, with every candidate not yet seated; a candidate can also be allocated, or moved, by hand
+  into any room. Once a candidate has checked in their seat is fixed — moving them after that is a
+  check-in day correction, not an allocation, and is refused.
+- **Extra time** (`candidate.extra_time`) is granted ahead of the day with a reason, in minutes; the
+  delivery engine (step 18) reads it when it computes a candidate's deadline.
+- **Check-in** (`candidate.checkin`) needs a candidate to be allocated first. It issues a one-time
+  exam PIN — six digits, generated fresh, shown to the invigilator exactly once in the response — and
+  keeps only its hash from then on, checked the way a password is. With their candidate number, this
+  is what ADR-0003 lets a candidate resume an exam with on another computer. A PIN can be reissued —
+  lost, forgotten, or given to the wrong person — which replaces the hash; the old PIN stops working
+  the moment that happens.
+
+**What is frozen, and where:** once a candidate has checked in, their candidate number and which
+examination they sat are refused by the database itself, and the row is never deleted — the same
+promise the question bank, the blueprint and the paper already make for what they freeze. Everything
+else about a candidate (allocation, extra time) can still be corrected; only their identity and the
+fact that they sat is locked.
+
+**Conduct Exam**, alongside Create Exam in the CMS's Exams menu, opens on a list of the campus's
+examinations; each links to its candidates and its check-in screen, and a "Centres & rooms" link
+sits beside it. It opens for anybody who may see candidates, check them in, or monitor delivery —
+`exam_candidates`, `exam_checkin` or `exam_monitor` View — the same three rights the architecture
+blueprint named for it in step 7.
+
+**Audited:** `candidate.imported`, `candidate.allocated`, `candidate.checked_in`,
+`candidate.pin_reissued`, `candidate.extra_time_granted`, `centre.created`, `centre.updated`,
+`room.created`, `room.updated`.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -294,7 +340,7 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 14   | The three menu items and their deep links; blueprint tables and screen | both       | Done    |
 | 15   | The examination, and building a paper from the QBank                   | kmu-assess | Done    |
 | 16   | Moderation, finalising, locking and paper versions                     | kmu-assess | Done    |
-| 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Planned |
+| 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Done    |
 | 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Planned |
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Planned |
 | 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Planned |

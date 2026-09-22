@@ -89,6 +89,11 @@ class AppServiceProvider extends ServiceProvider
         // "Create Exam" opens for anybody who may see examinations or blueprints (not a CMS checkbox of its own).
         Gate::define('exam.access', fn (User $user): bool => app(AccessControl::class)->has($user, 'exam.view')
             || app(AccessControl::class)->has($user, 'exam.blueprint.view'));
+
+        // "Conduct Exam" opens for anybody who works with candidates, checking in or monitoring delivery.
+        Gate::define('exam.conduct.access', fn (User $user): bool => app(AccessControl::class)->has($user, 'candidate.view')
+            || app(AccessControl::class)->has($user, 'candidate.checkin')
+            || app(AccessControl::class)->has($user, 'delivery.monitor'));
     }
 
     /**
