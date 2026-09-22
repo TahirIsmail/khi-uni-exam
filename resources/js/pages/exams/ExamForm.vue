@@ -172,7 +172,10 @@ const select =
             "
         />
 
-        <ExamJourney :stage="editing ? 'draft' : 'new'" />
+        <ExamJourney
+            :stage="editing ? 'draft' : 'new'"
+            :exam-id="examination?.id"
+        />
 
         <p
             v-if="!hasCourses"

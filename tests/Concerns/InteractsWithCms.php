@@ -101,10 +101,11 @@ trait InteractsWithCms
      * $branchId (none if null).
      *
      * @param  list<int>  $roleIds
+     * @param  array<string, mixed>  $staff  other columns of the staff row, e.g. a name
      */
-    protected function staffUser(array $roleIds = [], ?int $branchId = null): User
+    protected function staffUser(array $roleIds = [], ?int $branchId = null, array $staff = []): User
     {
-        $staffId = $this->cmsStaff(['branch_id' => $branchId]);
+        $staffId = $this->cmsStaff(['branch_id' => $branchId, ...$staff]);
         foreach ($roleIds as $roleId) {
             $this->cmsAssignRole($staffId, $roleId);
         }

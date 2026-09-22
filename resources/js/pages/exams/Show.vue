@@ -21,6 +21,7 @@ import type {
     BlueprintScreen,
     ExamAbilities,
     ExaminationDetail,
+    PaperSummary,
 } from '@/types';
 
 defineOptions({
@@ -31,6 +32,10 @@ const props = defineProps<
     {
         examination: ExaminationDetail;
         can: ExamAbilities;
+        paper: PaperSummary;
+        canOpenPaper: boolean;
+        /** Who could approve a blueprint that is waiting, by name. */
+        approvers: string[];
     } & BlueprintScreen
 >();
 
@@ -142,7 +147,7 @@ const stageStyle = {
             </div>
         </div>
 
-        <ExamJourney :stage="status" />
+        <ExamJourney :stage="status" :exam-id="examination.id" />
 
         <p
             v-if="status === 'draft' && blueprint.returnReason"
@@ -314,12 +319,47 @@ const stageStyle = {
                                 <Undo2 /> Reopen
                             </Button>
                         </div>
-                        <p
+                        <div
                             v-if="status === 'submitted' && !can.approve"
-                            class="text-muted-foreground text-xs"
+                            class="grid gap-1 rounded-lg border p-3 text-xs"
+                            data-test="waiting"
                         >
-                            Somebody else approves it: nobody approves a
-                            blueprint they wrote or submitted.
+                            <p class="font-medium">
+                                Waiting for somebody else to approve it
+                            </p>
+                            <p class="text-muted-foreground">
+                                Nobody approves a blueprint they wrote or
+                                submitted.
+                            </p>
+                            <p
+                                v-if="approvers.length > 0"
+                                data-test="approvers"
+                            >
+                                They can:
+                                <strong>{{ approvers.join(', ') }}</strong
+                                >. It is under <em>Exam approvals</em> in their
+                                menu.
+                            </p>
+                            <p
+                                v-else
+                                class="text-amber-700 dark:text-amber-300"
+                                data-test="no-approvers"
+                            >
+                                Nobody else can approve it yet. In the CMS, give
+                                a colleague a role with "Approve Blueprints"
+                                ticked (Roles → Assign Permission → Question
+                                Bank &amp; Exams).
+                            </p>
+                        </div>
+                        <p
+                            v-if="status !== 'approved'"
+                            class="text-muted-foreground text-xs"
+                            data-test="what-approval-means"
+                        >
+                            Approving the blueprint approves the plan: the
+                            topics, the numbers and the marks. The questions
+                            themselves are chosen next, in the paper, and the
+                            committee reads them before the paper is locked.
                         </p>
 
                         <form
@@ -401,19 +441,62 @@ const stageStyle = {
                 </section>
 
                 <section
-                    class="text-muted-foreground rounded-xl border border-dashed p-4 text-sm"
-                    data-test="paper-next"
+                    class="rounded-xl border shadow-xs"
+                    :class="status === 'approved' ? '' : 'border-dashed'"
+                    data-test="paper-card"
                 >
-                    <div class="flex items-center gap-2 font-medium">
-                        <Lock class="size-4" /> Paper
+                    <header
+                        class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+                    >
+                        <h2
+                            class="flex items-center gap-2 font-medium"
+                            :class="
+                                status === 'approved'
+                                    ? ''
+                                    : 'text-muted-foreground'
+                            "
+                        >
+                            <Lock v-if="status !== 'approved'" class="size-4" />
+                            Paper
+                        </h2>
+                        <Badge v-if="paper.exists" variant="secondary"
+                            >Being built</Badge
+                        >
+                    </header>
+                    <div class="grid gap-3 p-4 text-sm">
+                        <p
+                            v-if="status !== 'approved'"
+                            class="text-muted-foreground"
+                            data-test="paper-next"
+                        >
+                            Opens once the blueprint is approved: the paper is
+                            built from the question bank to match it.
+                        </p>
+                        <template v-else>
+                            <p v-if="paper.exists" data-test="paper-progress">
+                                {{ paper.chosen }} of {{ paper.planned }}
+                                questions chosen,
+                                {{ number(paper.marks) }} of
+                                {{ number(paper.plannedMarks) }} marks.
+                            </p>
+                            <p v-else class="text-muted-foreground">
+                                The blueprint is approved. The paper is built
+                                from the question bank next.
+                            </p>
+                            <Button
+                                v-if="canOpenPaper"
+                                as-child
+                                class="justify-self-start"
+                                data-test="open-paper"
+                            >
+                                <Link :href="`${base}/paper`">{{
+                                    paper.exists
+                                        ? 'Open the paper'
+                                        : 'Build the paper'
+                                }}</Link>
+                            </Button>
+                        </template>
                     </div>
-                    <p class="mt-1">
-                        {{
-                            status === 'approved'
-                                ? 'The blueprint is approved. Building the paper from the question bank, moderating it and locking it is the next step of the module.'
-                                : 'Opens once the blueprint is approved: the paper is built from the question bank to match it.'
-                        }}
-                    </p>
                 </section>
             </div>
         </div>

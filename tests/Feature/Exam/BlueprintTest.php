@@ -351,3 +351,144 @@ test('a reader sees the blueprint but cannot change it', function () {
         ->where('can.submit', false)
         ->where('blueprint.rows', fn ($rows) => count($rows) === 2));
 });
+
+test('a blueprint asking for more than the question bank holds cannot be submitted', function () {
+    config(['exam.blueprint.require_questions_in_bank' => true]);
+    saveBlueprint()->assertSessionHasNoErrors();
+
+    // 60 and 20 wanted; the bank is empty.
+    $this->actingAs($this->setter)->from($this->url)->post($this->url.'/submit')->assertSessionHasErrors('blueprint');
+    expect(blueprintOf($this->exam)->status)->toBe(BlueprintStatus::Draft);
+
+    $this->actingAs($this->setter)->get($this->url)->assertInertia(fn ($page) => $page
+        ->where('limits.requireBank', true)
+        ->where('report.blockers', fn ($blockers) => collect($blockers)->contains(fn ($text) => str_contains($text, '60 wanted, 0 in the question bank — 60 more to write or import'))
+            && collect($blockers)->contains(fn ($text) => str_contains($text, '20 wanted, 0 in the question bank')))
+        ->where('report.warnings', []));
+
+    // Enough for the second topic, still short for the first: it names what is missing.
+    foreach (range(1, 20) as $i) {
+        $this->activeQuestion($this->otherNode);
+    }
+    foreach (range(1, 59) as $i) {
+        $this->activeQuestion($this->node);
+    }
+    $this->actingAs($this->setter)->from($this->url)->post($this->url.'/submit')->assertSessionHasErrors('blueprint');
+    $this->actingAs($this->setter)->get($this->url)->assertInertia(fn ($page) => $page
+        ->where('report.blockers', fn ($blockers) => count($blockers) === 1 && str_contains($blockers[0], '60 wanted, 59 in the question bank — 1 more')));
+
+    $this->activeQuestion($this->node);
+    $this->actingAs($this->setter)->post($this->url.'/submit')->assertSessionHasNoErrors();
+    expect(blueprintOf($this->exam)->status)->toBe(BlueprintStatus::Submitted);
+});
+
+test('a heading is asked for what its own rows and the rows below it ask', function () {
+    config(['exam.blueprint.require_questions_in_bank' => true]);
+    $heading = $this->cmsCurriculumNode($this->course, $this->programme, 'Cardiology', allowQuestions: false);
+    $child = $this->cmsCurriculumNode($this->course, $this->programme, 'Arrhythmias', parentId: $heading);
+    $exam = $this->newExam(['total_marks' => 8]);
+    $url = "/exams/{$exam->id}/blueprint";
+
+    // Five from anywhere under the heading and three from one topic under it: eight come from the same six.
+    foreach (range(1, 6) as $i) {
+        $this->activeQuestion($child);
+    }
+    $this->actingAs($this->setter)->put($url, $this->blueprintPayload(['rows' => [
+        ['section' => null, 'node_id' => $heading, 'question_type_id' => $this->typeId(), 'question_count' => 5, 'marks_each' => 1],
+        ['section' => null, 'node_id' => $child, 'question_type_id' => $this->typeId(), 'question_count' => 3, 'marks_each' => 1],
+    ]]))->assertSessionHasNoErrors();
+
+    $this->actingAs($this->setter)->from($url)->post($url.'/submit')->assertSessionHasErrors('blueprint');
+    $this->actingAs($this->setter)->get($url)->assertInertia(fn ($page) => $page
+        ->where('report.blockers', fn ($blockers) => collect($blockers)->contains(fn ($text) => str_contains($text, 'Cardiology, ') && str_contains($text, '8 wanted, 6 in the question bank'))));
+
+    $this->activeQuestion($child);
+    $this->activeQuestion($child);
+    $this->actingAs($this->setter)->post($url.'/submit')->assertSessionHasNoErrors();
+});
+
+test('the bank is checked again when the blueprint is approved', function () {
+    config(['exam.blueprint.require_questions_in_bank' => true]);
+    $versions = [];
+    foreach (range(1, 60) as $i) {
+        $versions[] = $this->activeQuestion($this->node);
+    }
+    foreach (range(1, 20) as $i) {
+        $this->activeQuestion($this->otherNode);
+    }
+    submittedBlueprint();
+
+    // A question leaves the bank while the blueprint waits.
+    DB::table('qb_questions')->where('id', $versions[0]->question_id)->update(['is_archived' => true]);
+    $this->actingAs($this->approver)->from("/exams/{$this->exam->id}")->post($this->url.'/approve')->assertSessionHasErrors('blueprint');
+    expect(blueprintOf($this->exam)->status)->toBe(BlueprintStatus::Submitted);
+
+    DB::table('qb_questions')->where('id', $versions[0]->question_id)->update(['is_archived' => false]);
+    $this->actingAs($this->approver)->post($this->url.'/approve')->assertSessionHasNoErrors();
+    expect(blueprintOf($this->exam)->status)->toBe(BlueprintStatus::Approved);
+});
+
+test('where the institution allows it, a short bank is a warning and the blueprint goes through', function () {
+    config(['exam.blueprint.require_questions_in_bank' => false]);
+    submittedBlueprint();
+    expect(blueprintOf($this->exam)->status)->toBe(BlueprintStatus::Submitted);
+
+    $this->actingAs($this->approver)->get("/exams/{$this->exam->id}")->assertInertia(fn ($page) => $page
+        ->where('report.blockers', [])
+        ->where('report.warnings', fn ($warnings) => count($warnings) === 2));
+});
+
+test('the one waiting is told whom to ask, and the approvers find it under their menu', function () {
+    submittedBlueprint();
+    $url = "/exams/{$this->exam->id}";
+    $named = fn (string $name) => ['name' => $name, 'surname' => 'Approver'];
+
+    // Two who can approve, and three who are not named: another campus, a deactivated account, no right.
+    $second = $this->staffUser([$this->approverRole], $this->branch, $named('Second'));
+    $superAdmin = $this->staffUser([$this->cmsRole('Head of examinations', superAdmin: true)], $this->branch, $named('Head'));
+    $far = $this->staffUser([$this->approverRole], $this->cmsBranch('City Campus'), $named('Faraway'));
+    $gone = $this->staffUser([$this->approverRole], $this->branch, $named('Gone'));
+    DB::table(config('database.cms_source_database').'.staff')->where('id', $gone->cms_staff_id)->update(['is_active' => 0]);
+    $plain = $this->staffUser([$this->cmsRole('Cleaner')], $this->branch, $named('Plain'));
+
+    $props = $this->actingAs($this->setter)->get($url)->assertOk()->viewData('page')['props'];
+    $listed = collect($props['approvers']);
+
+    expect($listed->contains('Second Approver'))->toBeTrue()
+        ->and($listed->contains('Head Approver'))->toBeTrue()
+        ->and($listed->contains('Faraway Approver'))->toBeFalse()
+        ->and($listed->contains('Gone Approver'))->toBeFalse()
+        ->and($listed->contains('Plain Approver'))->toBeFalse()
+        // Never the person who wrote and submitted it.
+        ->and($props['can']['approve'])->toBeFalse();
+
+    // Under their menu: a count of what waits, not counting what they wrote themselves.
+    $this->actingAs($this->approver)->get('/exams')->assertInertia(fn ($page) => $page
+        ->where('auth.can.approveBlueprints', true)
+        ->where('auth.awaiting.blueprints', 1)
+        ->where('waitingForMe', 1));
+    $this->actingAs($this->setter)->get('/exams')->assertInertia(fn ($page) => $page
+        ->where('auth.can.approveBlueprints', false)
+        ->where('auth.awaiting.blueprints', 0)
+        ->where('waitingForMe', 0));
+    unset($far, $plain);
+});
+
+test('a Super Admin who wrote a blueprint is not offered its approval either', function () {
+    $admin = $this->staffUser([$this->cmsRole('Head of examinations', superAdmin: true)], $this->branch, ['name' => 'Head', 'surname' => 'Approver']);
+    $exam = $this->newExam();
+    $url = "/exams/{$exam->id}/blueprint";
+    $this->actingAs($admin)->put($url, $this->blueprintPayload())->assertSessionHasNoErrors();
+    $this->actingAs($admin)->post($url.'/submit')->assertSessionHasNoErrors();
+
+    $this->actingAs($admin)->from($url)->post($url.'/approve')->assertForbidden();
+    $this->actingAs($admin)->get("/exams/{$exam->id}")->assertInertia(fn ($page) => $page
+        ->where('can.approve', false)
+        ->where('can.sendBack', true)
+        // The committee member is the only other person who can.
+        ->where('approvers', fn ($names) => count($names) === 1));
+
+    // With nobody else holding the right, the list is empty and the screen says whom to ask for.
+    DB::table(config('database.cms_source_database').'.staff')->where('id', $this->approver->cms_staff_id)->update(['is_active' => 0]);
+    $this->actingAs($admin)->get("/exams/{$exam->id}")->assertInertia(fn ($page) => $page->where('approvers', []));
+});

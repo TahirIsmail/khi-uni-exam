@@ -8,6 +8,7 @@ use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionType;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A campus, a programme with a year, a course with two topics, and the people who work on
@@ -20,6 +21,8 @@ trait BuildsExaminations
     {
         $this->shareCmsConnection();
         $this->cmsExamSettings();
+        // Most tests build blueprints without a question bank behind them; the ones about the bank turn this on.
+        config(['exam.blueprint.require_questions_in_bank' => false]);
         $this->branch = $this->cmsBranch('Main Campus');
         $this->programme = $this->cmsProgramme($this->branch, 'MBBS');
         $this->professional = $this->cmsProfessional($this->programme);
@@ -99,18 +102,63 @@ trait BuildsExaminations
     }
 
     /**
-     * A question in use in the bank: active, filed under an examination type and a topic.
+     * An examination whose blueprint is approved (100 marks: 60 one-mark and 20 two-mark questions),
+     * written by the officer and approved by the committee member.
+     *
+     * @param  array<string, mixed>  $blueprint  overrides of blueprintPayload()
+     * @param  array<string, mixed>  $examination  overrides of examPayload()
      */
-    protected function activeQuestion(int $nodeId, ?int $typeId = null, ?int $examTypeId = null, bool $archived = false, ?int $branchId = null): QuestionVersion
+    protected function approvedExam(array $blueprint = [], array $examination = []): Examination
     {
-        $author = User::factory()->create();
+        $exam = $this->newExam($examination);
+        $url = "/exams/{$exam->id}/blueprint";
+
+        $this->actingAs($this->setter)->put($url, $this->blueprintPayload($blueprint))->assertSessionHasNoErrors();
+        $this->actingAs($this->setter)->post($url.'/submit')->assertSessionHasNoErrors();
+        $this->actingAs($this->approver)->post($url.'/approve')->assertSessionHasNoErrors();
+
+        return $exam->refresh();
+    }
+
+    /** The ids of the first cognitive and difficulty levels in use. */
+    protected function levelId(string $dimension, int $nth = 0): int
+    {
+        $table = $dimension === 'cognitive' ? 'qb_cognitive_levels' : 'qb_difficulty_levels';
+
+        return (int) DB::table($table)->where('is_active', true)->orderBy('sort_order')->skip($nth)->value('id');
+    }
+
+    /**
+     * A question in use in the bank: active, filed under an examination type and a topic.
+     *
+     * @param  list<array{0: string, 1: string, 2: bool}>|null  $options  label, text and whether it is the key
+     */
+    protected function activeQuestion(
+        int $nodeId,
+        ?int $typeId = null,
+        ?int $examTypeId = null,
+        bool $archived = false,
+        ?int $branchId = null,
+        ?int $cognitive = null,
+        ?int $difficulty = null,
+        ?string $stem = null,
+        ?int $timesUsed = null,
+        ?string $lastUsedAt = null,
+        ?int $authorId = null,
+        ?array $options = null,
+    ): QuestionVersion {
+        $author = $authorId === null ? User::factory()->create() : User::query()->findOrFail($authorId);
         $question = Question::factory()->create([
             'branch_id' => $branchId ?? $this->branch,
             'course_id' => $this->course,
             'latest_version_no' => 1,
             'is_archived' => $archived,
+            'times_used' => $timesUsed ?? 0,
+            'last_used_at' => $lastUsedAt,
             'created_by' => $author->id,
         ]);
+
+        $text = $stem ?? 'A man has '.bin2hex(random_bytes(6)).' and asks what to do next.';
         $version = QuestionVersion::factory()->create([
             'question_id' => $question->id,
             'question_type_id' => $typeId ?? $this->typeId(),
@@ -118,10 +166,30 @@ trait BuildsExaminations
             'course_id' => $this->course,
             'node_id' => $nodeId,
             'exam_type_id' => $examTypeId ?? $this->annual,
-            'status' => VersionStatus::Active,
+            'cognitive_level_id' => $cognitive,
+            'difficulty_level_id' => $difficulty,
+            'stem' => '<p>'.$text.'</p>',
+            'content_hash' => hash('sha256', $text),
+            'search_text' => $text,
+            // Options can only be written while it is a draft; the steps to "active" follow.
+            'status' => $options === null ? VersionStatus::Active : VersionStatus::Draft,
             'author_id' => $author->id,
             'created_by' => $author->id,
         ]);
+
+        if ($options !== null) {
+            foreach ($options as $index => [$label, $body, $correct]) {
+                DB::table('qb_question_options')->insert([
+                    'version_id' => $version->id, 'label' => $label, 'body' => $body, 'is_correct' => $correct,
+                    'sort_order' => $index + 1, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+            foreach (['submitted', 'under_review', 'approved', 'active'] as $status) {
+                DB::table('qb_question_versions')->where('id', $version->id)->update(['status' => $status]);
+            }
+            $version->refresh();
+        }
+
         $question->update(['active_version_id' => $version->id]);
 
         return $version;

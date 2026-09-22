@@ -211,6 +211,7 @@ final class ExaminationData
                 'maxSections' => (int) config('exam.blueprint.max_sections'),
                 'maxCount' => (int) config('exam.blueprint.max_count_per_row'),
                 'marksMax' => (float) config('qbank.marks.max'),
+                'requireBank' => config('exam.blueprint.require_questions_in_bank') === true,
             ],
             'forEditing' => $forEditing,
         ];
@@ -219,7 +220,7 @@ final class ExaminationData
     /**
      * The topics of a course as a reader goes down them, each with the path that leads to it.
      *
-     * @return list<array{id: int, label: string, name: string, level: string, depth: int}>
+     * @return list<array{id: int, parentId: int|null, label: string, name: string, level: string, depth: int}>
      */
     private function topics(int $courseId): array
     {
@@ -239,6 +240,7 @@ final class ExaminationData
 
             return [
                 'id' => $node['id'],
+                'parentId' => $node['parent_id'],
                 'label' => implode(' → ', $names),
                 'name' => $node['name'],
                 'level' => $node['level'],

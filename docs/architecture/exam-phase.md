@@ -158,10 +158,70 @@ examination's course, examination type and total marks, are refused by the datab
 direct `UPDATE` fails too. Blueprints follow draft → submitted → approved (→ draft again) and no
 other order, and nothing past the blueprint stage is ever deleted.
 
+**A blueprint has to be one a paper could be built to.** Unless the institution turns it off
+(`EXAM_REQUIRE_QUESTIONS_IN_BANK=false`, when a short bank is only a warning), a blueprint cannot be
+submitted — and is checked again when it is approved — while the question bank holds fewer questions
+than it asks for. A heading counts everything under it, so what is asked of a topic is what its own
+rows and the rows below it ask: the topics form a tree, and a paper can be built exactly when no topic
+is asked for more than it holds.
+
+**Finding the approval.** People who may approve blueprints see **Exam approvals** in the module's
+menu, with a count of what waits for them (never what they wrote or submitted themselves), and a note
+at the top of the examinations list. The person waiting is shown, by name, who could approve it — read
+from kmu-cms, so colleagues who have not yet opened the module are named too — or, when nobody else
+holds the right, how to give it to someone. Approving approves the _plan_ — topics, numbers, marks;
+the questions themselves are chosen next, in the paper, and the committee reads them before the paper
+is locked (step 16). A blueprint that can no longer be changed is shown as plain text, not as
+greyed-out fields.
+
 **Who may do what** (all CMS checkboxes that already existed): see and list — `exam_papers` View or
 `exam_blueprints` View; set an examination up — `exam_papers` Add; write and submit a blueprint —
 `exam_blueprints` Edit; approve, send back or reopen — `exam_blueprints_approve`. Every action is also
 limited to the campus being worked in and to the courses the person's exam access allows.
+
+## What step 15 built: the paper
+
+**Starting it.** Once a blueprint is approved the paper can be started (`exm_papers`; `exam_papers`
+Edit is the right to choose questions). It is built to the approved blueprint and to nothing else: if
+the blueprint is reopened the paper holds still, and it carries on when the blueprint is approved
+again, with a note if the blueprint changed in the meantime.
+
+**What may go in.** One place says which questions a row can draw on (`CandidatePool`): questions in
+use in the bank (active, not archived), of this campus and course, filed under this examination's
+type, of the row's type, and from the row's topic or anything below it. The automatic draw, the
+picker and the checks on every change all use it, so they cannot disagree. The paper item pins the
+_version_ that was chosen: whatever happens to the question afterwards, the paper keeps asking what
+was chosen, and says so if a newer version has since come into use.
+
+**Filling it from the bank.** "Fill the gaps" keeps everything that is there and draws what is
+missing; "Draw again" first takes out everything not locked. The draw aims for the blueprint's
+cognitive and difficulty mix and, among questions that serve the mix equally, prefers those never
+used, then those not used lately, and leaves questions used within the recent-use period for last.
+It never puts the same question or the same text in twice. Rows with the least choice are drawn
+first, so a row that can only give one level of thinking is not left with the questions the mix
+needed from it. It is a heuristic, and the screen shows the mix it reached against the mix asked for.
+What the bank cannot supply is left as a gap and reported, row by row.
+
+**By hand.** Questions can be added to a row that has room, swapped for another of the same row,
+locked (a new draw leaves them, and they cannot be swapped or removed until unlocked) or taken out.
+The picker shows each candidate's text, levels, how often it has been used and when last, and can be
+searched. The paper's order is the blueprint's — row by row — and whether each candidate meets
+questions and options in an order of their own is set on the paper (both on by default).
+
+**Worth a second look**, in words, beside the paper: the same text twice, a question that gives
+away the answer to another (the second's correct answer, long enough not to be a common word,
+appears word for word in the first's text or options), a question used within the last 12 months,
+your own questions, a newer version in use, a question no longer in the bank, and questions whose
+row was changed or removed since. A row's questions are found again when a blueprint is saved by the
+row's topic, type, marks and section, so editing an unrelated row leaves the paper alone.
+
+**Who sees what.** Anybody with `exam_papers` View sees a paper's counts and coverage. Its
+_questions_ are read only by those whose work needs them — choosing questions, approving or
+finalising a paper — so a registry clerk can count a paper without being able to read it.
+
+**Audited:** `paper.created`, `paper.drawn` (with the references drawn), `paper.item_added`,
+`paper.item_swapped`, `paper.item_removed`, `paper.item_locked`, `paper.item_unlocked`,
+`paper.settings_changed`.
 
 ## Security while an exam is being sat
 

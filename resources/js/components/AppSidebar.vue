@@ -5,6 +5,7 @@ import {
     BadgeCheck,
     ClipboardCheck,
     ClipboardList,
+    FileCheck,
     FileQuestion,
     LayoutGrid,
     Upload,
@@ -76,6 +77,16 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Create exam',
             href: exams(),
             icon: ClipboardList,
+        });
+    }
+
+    // Blueprints that somebody else wrote and is waiting on: the approvers' way in.
+    if (page.props.auth.can?.approveBlueprints) {
+        items.push({
+            title: 'Exam approvals',
+            href: '/exams?stage=submitted',
+            icon: FileCheck,
+            badge: page.props.auth.awaiting?.blueprints ?? 0,
         });
     }
 

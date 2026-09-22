@@ -86,6 +86,19 @@ final class ExaminationList
     }
 
     /**
+     * How many blueprints are waiting for this person to approve: submitted, in their reach, and not
+     * written or submitted by them.
+     */
+    public function awaitingApproval(User $user, int $branchId): int
+    {
+        return $this->query($user, $branchId, [])
+            ->whereHas('blueprint', fn (Builder $inner) => $inner->where('status', BlueprintStatus::Submitted->value)
+                ->where('created_by', '!=', $user->id)
+                ->where('submitted_by', '!=', $user->id))
+            ->count();
+    }
+
+    /**
      * How many examinations are at each stage of their blueprint, for the chips above the list.
      *
      * @return list<array{key: string, label: string, count: int}>

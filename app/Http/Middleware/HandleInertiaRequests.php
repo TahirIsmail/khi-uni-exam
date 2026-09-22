@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Domain\Exam\Queries\ExaminationList;
 use App\Domain\Identity\ActiveBranch;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -52,6 +53,11 @@ class HandleInertiaRequests extends Middleware
                     'approveQuestions' => $request->user()->can('qbank.question.approve'),
                     'viewExams' => $request->user()->can('exam.access'),
                     'createExams' => $request->user()->can('exam.create'),
+                    'approveBlueprints' => $request->user()->can('exam.blueprint.approve'),
+                ],
+                // What is waiting for this person, for the badge in the menu. Worked out only for those who approve.
+                'awaiting' => [
+                    'blueprints' => fn (): int => $this->awaitingBlueprints($request),
                 ],
             ],
             // The campus being worked in, and the user's campuses for the switcher.
@@ -64,5 +70,16 @@ class HandleInertiaRequests extends Middleware
             'cmsUrl' => rtrim((string) config('services.kmu_cms.url'), '/').'/admin/admin/dashboard',
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
+    }
+
+    /** Blueprints waiting for the signed-in person to approve; none for a guest or for somebody who does not approve. */
+    private function awaitingBlueprints(Request $request): int
+    {
+        $user = $request->user();
+        $branchId = $user === null ? null : $this->activeBranch->id($user);
+
+        return $user !== null && $branchId !== null && $user->can('exam.blueprint.approve')
+            ? app(ExaminationList::class)->awaitingApproval($user, $branchId)
+            : 0;
     }
 }

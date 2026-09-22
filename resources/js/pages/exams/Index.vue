@@ -34,6 +34,8 @@ const props = defineProps<
         filters: Filters;
         stages: { key: BlueprintStatus; label: string; count: number }[];
         canCreate: boolean;
+        /** Blueprints somebody else submitted that this person can approve. */
+        waitingForMe: number;
     } & Pick<
         ExamChoices,
         'programmes' | 'years' | 'examTypes' | 'courses' | 'programmeCalendars'
@@ -135,6 +137,29 @@ const number = (value: number): string =>
             <Button v-if="canCreate" as-child data-test="new-exam">
                 <Link :href="create()"><Plus /> New examination</Link>
             </Button>
+        </div>
+
+        <div
+            v-if="waitingForMe > 0"
+            class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+            data-test="waiting-for-me"
+        >
+            <span
+                ><strong>{{ waitingForMe }}</strong>
+                {{
+                    waitingForMe === 1
+                        ? 'blueprint is waiting'
+                        : 'blueprints are waiting'
+                }}
+                for your approval.</span
+            >
+            <Button
+                size="sm"
+                variant="outline"
+                data-test="show-waiting"
+                @click="apply({ stage: 'submitted' })"
+                >Show {{ waitingForMe === 1 ? 'it' : 'them' }}</Button
+            >
         </div>
 
         <form

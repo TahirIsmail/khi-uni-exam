@@ -18,11 +18,14 @@ export type AuthCan = {
     approveQuestions?: boolean;
     viewExams?: boolean;
     createExams?: boolean;
+    approveBlueprints?: boolean;
 };
 
 export type Auth = {
     user: User;
     can: AuthCan;
+    /** What is waiting for this person, for the badge in the menu. */
+    awaiting?: { blueprints: number };
 };
 
 export type Passkey = {

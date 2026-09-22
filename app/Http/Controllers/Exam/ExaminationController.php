@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Exam;
 
+use App\Domain\Blueprint\BlueprintApprovers;
 use App\Domain\Blueprint\Enums\BlueprintStatus;
 use App\Domain\Exam\Actions\CreateExamination;
 use App\Domain\Exam\Actions\UpdateExamination;
 use App\Domain\Exam\Models\Examination;
 use App\Domain\Exam\Queries\ExaminationData;
 use App\Domain\Exam\Queries\ExaminationList;
+use App\Domain\Paper\Queries\PaperData;
 use App\Http\Requests\Exam\SaveExaminationRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,6 +49,7 @@ class ExaminationController extends ExamAreaController
                 'stage' => $filters['stage'] ?? '',
             ],
             'canCreate' => $request->user()->can('exam.create'),
+            'waitingForMe' => $request->user()->can('exam.blueprint.approve') ? $list->awaitingApproval($request->user(), $branchId) : 0,
             ...$data->choices($request->user(), $branchId),
         ]);
     }
@@ -70,7 +73,7 @@ class ExaminationController extends ExamAreaController
     }
 
     /** The examination's page: its details and where it stands, step by step. */
-    public function show(Request $request, Examination $exam, ExaminationData $data): Response
+    public function show(Request $request, Examination $exam, ExaminationData $data, PaperData $papers, BlueprintApprovers $approvers): Response
     {
         $this->guard($request, $exam);
         $exam->load('blueprint');
@@ -79,6 +82,10 @@ class ExaminationController extends ExamAreaController
         return Inertia::render('exams/Show', [
             'examination' => $data->detail($exam),
             'can' => $data->abilities($request->user(), $exam, $blueprint),
+            'paper' => $papers->summary($exam),
+            // Whom to ask, while it waits.
+            'approvers' => $blueprint->status === BlueprintStatus::Submitted ? $approvers->names($exam, $blueprint) : [],
+            'canOpenPaper' => $request->user()->can('exam.view'),
             ...$data->blueprint($exam, $blueprint, false),
         ]);
     }

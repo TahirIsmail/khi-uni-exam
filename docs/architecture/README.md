@@ -57,6 +57,7 @@ Delivery, Proctoring, Result, Analytics, Audit.
 | Question versions are frozen once approved; workflow steps, one active version, append-only log                        | `tests/Feature/QuestionBank/SchemaRulesTest.php`                    |
 | Question text is sanitised before storing; type rules and the campus/exam access are enforced server-side              | `tests/Feature/QuestionBank/QuestionWritingTest.php`                |
 | Search filters are validated and never reach beyond the campus and exam access                                         | `tests/Feature/QuestionBank/SearchAndHistoryTest.php`               |
+| Only questions in use, of the course and examination, can go into a paper; the version chosen is pinned                | `tests/Feature/Exam/PaperTest.php`                                  |
 | A blueprint is frozen once submitted; it moves draft → submitted → approved only, by two different people              | `tests/Feature/Exam/BlueprintTest.php`                              |
 | Static analysis at PHPStan level 7                                                                                     | `composer types:check`                                              |
 
@@ -333,6 +334,19 @@ What changed to match it:
 - [How an exam is built, sat and marked](exam-phase.md) — the plan for KMU's steps 5 to 12: the
   blueprint, the paper, moderation, sitting the exam, marking, results and the analysis that goes
   back to the question bank.
+
+## Browser tests
+
+The browser tests (`tests/browser/*.mjs`) write questions, and questions are never deleted. They run
+against a throwaway database, so nothing they write reaches the development one:
+
+```
+tests/browser/on_test_database.sh tests/browser/exam_paper.mjs tests/browser/exam_blueprint.mjs
+```
+
+For the minutes a run takes the script points the module at `kmu_assess_browser` (rebuilt empty each
+time) by changing `DB_DATABASE` in `.env`, and puts the original back when it ends. Local development
+only. The tests that write no questions still clean up after themselves in kmu-cms.
 
 ## Acceptance
 

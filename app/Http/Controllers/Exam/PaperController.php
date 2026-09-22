@@ -1,0 +1,183 @@
+<?php
+
+namespace App\Http\Controllers\Exam;
+
+use App\Domain\Exam\Models\Examination;
+use App\Domain\Exam\Queries\ExaminationData;
+use App\Domain\Identity\Authorization\ScopeTarget;
+use App\Domain\Paper\Actions\ChangePaperItems;
+use App\Domain\Paper\Actions\CreatePaper;
+use App\Domain\Paper\Actions\FillPaper;
+use App\Domain\Paper\Actions\PaperGuard;
+use App\Domain\Paper\Actions\UpdatePaperSettings;
+use App\Domain\Paper\Models\Paper;
+use App\Domain\Paper\Models\PaperItem;
+use App\Domain\Paper\PaperItems;
+use App\Domain\Paper\Queries\PaperData;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+
+/**
+ * The paper of an examination: choosing its questions from the question bank to match the approved
+ * blueprint. Reading it needs the right to see papers; every change needs the right to choose
+ * questions, and each action checks that, the campus and the course again.
+ */
+class PaperController extends ExamAreaController
+{
+    public function show(Request $request, Examination $exam, ExaminationData $examinations, PaperData $data): Response
+    {
+        $this->guard($request, $exam);
+        $this->mustSeePapers($request, $exam);
+
+        return Inertia::render('exams/Paper', [
+            'examination' => $examinations->detail($exam),
+            ...$data->screen($request->user(), $exam, $this->paperOf($exam)),
+        ]);
+    }
+
+    public function store(Request $request, Examination $exam, CreatePaper $create): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $create($request->user(), $exam);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('The paper is started. Fill it from the question bank, or choose the questions yourself.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function update(Request $request, Examination $exam, UpdatePaperSettings $update): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate([
+            'shuffle_questions' => ['required', 'boolean'],
+            'shuffle_options' => ['required', 'boolean'],
+        ]);
+
+        $update($request->user(), $exam, $this->paperOrFail($exam), (bool) $input['shuffle_questions'], (bool) $input['shuffle_options']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
+
+        return back();
+    }
+
+    /** Draws the questions the blueprint still asks for: the gaps only, or everything not locked. */
+    public function fill(Request $request, Examination $exam, FillPaper $fill): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate(['mode' => ['required', Rule::in(['gaps', 'redraw'])]]);
+
+        $result = $fill($request->user(), $exam, $this->paperOrFail($exam), (string) $input['mode']);
+
+        Inertia::flash('toast', [
+            'type' => $result['missing'] > 0 ? 'warning' : 'success',
+            'message' => $result['missing'] > 0
+                ? __(':added questions chosen; :missing more are needed than the question bank can give.', ['added' => $result['added'], 'missing' => $result['missing']])
+                : __(':added questions chosen.', ['added' => $result['added']]),
+        ]);
+
+        return back();
+    }
+
+    /** The picker: the questions a row could take, for the words typed. */
+    public function candidates(Request $request, Examination $exam, PaperItems $items, PaperGuard $guard, PaperData $data): JsonResponse
+    {
+        $this->guard($request, $exam);
+        $guard->authorise($request->user(), $exam);
+        $input = $request->validate($this->slotRules() + ['search' => ['nullable', 'string', 'max:100']]);
+
+        $slot = $items->slot($exam, (int) $input['node_id'], (int) $input['question_type_id'], (float) $input['marks_each'], $this->section($input));
+
+        return response()->json(['candidates' => $data->candidates($request->user(), $exam, $this->paperOrFail($exam), $slot, (string) ($input['search'] ?? ''))]);
+    }
+
+    public function addItem(Request $request, Examination $exam, ChangePaperItems $change): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate($this->slotRules() + ['question_id' => ['required', 'integer', 'min:1']]);
+
+        $change->add($request->user(), $exam, $this->paperOrFail($exam), (int) $input['node_id'], (int) $input['question_type_id'], (float) $input['marks_each'], $this->section($input), (int) $input['question_id']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Question added.')]);
+
+        return back();
+    }
+
+    public function swapItem(Request $request, Examination $exam, PaperItem $item, ChangePaperItems $change): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate(['question_id' => ['required', 'integer', 'min:1']]);
+
+        $change->swap($request->user(), $exam, $this->paperOrFail($exam), $item, (int) $input['question_id']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Question swapped.')]);
+
+        return back();
+    }
+
+    public function removeItem(Request $request, Examination $exam, PaperItem $item, ChangePaperItems $change): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $change->remove($request->user(), $exam, $this->paperOrFail($exam), $item);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Question taken out.')]);
+
+        return back();
+    }
+
+    public function lockItem(Request $request, Examination $exam, PaperItem $item, ChangePaperItems $change): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate(['locked' => ['required', 'boolean']]);
+
+        $change->lock($request->user(), $exam, $this->paperOrFail($exam), $item, (bool) $input['locked']);
+
+        return back();
+    }
+
+    /** Reading a paper is a right of its own, on top of seeing the examination. */
+    private function mustSeePapers(Request $request, Examination $exam): void
+    {
+        abort_unless(
+            $this->access->allows($request->user(), 'exam.view', new ScopeTarget($exam->branch_id, $exam->programme_id, $exam->professional_id, $exam->course_id)),
+            403,
+            'You cannot open the papers of this course.',
+        );
+    }
+
+    private function paperOf(Examination $exam): ?Paper
+    {
+        return Paper::query()->where('examination_id', $exam->id)->orderByDesc('version_no')->first();
+    }
+
+    private function paperOrFail(Examination $exam): Paper
+    {
+        return $this->paperOf($exam) ?? abort(404, 'This examination has no paper yet.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function slotRules(): array
+    {
+        return [
+            'node_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            'question_type_id' => ['required', 'integer', 'min:1', 'max:255'],
+            'marks_each' => ['required', 'numeric', 'gt:0', 'max:9999'],
+            'section' => ['nullable', 'string', 'max:100'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function section(array $input): ?string
+    {
+        $section = isset($input['section']) ? trim((string) $input['section']) : '';
+
+        return $section === '' ? null : $section;
+    }
+}

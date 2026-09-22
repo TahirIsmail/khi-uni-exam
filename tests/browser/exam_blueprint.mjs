@@ -317,6 +317,33 @@ try {
 
     // A member of staff becomes a user of the module the first time they open it from the CMS.
     await signIn(committee, '/dashboard');
+    await signIn(officer, '/dashboard');
+
+    // A question bank to draw on: nine questions for the first topic (one short of what the first row will
+    // ask), five for the second. It is put right later in the test.
+    const officerUser = assess(
+        `SELECT id FROM users WHERE cms_staff_id = ${officer}`,
+    );
+    const sba = assess(
+        "SELECT id FROM qb_question_types WHERE code = 'single_best_answer'",
+    );
+    const stamp = randomBytes(3).toString('hex');
+    const question = (n, node) => {
+        const text = `Which finding number ${n} (${stamp}) fits this cardiology case?`;
+        const ref = `Q-E2E-${stamp}-${String(n).padStart(3, '0')}`;
+        assess(`INSERT INTO qb_questions (public_ref, branch_id, course_id, latest_version_no, times_used, is_archived, created_by, created_at, updated_at)
+            VALUES ('${ref}', 1, ${courseId}, 1, 0, 0, ${officerUser}, NOW(), NOW())`);
+        const id = assess(
+            `SELECT id FROM qb_questions WHERE public_ref = '${ref}'`,
+        );
+        assess(`INSERT INTO qb_question_versions (question_id, version_no, question_type_id, branch_id, stem, lead_in, marks, negative_marks, course_id, node_id, exam_type_id, status, content_hash, search_text, author_id, created_by, created_at, updated_at)
+            VALUES (${id}, 1, ${sba}, 1, '<p>${text}</p>', 'Which is it?', 1, 0, ${courseId}, ${node}, ${annual}, 'active', SHA2('${text}', 256), '${text}', ${officerUser}, ${officerUser}, NOW(), NOW())`);
+        assess(
+            `UPDATE qb_questions SET active_version_id = (SELECT id FROM qb_question_versions WHERE question_id = ${id}) WHERE id = ${id}`,
+        );
+    };
+    for (let n = 1; n <= 9; n++) question(n, topicOne);
+    for (let n = 10; n <= 14; n++) question(n, topicTwo);
 
     // ---- the officer opens the examinations page ---------------------------------------------
     check(
@@ -446,6 +473,12 @@ try {
 
     // ---- 2. the blueprint --------------------------------------------------------------------
     check(
+        'while the blueprint is a draft, "Paper" in the journey is not a link yet',
+        !(await has('[data-test=exam-journey] a[href$="/paper"]')) &&
+            (await has('[data-test=exam-journey] a[href$="/blueprint"]')),
+        (await flat()).slice(0, 200),
+    );
+    check(
         'the blueprint page shows where the examination is, and what is missing',
         (await has('[data-test=exam-journey] [data-step=current]')) &&
             (await has('[data-test=blockers]')) &&
@@ -466,10 +499,13 @@ try {
         (await flat()).slice(0, 500),
     );
     check(
-        'each row says how many questions the bank holds for it, and flags a shortage',
+        'each row says how many questions the bank holds for it, and a shortage stops the blueprint',
         (await evaluate(
             'document.querySelector(\'[data-row="0"] [data-test=row-available]\').textContent.trim()',
-        )) === '0' && (await has('[data-test=shortages]')),
+        )) === '9' &&
+            /10 wanted, 9 in the question bank — 1 more to write or import/.test(
+                await text(),
+            ),
         (await flat()).slice(0, 500),
     );
     check(
@@ -494,10 +530,19 @@ try {
         (await evaluate(
             "document.querySelector('[data-test=planned]').textContent.replace(/\\s+/g, ' ').trim()",
         )) === '20 of 20' &&
-            (await has('[data-test=sound]')) &&
             (await evaluate(
                 "document.querySelector('[data-test=total-questions]').textContent.trim()",
-            )) === '15',
+            )) === '15' &&
+            !/add up to \d+ marks but/.test(await text()),
+        (await flat()).slice(0, 500),
+    );
+    check(
+        'but the blueprint is not ready while the bank is one question short',
+        !(await has('[data-test=sound]')) &&
+            (await evaluate(
+                "document.querySelectorAll('[data-test=blockers] li').length",
+            )) === 1 &&
+            /10 wanted, 9 in the question bank/.test(await text()),
         (await flat()).slice(0, 500),
     );
 
@@ -515,8 +560,8 @@ try {
     await setValue('[data-mix="cognitive-2"]', '50');
     check(
         'mixes that add up to 100% are accepted',
-        (await has('[data-test=sound]')) &&
-            /Adds up to 100%/.test(await text()),
+        /Adds up to 100%/.test(await text()) &&
+            !/mix adds up to/.test(await text()),
         (await flat()).slice(0, 500),
     );
     await shot('3-blueprint');
@@ -537,8 +582,17 @@ try {
         assess(`SELECT COUNT(*) FROM exm_blueprint_rows`),
     );
 
-    // Leaving and coming back finds it as it was left.
+    // Somebody writes the missing question; coming back finds the blueprint as it was left, and ready.
+    question(15, topicOne);
     await signIn(officer, `${examUrl()}/blueprint`);
+    check(
+        'the blueprint is ready to submit once the bank holds enough',
+        (await has('[data-test=sound]')) &&
+            (await evaluate(
+                "document.querySelector('[data-test=submit-blueprint]')?.disabled === false",
+            )),
+        (await flat()).slice(0, 300),
+    );
     check(
         'the saved blueprint opens as it was left',
         (await evaluate(
@@ -564,12 +618,22 @@ try {
         await path(),
     );
     check(
-        'the officer cannot approve their own blueprint, and is told why',
+        'the officer cannot approve their own blueprint, is told why, and is told whom to ask',
         !(await has('[data-test=approve-blueprint]')) &&
             /nobody approves a blueprint they wrote or submitted/i.test(
                 await text(),
+            ) &&
+            (await has('[data-test=approvers]')) &&
+            /TMP-RV-P/.test(
+                await evaluate(
+                    "document.querySelector('[data-test=approvers]').textContent",
+                ),
             ),
-        (await flat()).slice(0, 400),
+        (await flat()).slice(0, 500),
+    );
+    check(
+        'the page says what approving the blueprint means, and that the questions come next',
+        await has('[data-test=what-approval-means]'),
     );
     await shot('4-awaiting-approval');
 
@@ -577,20 +641,45 @@ try {
     check(
         'a submitted blueprint is read-only',
         (await has('[data-test=read-only]')) &&
-            (await evaluate(
-                'document.querySelector(\'[data-row="0"] [data-test=row-count]\')?.disabled',
-            )) === true &&
             !(await has('[data-test=add-row]')),
         (await flat()).slice(0, 300),
     );
+    check(
+        'a read-only blueprint shows its numbers as plain text, not as faint fields',
+        (await evaluate(
+            "document.querySelectorAll('[data-row] input, [data-row] select').length",
+        )) === 0 &&
+            (await evaluate(
+                'document.querySelector(\'[data-row="0"] [data-test=row-marks-text]\')?.textContent.trim()',
+            )) === '1' &&
+            (await evaluate(
+                'document.querySelector(\'[data-row="1"] [data-test=row-marks-text]\')?.textContent.trim()',
+            )) === '2' &&
+            (await evaluate(
+                'document.querySelector(\'[data-row="0"] [data-test=row-count-text]\')?.textContent.trim()',
+            )) === '10' &&
+            (await evaluate(
+                'document.querySelector(\'[data-mix-text="cognitive-1"]\')?.textContent.trim()',
+            )) === '50%',
+        (await flat()).slice(0, 400),
+    );
+    await shot('4b-read-only');
 
     // ---- the committee ------------------------------------------------------------------------
     check(
-        'the committee member finds it awaiting approval on the list',
-        (await signIn(committee, '/exams?stage=submitted')) &&
-            (await waitFor(
-                `!!document.querySelector('[data-exam="${examId}"]')`,
-            )),
+        'the committee member sees Exam approvals in the menu, with a count of what waits',
+        (await signIn(committee, '/dashboard')) &&
+            (await evaluate(
+                'document.querySelector(\'[data-badge="Exam approvals"]\')?.textContent.trim()',
+            )) === '1',
+        (await flat()).slice(0, 300),
+    );
+    await click('a[href$="/exams?stage=submitted"]');
+    check(
+        'it opens the blueprints waiting, with a note at the top and the examination listed',
+        (await waitFor(
+            `!!document.querySelector('[data-exam="${examId}"]')`,
+        )) && (await has('[data-test=waiting-for-me]')),
         (await flat()).slice(0, 300),
     );
 
@@ -659,7 +748,21 @@ try {
         (await flat()).slice(0, 300),
     );
     check(
-        'the approval is fingerprinted and the examination is ready for its paper',
+        'from the blueprint page, once approved, "Paper" in the journey is a direct link',
+        (await signIn(officer, `${examUrl()}/blueprint`)) &&
+            (await has('[data-test=exam-journey] a[href$="/paper"]')),
+        (await flat()).slice(0, 300),
+    );
+    await click('[data-test=exam-journey] a[href$="/paper"]');
+    check(
+        'clicking it opens the paper page directly, with no detour through the examination page',
+        await waitFor(`location.pathname === "${examUrl()}/paper"`),
+        await path(),
+    );
+
+    await signIn(officer, examUrl());
+    check(
+        'the approval is fingerprinted, and the examination offers to build its paper',
         assess(
             `SELECT LENGTH(approved_hash) FROM exm_blueprints WHERE examination_id = ${examId}`,
         ) === '64' &&
@@ -667,7 +770,7 @@ try {
                 `SELECT status FROM exm_examinations WHERE id = ${examId}`,
             ) === 'blueprint_approved' &&
             (await has('[data-test=approved-by]')) &&
-            (await has('[data-test=paper-next]')),
+            (await has('[data-test=open-paper]')),
         (await flat()).slice(0, 400),
     );
     await shot('6-approved');

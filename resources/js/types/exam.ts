@@ -113,6 +113,7 @@ export type BlueprintReport = {
 
 export type BlueprintTopic = {
     id: number;
+    parentId: number | null;
     label: string;
     name: string;
     level: string;
@@ -133,6 +134,105 @@ export type BlueprintScreen = {
         maxSections: number;
         maxCount: number;
         marksMax: number;
+        /** A bank with fewer questions than the rows ask for stops the blueprint being submitted. */
+        requireBank: boolean;
     };
     forEditing: boolean;
+};
+
+export type PaperItemData = {
+    id: number;
+    questionId: number;
+    reference: string;
+    slotKey: string;
+    marks: number;
+    /** Null when the person may count the paper but not read its questions. */
+    summary: string | null;
+    typeName: string;
+    versionNo: number;
+    cognitive: string | null;
+    cognitiveId: number | null;
+    difficulty: string | null;
+    difficultyId: number | null;
+    timesUsed: number;
+    lastUsed: string | null;
+    isLocked: boolean;
+    source: 'auto' | 'manual';
+    flags: ('recent' | 'own' | 'newer' | 'gone' | 'same_text')[];
+    latestVersionNo: number | null;
+};
+
+export type PaperRowData = {
+    key: string;
+    nodeId: number;
+    typeId: number;
+    marks: number;
+    section: string | null;
+    count: number;
+    topic: string;
+    typeName: string;
+    items: PaperItemData[];
+    missing: number;
+    over: number;
+    /** Questions the bank could still give this row; null when the person may not read questions. */
+    available: number | null;
+};
+
+export type PaperCandidate = {
+    questionId: number;
+    reference: string;
+    summary: string;
+    topic: string;
+    cognitive: string | null;
+    difficulty: string | null;
+    timesUsed: number;
+    lastUsed: string | null;
+    usedRecently: boolean;
+    sameTextInPaper: boolean;
+    mine: boolean;
+    versionNo: number;
+};
+
+export type PaperMixRow = {
+    id: number;
+    name: string;
+    target: number | null;
+    count: number;
+    actual: number;
+};
+
+export type PaperScreen = {
+    paper: {
+        id: number;
+        versionNo: number;
+        status: string;
+        statusLabel: string;
+        shuffleQuestions: boolean;
+        shuffleOptions: boolean;
+        blueprintChanged: boolean;
+    } | null;
+    rows: PaperRowData[];
+    unassigned: PaperItemData[];
+    totals: {
+        chosen: number;
+        planned: number;
+        marks: number;
+        plannedMarks: number;
+        totalMarks: number;
+    };
+    mix: { cognitive: PaperMixRow[]; difficulty: PaperMixRow[] };
+    warnings: { kind: string; message: string; references: string[] }[];
+    mayRead: boolean;
+    mayEdit: boolean;
+    mayStart: boolean;
+    blueprintApproved: boolean;
+    limits: { candidates: number; recentMonths: number };
+};
+
+export type PaperSummary = {
+    exists: boolean;
+    chosen: number;
+    planned: number;
+    marks: number;
+    plannedMarks: number;
 };

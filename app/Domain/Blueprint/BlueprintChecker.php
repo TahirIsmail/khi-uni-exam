@@ -14,8 +14,9 @@ use App\Support\Cms\CmsAcademic;
  *  - blockers: things that make the blueprint wrong as it stands — no rows, planned marks that do not
  *    add up to the examination's total marks, a topic that has left the curriculum, a mix that does
  *    not add up to 100%. A blueprint with blockers cannot be submitted.
- *  - warnings: things worth knowing — the question bank has fewer questions than a row asks for. They
- *    do not stop the blueprint: the questions can still be written before the paper is built.
+ *  - warnings: things worth knowing. Unless the institution has turned it off, the question bank
+ *    holding fewer questions than the rows ask for is a blocker too, because a paper could not be
+ *    built to the blueprint.
  */
 final class BlueprintChecker
 {
@@ -71,8 +72,10 @@ final class BlueprintChecker
 
         // The topics of the course as they are now: the curriculum can change under a saved blueprint.
         $topics = [];
+        $parents = [];
         foreach ($this->academic->curriculum($examination->course_id) as $node) {
             $topics[$node['id']] = $node['name'];
+            $parents[$node['id']] = $node['parent_id'];
         }
         $typeNames = QuestionType::query()->pluck('name', 'id');
         $matrix = $this->availability->matrix($examination->branch_id, $examination->course_id, $examination->exam_type_id);
@@ -80,21 +83,38 @@ final class BlueprintChecker
         foreach ($rows as $row) {
             if (! isset($topics[$row->node_id])) {
                 $blockers[] = 'A row uses a topic that is no longer in the curriculum: remove it or choose another.';
+            }
+        }
 
+        // What the bank cannot give. A heading counts everything under it, so the demand on a topic is
+        // the questions its own rows ask for and those of the rows below it: the topics form a tree,
+        // and a paper can be built exactly when no topic is asked for more than it holds.
+        $shortages = [];
+        foreach ($rows->unique(fn (BlueprintRow $row): string => $row->node_id.'-'.$row->question_type_id) as $row) {
+            if (! isset($topics[$row->node_id])) {
                 continue;
             }
 
+            $wanted = (int) $rows->filter(fn (BlueprintRow $other): bool => $other->question_type_id === $row->question_type_id
+                && $this->isWithin($other->node_id, $row->node_id, $parents))->sum('question_count');
             $available = $matrix[$row->node_id][$row->question_type_id] ?? 0;
-            if ($available < $row->question_count) {
-                $warnings[] = sprintf(
+
+            if ($wanted > $available) {
+                $shortages[] = sprintf(
                     '%s, %s: %d wanted, %d in the question bank — %d more to write or import.',
                     $topics[$row->node_id],
                     (string) ($typeNames[$row->question_type_id] ?? 'Questions'),
-                    $row->question_count,
+                    $wanted,
                     $available,
-                    $row->question_count - $available,
+                    $wanted - $available,
                 );
             }
+        }
+
+        if (config('exam.blueprint.require_questions_in_bank') === true) {
+            array_push($blockers, ...$shortages);
+        } else {
+            array_push($warnings, ...$shortages);
         }
 
         return [
@@ -107,6 +127,23 @@ final class BlueprintChecker
             'warnings' => $warnings,
             'targets' => ['cognitive' => $sums['cognitive'], 'difficulty' => $sums['difficulty']],
         ];
+    }
+
+    /**
+     * Whether a topic is the other one or sits below it.
+     *
+     * @param  array<int, int|null>  $parents  topic id => its parent's id
+     */
+    private function isWithin(int $nodeId, int $ancestorId, array $parents): bool
+    {
+        for ($guard = 0; $nodeId !== 0 && $guard < 20; $guard++) {
+            if ($nodeId === $ancestorId) {
+                return true;
+            }
+            $nodeId = (int) ($parents[$nodeId] ?? 0);
+        }
+
+        return false;
     }
 
     private function number(float $value): string

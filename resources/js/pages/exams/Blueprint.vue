@@ -174,6 +174,10 @@ const duplicateKeys = computed(() => {
     return duplicates;
 });
 
+const topicLabel = (id: number | null): string =>
+    props.topics.find((topic) => topic.id === id)?.label ?? '—';
+const sectionLabel = (at: number | null): string =>
+    at === null ? 'No section' : sections.value[at] || `Section ${at + 1}`;
 const topicName = (id: number | null): string =>
     props.topics.find((topic) => topic.id === id)?.name ?? 'This topic';
 const typeName = (id: number | null): string =>
@@ -213,14 +217,68 @@ const blockers = computed(() => {
     return found;
 });
 
-const shortages = computed(() =>
-    rows.value
-        .filter(isShort)
-        .map(
-            (row) =>
-                `${topicName(row.node_id)}, ${typeName(row.question_type_id)}: ${row.question_count} wanted, ${availableFor(row)} in the question bank.`,
-        ),
+// What stops the blueprint being submitted: the above, and — unless the institution allows it — a bank
+// that cannot give what the rows ask for.
+const stoppers = computed(() =>
+    props.limits.requireBank
+        ? [...blockers.value, ...shortages.value]
+        : blockers.value,
 );
+
+// A heading counts everything under it, so what is asked of a topic is what its own rows ask for and
+// what the rows below it ask for: a paper can be built exactly when no topic is asked for more than
+// the question bank holds for it.
+const parents = computed(
+    () => new Map(props.topics.map((topic) => [topic.id, topic.parentId])),
+);
+function isWithin(nodeId: number, ancestor: number): boolean {
+    let id: number | null = nodeId;
+    for (let guard = 0; id !== null && guard < 20; guard++) {
+        if (id === ancestor) {
+            return true;
+        }
+        id = parents.value.get(id) ?? null;
+    }
+
+    return false;
+}
+
+const shortages = computed(() => {
+    const seen = new Set<string>();
+    const found: string[] = [];
+    for (const row of rows.value) {
+        if (row.node_id === null || row.question_type_id === null) {
+            continue;
+        }
+        const key = `${row.node_id}-${row.question_type_id}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+
+        const wanted = rows.value
+            .filter(
+                (other) =>
+                    other.node_id !== null &&
+                    other.question_type_id === row.question_type_id &&
+                    isWithin(other.node_id, row.node_id as number),
+            )
+            .reduce(
+                (total, other) => total + (Number(other.question_count) || 0),
+                0,
+            );
+        const available =
+            props.availability[row.node_id]?.[row.question_type_id] ?? 0;
+
+        if (wanted > available) {
+            found.push(
+                `${topicName(row.node_id)}, ${typeName(row.question_type_id)}: ${wanted} wanted, ${available} in the question bank — ${wanted - available} more to write or import.`,
+            );
+        }
+    }
+
+    return found;
+});
 
 const dirty = ref(false);
 const touch = (): void => {
@@ -329,11 +387,11 @@ const field =
                 <Button
                     v-if="can.submit"
                     variant="outline"
-                    :disabled="dirty || blockers.length > 0"
+                    :disabled="dirty || stoppers.length > 0"
                     :title="
                         dirty
                             ? 'Save the blueprint first'
-                            : blockers.length > 0
+                            : stoppers.length > 0
                               ? 'Fix what is marked first'
                               : ''
                     "
@@ -345,7 +403,7 @@ const field =
             </div>
         </div>
 
-        <ExamJourney :stage="blueprint.status" />
+        <ExamJourney :stage="blueprint.status" :exam-id="examination.id" />
 
         <p
             v-if="blueprint.status === 'draft' && blueprint.returnReason"
@@ -412,10 +470,16 @@ const field =
                                 class="text-muted-foreground w-20 shrink-0 text-xs"
                                 >Section {{ at + 1 }}</span
                             >
+                            <span
+                                v-if="!editable"
+                                class="font-medium"
+                                :data-section-text="at"
+                                >{{ sections[at] }}</span
+                            >
                             <Input
+                                v-else
                                 v-model="sections[at]"
                                 maxlength="100"
-                                :disabled="!editable"
                                 placeholder="e.g. Section A — Single best answer"
                                 :data-section="at"
                                 @input="touch"
@@ -503,10 +567,16 @@ const field =
                                     :data-row="at"
                                 >
                                     <td class="px-3 py-2">
+                                        <span
+                                            v-if="!editable"
+                                            class="block py-2 leading-snug font-medium"
+                                            data-test="row-topic-text"
+                                            >{{ topicLabel(row.node_id) }}</span
+                                        >
                                         <select
+                                            v-else
                                             v-model.number="row.node_id"
                                             :class="field"
-                                            :disabled="!editable"
                                             data-test="row-topic"
                                             @change="touch"
                                         >
@@ -522,13 +592,17 @@ const field =
                                             </option>
                                         </select>
                                         <p
-                                            v-if="errorAt(`rows.${at}.node_id`)"
+                                            v-if="
+                                                editable &&
+                                                errorAt(`rows.${at}.node_id`)
+                                            "
                                             class="text-destructive mt-1 text-xs"
                                         >
                                             {{ errorAt(`rows.${at}.node_id`) }}
                                         </p>
                                         <p
                                             v-else-if="
+                                                editable &&
                                                 duplicateKeys.has(row.key)
                                             "
                                             class="text-destructive mt-1 text-xs"
@@ -544,10 +618,17 @@ const field =
                                                 class="text-muted-foreground shrink-0 text-xs"
                                                 >Section</span
                                             >
+                                            <span
+                                                v-if="!editable"
+                                                data-test="row-section-text"
+                                                >{{
+                                                    sectionLabel(row.section)
+                                                }}</span
+                                            >
                                             <select
+                                                v-else
                                                 v-model="row.section"
                                                 :class="field"
-                                                :disabled="!editable"
                                                 data-test="row-section"
                                                 @change="touch"
                                             >
@@ -570,12 +651,20 @@ const field =
                                         </div>
                                     </td>
                                     <td class="px-3 py-2">
+                                        <span
+                                            v-if="!editable"
+                                            class="block py-2 leading-snug"
+                                            data-test="row-type-text"
+                                            >{{
+                                                typeName(row.question_type_id)
+                                            }}</span
+                                        >
                                         <select
+                                            v-else
                                             v-model.number="
                                                 row.question_type_id
                                             "
                                             :class="field"
-                                            :disabled="!editable"
                                             data-test="row-type"
                                             @change="touch"
                                         >
@@ -589,24 +678,36 @@ const field =
                                         </select>
                                     </td>
                                     <td class="px-3 py-2">
+                                        <span
+                                            v-if="!editable"
+                                            class="block leading-9 tabular-nums"
+                                            data-test="row-count-text"
+                                            >{{ row.question_count }}</span
+                                        >
                                         <Input
+                                            v-else
                                             v-model.number="row.question_count"
                                             type="number"
                                             min="1"
                                             :max="limits.maxCount"
-                                            :disabled="!editable"
                                             data-test="row-count"
                                             @input="touch"
                                         />
                                     </td>
                                     <td class="px-3 py-2">
+                                        <span
+                                            v-if="!editable"
+                                            class="block leading-9 tabular-nums"
+                                            data-test="row-marks-text"
+                                            >{{ row.marks_each }}</span
+                                        >
                                         <Input
+                                            v-else
                                             v-model.number="row.marks_each"
                                             type="number"
                                             min="0.25"
                                             :max="limits.marksMax"
                                             step="0.25"
-                                            :disabled="!editable"
                                             data-test="row-marks"
                                             @input="touch"
                                         />
@@ -722,12 +823,12 @@ const field =
                         </p>
 
                         <ul
-                            v-if="blockers.length > 0"
+                            v-if="stoppers.length > 0"
                             class="grid gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
                             data-test="blockers"
                         >
                             <li
-                                v-for="text in blockers"
+                                v-for="text in stoppers"
                                 :key="text"
                                 class="flex gap-2"
                             >
@@ -744,7 +845,7 @@ const field =
                         </p>
 
                         <ul
-                            v-if="shortages.length > 0"
+                            v-if="shortages.length > 0 && !limits.requireBank"
                             class="text-muted-foreground grid gap-1 text-xs"
                             data-test="shortages"
                         >
@@ -785,6 +886,7 @@ const field =
                             }}</label>
                             <div class="flex items-center gap-1">
                                 <Input
+                                    v-if="editable"
                                     :id="`${mix.key}-${level.id}`"
                                     v-model.number="mix.values[level.id]"
                                     type="number"
@@ -792,11 +894,24 @@ const field =
                                     max="100"
                                     step="5"
                                     class="w-20"
-                                    :disabled="!editable"
                                     :data-mix="`${mix.key}-${level.id}`"
                                     @input="touch"
                                 />
-                                <span class="text-muted-foreground">%</span>
+                                <span
+                                    v-if="editable"
+                                    class="text-muted-foreground"
+                                    >%</span
+                                >
+                                <span
+                                    v-else
+                                    class="tabular-nums"
+                                    :data-mix-text="`${mix.key}-${level.id}`"
+                                    >{{
+                                        mix.values[level.id] === ''
+                                            ? '—'
+                                            : `${mix.values[level.id]}%`
+                                    }}</span
+                                >
                             </div>
                         </div>
                         <p
