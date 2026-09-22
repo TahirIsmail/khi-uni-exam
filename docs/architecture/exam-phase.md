@@ -223,6 +223,51 @@ finalising a paper — so a registry clerk can count a paper without being able 
 `paper.item_swapped`, `paper.item_removed`, `paper.item_locked`, `paper.item_unlocked`,
 `paper.settings_changed`.
 
+## What step 16 built: moderating, finalising, locking and versions
+
+**The paper has its own workflow**, separate from the blueprint's: draft → submitted → approved →
+finalised → published, with "sent back" moving submitted or approved paper back to draft, reason
+required. Submitting needs `exam_papers` Edit and a sound paper (the same completeness report the
+builder screen already showed in step 15 — every row full, nothing over, no gap left); approving,
+sending back and finalising need `exam_papers_approve` / `_finalise`; publishing needs
+`exam_papers_publish`; starting a new version needs `exam_papers_unlock`. Nobody approves a paper
+they created or submitted themselves — the same rule the blueprint already followed.
+
+**Comments** (`exm_paper_comments`) let the committee read the paper and leave a note against a
+question, or a general one, while it is submitted or approved. A comment being open does not block
+approval — a moderator may approve with a note still outstanding — but it does block **finalising**:
+a paper is only locked once every comment on it is resolved. Comments can be left by anyone who may
+read the paper's questions or who may approve it; only the approving right resolves or reopens one.
+
+**Finalising locks it**: it computes and stores a fingerprint (SHA-256, the same pattern as the
+blueprint's) of the paper's substance — its items, their order, their marks and how it is presented —
+and from that point the database itself refuses any change to its items, comments or settings,
+exactly as an approved blueprint already does. Publishing is a separate step and a separate right, so
+finalising and releasing a paper for delivery are never the same click.
+
+**Correcting a locked paper** does not touch the finalised or published version: starting a new
+version copies its settings and every item into a fresh draft, one version number on, with every
+copied item locked (so "fill the gaps" cannot silently swap them out) but free to be replaced by
+hand. Old versions stay exactly as they were, read-only, and can be opened again from a version
+switcher on the paper screen; nothing is ever deleted.
+
+**What is frozen, and where:** the same trigger-and-stored-function pattern as the blueprint (step 14)
+and the question bank's own versions — a submitted, approved, finalised or published paper's items are
+refused by the database itself, comments can only be written or resolved while the paper is
+moderating, and the paper's examination, version number and shuffle settings are frozen once it
+leaves draft. A paper past draft is never deleted, and the state machine (draft → submitted →
+approved → finalised → published, with the two "send back" moves) is enforced there too, so a direct
+`UPDATE` cannot skip a stage any more than the application can.
+
+**On the paper screen**, what a person may attempt (`can.*`) and whether it would actually succeed
+right now (`report.isComplete`, with its blockers and advisories) are kept separate, as they already
+are for the blueprint: a button is shown once the right and the stage allow it, and disabled — with
+the reason said in words — when the paper itself is not ready.
+
+**Audited:** `paper.submitted`, `paper.approved`, `paper.returned`, `paper.finalised`,
+`paper.published`, `paper.version_started`, `paper.comment_added`, `paper.comment_resolved`,
+`paper.comment_reopened`.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -246,9 +291,9 @@ Each step ends with its tests, screenshots and the university's approval before 
 
 | Step | Work                                                                   | Where      | Status  |
 | ---- | ---------------------------------------------------------------------- | ---------- | ------- |
-| 14   | The three menu items and their deep links; blueprint tables and screen | both       | Planned |
-| 15   | The examination, and building a paper from the QBank                   | kmu-assess | Planned |
-| 16   | Moderation, finalising, locking and paper versions                     | kmu-assess | Planned |
+| 14   | The three menu items and their deep links; blueprint tables and screen | both       | Done    |
+| 15   | The examination, and building a paper from the QBank                   | kmu-assess | Done    |
+| 16   | Moderation, finalising, locking and paper versions                     | kmu-assess | Done    |
 | 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Planned |
 | 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Planned |
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Planned |

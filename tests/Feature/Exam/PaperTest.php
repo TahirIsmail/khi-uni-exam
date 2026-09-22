@@ -65,7 +65,7 @@ test('a paper is started only once the blueprint is approved', function () {
         ->component('exams/Paper')
         ->where('paper', null)
         ->where('blueprintApproved', false)
-        ->where('mayStart', false));
+        ->where('can.start', false));
 });
 
 test('the officer starts the paper once, and it is audited', function () {
@@ -467,7 +467,7 @@ test('the reader of a paper sees the counts, not the questions', function () {
 
     $this->actingAs($viewer)->get($url)->assertOk()->assertInertia(fn ($page) => $page
         ->where('mayRead', false)
-        ->where('mayEdit', false)
+        ->where('can.edit', false)
         ->where('totals.chosen', 3)
         ->where('rows.0.items.0.summary', null)
         ->where('rows.0.available', null));
@@ -482,8 +482,11 @@ test('the reader of a paper sees the counts, not the questions', function () {
 test('the paper is not reachable without the right, the course or the campus', function () {
     [$exam, $paper, $url] = smallExam();
 
-    // A blueprint reader is not a paper reader.
-    $this->actingAs($this->approver)->get($url)->assertForbidden();
+    // A reader with only the blueprint right (none of the paper ones) is not a paper reader.
+    $blueprintReaderRole = $this->cmsRole('Blueprint reader');
+    $this->cmsGrant($blueprintReaderRole, 'exam_blueprints', 'view');
+    $blueprintReader = $this->staffUser([$blueprintReaderRole], $this->branch);
+    $this->actingAs($blueprintReader)->get($url)->assertForbidden();
 
     $none = $this->staffUser([$this->cmsRole('Cleaner')], $this->branch);
     $this->actingAs($none)->get($url)->assertForbidden();
@@ -511,7 +514,7 @@ test('a reopened blueprint stops the paper being changed until it is approved ag
     $bp = "/exams/{$exam->id}/blueprint";
     $this->actingAs($this->approver)->post($bp.'/reopen', ['reason' => 'The paper needs another section.'])->assertSessionHasNoErrors();
 
-    $this->actingAs($this->setter)->get($url)->assertInertia(fn ($page) => $page->where('mayEdit', false)->where('blueprintApproved', false));
+    $this->actingAs($this->setter)->get($url)->assertInertia(fn ($page) => $page->where('can.edit', false)->where('blueprintApproved', false));
     fillPaper($url)->assertSessionHasErrors('paper');
     $this->actingAs($this->setter)->delete($url.'/items/'.$before[0])->assertSessionHasErrors('paper');
     expect(itemsOf($paper)->pluck('id')->all())->toBe($before);
@@ -519,7 +522,7 @@ test('a reopened blueprint stops the paper being changed until it is approved ag
     // Approved again with the same rows, the paper carries on, and says the blueprint was approved again.
     $this->actingAs($this->setter)->post($bp.'/submit')->assertSessionHasNoErrors();
     $this->actingAs($this->approver)->post($bp.'/approve')->assertSessionHasNoErrors();
-    $this->actingAs($this->setter)->get($url)->assertInertia(fn ($page) => $page->where('mayEdit', true)->where('paper.blueprintChanged', false));
+    $this->actingAs($this->setter)->get($url)->assertInertia(fn ($page) => $page->where('can.edit', true)->where('paper.blueprintChanged', false));
 });
 
 test('an item finds its row again when the blueprint is saved, and loses it when the row changes', function () {

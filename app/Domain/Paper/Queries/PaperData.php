@@ -7,6 +7,7 @@ use App\Domain\Exam\Models\Examination;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\Paper\CandidatePool;
+use App\Domain\Paper\Enums\PaperStatus;
 use App\Domain\Paper\Models\Paper;
 use App\Domain\Paper\Models\PaperSlot;
 use App\Domain\Paper\PaperChecks;
@@ -17,6 +18,7 @@ use App\Domain\QuestionBank\Models\QuestionType;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
@@ -27,6 +29,9 @@ use stdClass;
  */
 final class PaperData
 {
+    /** Warning kinds serious enough to stop a paper moving forward, rather than just being said. */
+    private const BLOCKING_WARNING_KINDS = ['gone', 'unassigned', 'over', 'same_text', 'cue'];
+
     public function __construct(
         private readonly PaperSlots $slots,
         private readonly CandidatePool $pool,
@@ -82,6 +87,80 @@ final class PaperData
             && $this->access->allows($user, 'exam.select_questions', $target);
     }
 
+    /**
+     * What this user may do with this paper — every action checks the same rights again.
+     *
+     * @return array{start: bool, edit: bool, submit: bool, approve: bool, sendBack: bool, finalise: bool, publish: bool, unlockVersion: bool, comment: bool, resolveComments: bool}
+     */
+    public function abilities(User $user, Examination $examination, ?Paper $paper): array
+    {
+        $target = new ScopeTarget($examination->branch_id, $examination->programme_id, $examination->professional_id, $examination->course_id);
+        $allows = fn (string $permission): bool => $this->access->allows($user, $permission, $target);
+        $status = $paper?->status;
+        $mine = $paper !== null && ($paper->created_by === $user->id || $paper->submitted_by === $user->id);
+
+        return [
+            'start' => $paper === null && $this->blueprintStatus($examination) === BlueprintStatus::Approved && $allows('exam.select_questions'),
+            'edit' => $this->mayEdit($user, $examination, $paper),
+            'submit' => $status === PaperStatus::Draft && $allows('exam.submit'),
+            'approve' => $status === PaperStatus::Submitted && ! $mine && $allows('exam.approve'),
+            'sendBack' => in_array($status, [PaperStatus::Submitted, PaperStatus::Approved], true) && $allows('exam.approve'),
+            'finalise' => $status === PaperStatus::Approved && $allows('exam.finalise'),
+            'publish' => $status === PaperStatus::Finalised && $allows('exam.publish'),
+            'unlockVersion' => in_array($status, [PaperStatus::Finalised, PaperStatus::Published], true) && $allows('exam.unlock_version'),
+            'comment' => $status !== null && $status->isModerating() && ($allows('exam.view') || $allows('exam.approve')),
+            'resolveComments' => $status !== null && $status->isModerating() && $allows('exam.approve'),
+        ];
+    }
+
+    /**
+     * The comments left on a paper, newest first within each item, general ones first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function comments(Paper $paper): array
+    {
+        $names = fn (iterable $ids): Collection => User::query()->whereIn('id', array_unique(array_filter([...$ids])))->pluck('name', 'id');
+        $comments = $paper->comments()->get();
+        $userNames = $names([...$comments->pluck('created_by'), ...$comments->pluck('resolved_by')]);
+        $refs = DB::table('exm_paper_items as i')->join('qb_questions as q', 'q.id', '=', 'i.question_id')
+            ->where('i.paper_id', $paper->id)->pluck('q.public_ref', 'i.id');
+
+        $rows = $comments->map(fn ($comment): array => [
+            'id' => $comment->id,
+            'itemId' => $comment->item_id,
+            'itemReference' => $comment->item_id === null ? null : ($refs[$comment->item_id] ?? null),
+            'body' => $comment->body,
+            'status' => $comment->status,
+            'createdBy' => $userNames[$comment->created_by] ?? null,
+            'createdAt' => $comment->created_at?->toIso8601String(),
+            'resolvedBy' => $comment->resolved_by === null ? null : ($userNames[$comment->resolved_by] ?? null),
+            'resolvedAt' => $comment->resolved_at?->toIso8601String(),
+        ])->values()->all();
+
+        return array_values($rows);
+    }
+
+    /**
+     * Every version of an examination's paper, newest first, for moving between them once one has
+     * been finalised and superseded by a correction.
+     *
+     * @return list<array{id: int, versionNo: int, status: string, statusLabel: string, isCurrent: bool}>
+     */
+    public function versions(Examination $examination, ?Paper $current): array
+    {
+        $rows = Paper::query()->where('examination_id', $examination->id)->orderByDesc('version_no')->get()
+            ->map(fn (Paper $paper): array => [
+                'id' => $paper->id,
+                'versionNo' => $paper->version_no,
+                'status' => (string) $paper->status->value,
+                'statusLabel' => $paper->status->label(),
+                'isCurrent' => $current !== null && $paper->id === $current->id,
+            ])->values()->all();
+
+        return array_values($rows);
+    }
+
     public function blueprintStatus(Examination $examination): ?BlueprintStatus
     {
         $status = DB::table('exm_blueprints')->where('examination_id', $examination->id)->value('status');
@@ -95,10 +174,97 @@ final class PaperData
     public function screen(User $user, Examination $examination, ?Paper $paper): array
     {
         $mayRead = $this->mayRead($user, $examination);
-        $slots = $this->slots->of($examination);
+        [$items, $rows, $unassigned] = $this->build($examination, $paper, $user, $mayRead);
         $blueprintHash = DB::table('exm_blueprints')->where('examination_id', $examination->id)->value('approved_hash');
 
-        $items = $paper === null ? [] : $this->items($paper, $user, $mayRead);
+        $marks = round(array_sum(array_column($items, 'marks')), 2);
+        $slots = $this->slots->of($examination);
+        $planned = array_sum(array_map(fn (PaperSlot $slot): int => $slot->count, $slots));
+        $warnings = $paper === null ? [] : $this->warnings($items, $rows, $unassigned, $mayRead);
+
+        // What the checks needed of an item is not for the screen.
+        $forScreen = fn (array $item): array => array_diff_key($item, ['_versionId' => 0, '_text' => 0]);
+        $rows = array_map(fn (array $row): array => [...$row, 'items' => array_map($forScreen, $row['items'])], $rows);
+        $unassigned = array_map($forScreen, $unassigned);
+
+        return [
+            'paper' => $paper === null ? null : [
+                'id' => $paper->id,
+                'versionNo' => $paper->version_no,
+                'status' => $paper->status->value,
+                'statusLabel' => $paper->status->label(),
+                'shuffleQuestions' => $paper->shuffle_questions,
+                'shuffleOptions' => $paper->shuffle_options,
+                'blueprintChanged' => $blueprintHash !== null && $paper->blueprint_hash !== $blueprintHash,
+                'returnReason' => $paper->return_reason,
+            ],
+            'rows' => $rows,
+            'unassigned' => $unassigned,
+            'totals' => [
+                'chosen' => count($items),
+                'planned' => $planned,
+                'marks' => $marks,
+                'plannedMarks' => round(array_sum(array_map(fn (PaperSlot $slot): float => $slot->count * $slot->marks, $slots)), 2),
+                'totalMarks' => $examination->total_marks,
+            ],
+            'mix' => $this->mix($examination, $items),
+            'warnings' => $warnings,
+            'mayRead' => $mayRead,
+            'can' => $this->abilities($user, $examination, $paper),
+            'blueprintApproved' => $this->blueprintStatus($examination) === BlueprintStatus::Approved,
+            'limits' => ['candidates' => (int) config('exam.paper.candidates_limit'), 'recentMonths' => (int) config('exam.paper.recent_use_months')],
+            'report' => $paper === null ? null : $this->report($examination, $paper),
+            'comments' => $paper === null ? [] : $this->comments($paper),
+            'versions' => $this->versions($examination, $paper),
+        ];
+    }
+
+    /**
+     * Whether a paper is sound enough to move to the next step of moderation: complete against the
+     * blueprint, and free of the defects worth stopping over (a missing or extra question, one no
+     * longer in use, the same text twice, one question giving away another's answer, or one whose
+     * row the blueprint no longer has). A question used recently, one of the setter's own, or a newer
+     * version now in the bank are said, but do not stop it — the committee reads them and decides.
+     *
+     * @return array{isComplete: bool, blockers: list<string>, advisories: list<string>}
+     */
+    public function report(Examination $examination, Paper $paper): array
+    {
+        [$items, $rows, $unassigned] = $this->build($examination, $paper, null, true);
+        $warnings = $this->warnings($items, $rows, $unassigned, true);
+
+        $isComplete = $unassigned === []
+            && array_sum(array_column($rows, 'missing')) === 0
+            && array_sum(array_column($rows, 'over')) === 0;
+
+        $blockers = [];
+        foreach ($rows as $row) {
+            if ($row['missing'] > 0) {
+                $blockers[] = sprintf('%s, %s: %d more question%s needed.', $row['topic'], $row['typeName'], $row['missing'], $row['missing'] === 1 ? '' : 's');
+            }
+        }
+
+        $advisories = [];
+        foreach ($warnings as $warning) {
+            if (in_array($warning['kind'], self::BLOCKING_WARNING_KINDS, true)) {
+                $blockers[] = $warning['message'].' '.implode(', ', $warning['references']);
+            } else {
+                $advisories[] = $warning['message'].' '.implode(', ', $warning['references']);
+            }
+        }
+
+        return ['isComplete' => $isComplete, 'blockers' => $blockers, 'advisories' => $advisories];
+    }
+
+    /**
+     * The items, the rows and the leftover items, built once for both the screen and the report.
+     *
+     * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>, 2: list<array<string, mixed>>}
+     */
+    private function build(Examination $examination, ?Paper $paper, ?User $viewer, bool $mayRead): array
+    {
+        $slots = $this->slots->of($examination);
+        $items = $paper === null ? [] : $this->items($paper, $viewer, $mayRead);
         $bySlot = [];
         foreach ($items as $item) {
             $bySlot[$item['slotKey']][] = $item;
@@ -133,44 +299,7 @@ final class PaperData
 
         $unassigned = array_values(array_filter($items, fn (array $item): bool => ! isset($known[$item['slotKey']])));
 
-        $marks = round(array_sum(array_column($items, 'marks')), 2);
-        $planned = array_sum(array_map(fn (PaperSlot $slot): int => $slot->count, $slots));
-        $warnings = $paper === null ? [] : $this->warnings($items, $rows, $unassigned, $mayRead);
-
-        // What the checks needed of an item is not for the screen.
-        $forScreen = fn (array $item): array => array_diff_key($item, ['_versionId' => 0, '_text' => 0]);
-        $rows = array_map(fn (array $row): array => [...$row, 'items' => array_map($forScreen, $row['items'])], $rows);
-        $unassigned = array_map($forScreen, $unassigned);
-
-        return [
-            'paper' => $paper === null ? null : [
-                'id' => $paper->id,
-                'versionNo' => $paper->version_no,
-                'status' => $paper->status->value,
-                'statusLabel' => $paper->status->label(),
-                'shuffleQuestions' => $paper->shuffle_questions,
-                'shuffleOptions' => $paper->shuffle_options,
-                'blueprintChanged' => $blueprintHash !== null && $paper->blueprint_hash !== $blueprintHash,
-            ],
-            'rows' => $rows,
-            'unassigned' => $unassigned,
-            'totals' => [
-                'chosen' => count($items),
-                'planned' => $planned,
-                'marks' => $marks,
-                'plannedMarks' => round(array_sum(array_map(fn (PaperSlot $slot): float => $slot->count * $slot->marks, $slots)), 2),
-                'totalMarks' => $examination->total_marks,
-            ],
-            'mix' => $this->mix($examination, $items),
-            'warnings' => $warnings,
-            'mayRead' => $mayRead,
-            'mayEdit' => $this->mayEdit($user, $examination, $paper),
-            'mayStart' => $paper === null
-                && $this->blueprintStatus($examination) === BlueprintStatus::Approved
-                && $this->access->allows($user, 'exam.select_questions', new ScopeTarget($examination->branch_id, $examination->programme_id, $examination->professional_id, $examination->course_id)),
-            'blueprintApproved' => $this->blueprintStatus($examination) === BlueprintStatus::Approved,
-            'limits' => ['candidates' => (int) config('exam.paper.candidates_limit'), 'recentMonths' => (int) config('exam.paper.recent_use_months')],
-        ];
+        return [$items, $rows, $unassigned];
     }
 
     /**
@@ -212,7 +341,7 @@ final class PaperData
     /**
      * @return list<array<string, mixed>>
      */
-    private function items(Paper $paper, User $user, bool $mayRead): array
+    private function items(Paper $paper, ?User $viewer, bool $mayRead): array
     {
         $rows = DB::table('exm_paper_items as i')
             ->join('qb_questions as q', 'q.id', '=', 'i.question_id')
@@ -256,7 +385,7 @@ final class PaperData
                 'source' => (string) $row->source,
                 'flags' => array_values(array_filter([
                     $usedRecently ? 'recent' : null,
-                    (int) $row->author_id === $user->id ? 'own' : null,
+                    $viewer !== null && (int) $row->author_id === $viewer->id ? 'own' : null,
                     $newer ? 'newer' : null,
                     $gone ? 'gone' : null,
                     isset($sameText[(string) $row->content_hash]) ? 'same_text' : null,

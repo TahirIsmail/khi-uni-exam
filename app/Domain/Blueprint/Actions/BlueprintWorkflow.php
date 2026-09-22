@@ -119,6 +119,13 @@ final class BlueprintWorkflow
 
         return DB::transaction(function () use ($user, $examination, $reason): Blueprint {
             $blueprint = $this->lock($examination, BlueprintStatus::Approved, 'Only an approved blueprint can be reopened.');
+
+            $lockedPaper = DB::table('exm_papers')->where('examination_id', $examination->id)
+                ->whereIn('status', ['finalised', 'published'])->exists();
+            if ($lockedPaper) {
+                throw ValidationException::withMessages(['blueprint' => 'This examination\'s paper has already been finalised. The blueprint cannot be reopened underneath it.']);
+            }
+
             $previous = ['status' => BlueprintStatus::Approved->value, 'approved_by' => $blueprint->approved_by, 'fingerprint' => $blueprint->approved_hash];
 
             $blueprint->update([

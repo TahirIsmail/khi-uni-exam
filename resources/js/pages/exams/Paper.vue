@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     AlertTriangle,
     ArrowLeftRight,
+    BadgeCheck,
     Check,
+    FilePlus2,
     Lock,
     LockOpen,
+    MessageSquare,
     Plus,
     Search,
+    Send,
     Shuffle,
     Sparkles,
     Trash2,
+    Undo2,
     X,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -19,10 +24,12 @@ import ExamJourney from '@/components/exam/ExamJourney.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { index } from '@/routes/exams';
 import type {
     ExaminationDetail,
     PaperCandidate,
+    PaperCommentData,
     PaperItemData,
     PaperMixRow,
     PaperRowData,
@@ -213,6 +220,93 @@ function choose(candidate: PaperCandidate): void {
     );
 }
 
+// ---- moderating and locking it ------------------------------------------------------------------
+const acting = ref(false);
+
+function post(
+    path: string,
+    data: Record<string, string | number | boolean> = {},
+): void {
+    router.post(`${base.value}/paper/${path}`, data, {
+        preserveScroll: true,
+        onStart: () => {
+            acting.value = true;
+        },
+        onFinish: () => {
+            acting.value = false;
+        },
+    });
+}
+
+function submit(): void {
+    post('submit');
+}
+function approve(): void {
+    post('approve');
+}
+const showFinaliseConfirm = ref(false);
+function finalise(): void {
+    showFinaliseConfirm.value = false;
+    post('finalise');
+}
+function publish(): void {
+    post('publish');
+}
+const showNewVersionConfirm = ref(false);
+function newVersion(): void {
+    showNewVersionConfirm.value = false;
+    post('new-version');
+}
+
+const sendBackForm = useForm({ reason: '' });
+const showSendBack = ref(false);
+function sendBack(): void {
+    sendBackForm.post(`${base.value}/paper/send-back`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            showSendBack.value = false;
+            sendBackForm.reset();
+        },
+    });
+}
+
+// ---- comments -------------------------------------------------------------------------------
+const newComment = ref('');
+const newCommentItem = ref<number | null>(null);
+const commentForm = useForm({ item_id: null as number | null, body: '' });
+
+function addComment(): void {
+    commentForm.item_id = newCommentItem.value;
+    commentForm.body = newComment.value;
+    commentForm.post(`${base.value}/paper/comments`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            newComment.value = '';
+            newCommentItem.value = null;
+        },
+    });
+}
+
+function resolveComment(comment: PaperCommentData, resolved: boolean): void {
+    router.post(
+        `${base.value}/paper/comments/${comment.id}/resolve`,
+        { resolved },
+        { preserveScroll: true },
+    );
+}
+
+const allItems = computed<PaperItemData[]>(() =>
+    props.rows.flatMap((row) => row.items),
+);
+
+const statusStyle: Record<string, 'secondary' | 'outline' | 'default'> = {
+    draft: 'secondary',
+    submitted: 'outline',
+    approved: 'outline',
+    finalised: 'default',
+    published: 'default',
+};
+
 const flagText: Record<string, string> = {
     recent: `Used in the last ${props.limits.recentMonths} months`,
     own: 'You wrote it',
@@ -246,6 +340,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
         <ExamJourney
             :stage="blueprintApproved ? 'approved' : 'draft'"
             :exam-id="examination.id"
+            :paper-status="paper?.status"
         />
 
         <p
@@ -277,7 +372,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
             <h2 class="font-medium">The paper has not been started</h2>
             <p class="text-muted-foreground mt-1 text-sm">
                 {{
-                    mayStart
+                    can.start
                         ? 'Start it, then fill it from the question bank: the blueprint says what it needs and the bank is drawn on to match. You can then swap, add or lock questions yourself.'
                         : blueprintApproved
                           ? 'Nobody has started it yet.'
@@ -285,7 +380,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                 }}
             </p>
             <Button
-                v-if="mayStart"
+                v-if="can.start"
                 class="mt-4"
                 data-test="start-paper"
                 @click="start"
@@ -295,6 +390,328 @@ const showMix = (rows: PaperMixRow[]): boolean =>
         </section>
 
         <template v-else>
+            <!-- Where the paper is, whom it needs next, and what a person with the right may do. -->
+            <section class="rounded-xl border shadow-xs" data-test="workflow">
+                <header
+                    class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+                >
+                    <div class="flex items-center gap-2">
+                        <h2 class="font-medium">Moderating and locking it</h2>
+                        <Badge
+                            :variant="statusStyle[paper.status]"
+                            data-test="paper-status"
+                            >{{ paper.statusLabel }}</Badge
+                        >
+                    </div>
+                    <div
+                        v-if="versions.length > 1"
+                        class="flex flex-wrap items-center gap-1"
+                        data-test="versions"
+                    >
+                        <span class="text-muted-foreground text-xs"
+                            >Version</span
+                        >
+                        <Link
+                            v-for="version in versions"
+                            :key="version.id"
+                            :href="`${base}/paper?version=${version.versionNo}`"
+                            :data-version="version.versionNo"
+                        >
+                            <Badge
+                                :variant="
+                                    version.isCurrent ? 'default' : 'outline'
+                                "
+                                >{{ version.versionNo }}</Badge
+                            >
+                        </Link>
+                    </div>
+                </header>
+
+                <div class="grid gap-3 p-4 text-sm">
+                    <p
+                        v-if="paper.returnReason"
+                        class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                        data-test="return-reason"
+                    >
+                        <strong>Sent back:</strong> {{ paper.returnReason }}
+                    </p>
+
+                    <ul
+                        v-if="report && report.blockers.length > 0"
+                        class="grid gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                        data-test="report-blockers"
+                    >
+                        <li
+                            v-for="text in report.blockers"
+                            :key="text"
+                            class="flex gap-2"
+                        >
+                            <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+                            {{ text }}
+                        </li>
+                    </ul>
+                    <p
+                        v-else-if="report"
+                        class="flex items-center gap-2 text-green-700 dark:text-green-400"
+                        data-test="report-sound"
+                    >
+                        <Check class="size-4" /> Ready for the next step.
+                    </p>
+                    <ul
+                        v-if="report && report.advisories.length > 0"
+                        class="text-muted-foreground grid gap-1 text-xs"
+                        data-test="report-advisories"
+                    >
+                        <li v-for="text in report.advisories" :key="text">
+                            • {{ text }}
+                        </li>
+                    </ul>
+
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-if="can.submit"
+                            :disabled="acting"
+                            data-test="submit-paper"
+                            @click="submit"
+                        >
+                            <Send /> Submit for moderation
+                        </Button>
+                        <Button
+                            v-if="can.approve"
+                            :disabled="acting"
+                            data-test="approve-paper"
+                            @click="approve"
+                        >
+                            <BadgeCheck /> Approve
+                        </Button>
+                        <Button
+                            v-if="can.finalise"
+                            :disabled="acting"
+                            data-test="finalise-paper"
+                            @click="showFinaliseConfirm = !showFinaliseConfirm"
+                        >
+                            <Lock /> Finalise and lock
+                        </Button>
+                        <Button
+                            v-if="can.publish"
+                            :disabled="acting"
+                            data-test="publish-paper"
+                            @click="publish"
+                        >
+                            <Send /> Publish
+                        </Button>
+                        <Button
+                            v-if="can.sendBack"
+                            variant="outline"
+                            :disabled="acting"
+                            data-test="send-back-paper"
+                            @click="showSendBack = !showSendBack"
+                        >
+                            <Undo2 /> Send back
+                        </Button>
+                        <Button
+                            v-if="can.unlockVersion"
+                            variant="outline"
+                            :disabled="acting"
+                            data-test="new-version"
+                            @click="
+                                showNewVersionConfirm = !showNewVersionConfirm
+                            "
+                        >
+                            <FilePlus2 /> New version to correct it
+                        </Button>
+                    </div>
+
+                    <div
+                        v-if="showFinaliseConfirm"
+                        class="grid gap-2 border-t pt-3"
+                    >
+                        <p class="text-sm">
+                            Finalise this paper? Once finalised it is locked: a
+                            correction means a new version.
+                        </p>
+                        <Button
+                            class="justify-self-start"
+                            :disabled="acting"
+                            data-test="finalise-confirm"
+                            @click="finalise"
+                            >Finalise it</Button
+                        >
+                    </div>
+
+                    <div
+                        v-if="showNewVersionConfirm"
+                        class="grid gap-2 border-t pt-3"
+                    >
+                        <p class="text-sm">
+                            Start a new version to correct this paper? The
+                            finalised one is kept exactly as it was.
+                        </p>
+                        <Button
+                            class="justify-self-start"
+                            :disabled="acting"
+                            data-test="new-version-confirm"
+                            @click="newVersion"
+                            >Start a new version</Button
+                        >
+                    </div>
+                    <p
+                        v-if="paper.status === 'submitted' && !can.approve"
+                        class="text-muted-foreground text-xs"
+                    >
+                        Nobody approves a paper they started or submitted.
+                    </p>
+
+                    <form
+                        v-if="showSendBack"
+                        class="grid gap-2 border-t pt-3"
+                        @submit.prevent="sendBack"
+                    >
+                        <Label for="paper-send-back-reason"
+                            >What has to change?</Label
+                        >
+                        <textarea
+                            id="paper-send-back-reason"
+                            v-model="sendBackForm.reason"
+                            class="border-input bg-background min-h-20 rounded-md border p-2 text-sm"
+                            maxlength="500"
+                            data-test="send-back-reason"
+                        />
+                        <p
+                            v-if="sendBackForm.errors.reason"
+                            class="text-destructive text-sm"
+                        >
+                            {{ sendBackForm.errors.reason }}
+                        </p>
+                        <Button
+                            type="submit"
+                            class="justify-self-start"
+                            :disabled="sendBackForm.processing"
+                            data-test="send-back-confirm"
+                            >Send it back</Button
+                        >
+                    </form>
+                </div>
+            </section>
+
+            <!-- Comments left while the paper is moderated. -->
+            <section
+                v-if="paper.status !== 'draft'"
+                class="rounded-xl border shadow-xs"
+                data-test="comments"
+            >
+                <header class="border-b px-4 py-3">
+                    <h2 class="flex items-center gap-2 font-medium">
+                        <MessageSquare class="size-4" /> Comments
+                        <span
+                            v-if="comments.length > 0"
+                            class="text-muted-foreground font-normal"
+                            >({{
+                                comments.filter((c) => c.status === 'open')
+                                    .length
+                            }}
+                            open)</span
+                        >
+                    </h2>
+                </header>
+                <div class="grid gap-3 p-4 text-sm">
+                    <article
+                        v-for="comment in comments"
+                        :key="comment.id"
+                        class="grid gap-1 border-b pb-3 last:border-0 last:pb-0"
+                        :data-comment="comment.id"
+                    >
+                        <header class="flex flex-wrap items-center gap-2">
+                            <span class="font-medium">{{
+                                comment.createdBy
+                            }}</span>
+                            <Badge
+                                v-if="comment.itemReference"
+                                variant="outline"
+                                >{{ comment.itemReference }}</Badge
+                            >
+                            <Badge
+                                :variant="
+                                    comment.status === 'open'
+                                        ? 'outline'
+                                        : 'secondary'
+                                "
+                                >{{ comment.status }}</Badge
+                            >
+                        </header>
+                        <p class="whitespace-pre-line">{{ comment.body }}</p>
+                        <div v-if="can.resolveComments" class="mt-1">
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                :data-resolve="comment.id"
+                                @click="
+                                    resolveComment(
+                                        comment,
+                                        comment.status !== 'resolved',
+                                    )
+                                "
+                            >
+                                {{
+                                    comment.status === 'resolved'
+                                        ? 'Reopen'
+                                        : 'Mark resolved'
+                                }}
+                            </Button>
+                        </div>
+                    </article>
+                    <p
+                        v-if="comments.length === 0"
+                        class="text-muted-foreground"
+                    >
+                        No comments yet.
+                    </p>
+
+                    <form
+                        v-if="can.comment"
+                        class="grid gap-2 border-t pt-3"
+                        @submit.prevent="addComment"
+                    >
+                        <div class="grid gap-1.5 sm:grid-cols-[1fr_auto]">
+                            <textarea
+                                v-model="newComment"
+                                class="border-input bg-background min-h-16 rounded-md border p-2 text-sm"
+                                maxlength="2000"
+                                placeholder="A comment on the whole paper, or choose a question below"
+                                data-test="new-comment"
+                            />
+                            <select
+                                v-model="newCommentItem"
+                                class="border-input bg-background h-9 rounded-md border px-2 text-sm sm:self-start"
+                                data-test="comment-item"
+                            >
+                                <option :value="null">General comment</option>
+                                <option
+                                    v-for="item in allItems"
+                                    :key="item.id"
+                                    :value="item.id"
+                                >
+                                    {{ item.reference }}
+                                </option>
+                            </select>
+                        </div>
+                        <p
+                            v-if="commentForm.errors.body"
+                            class="text-destructive text-sm"
+                        >
+                            {{ commentForm.errors.body }}
+                        </p>
+                        <Button
+                            type="submit"
+                            class="justify-self-start"
+                            :disabled="commentForm.processing || !newComment"
+                            data-test="add-comment"
+                            >Add comment</Button
+                        >
+                    </form>
+                </div>
+            </section>
+
             <p
                 v-if="paper.blueprintChanged"
                 class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
@@ -339,7 +756,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                                     {{ row.count }}</Badge
                                 >
                                 <Button
-                                    v-if="mayEdit && row.missing > 0"
+                                    v-if="can.edit && row.missing > 0"
                                     size="sm"
                                     variant="outline"
                                     data-test="add-question"
@@ -415,7 +832,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                                         </p>
                                     </div>
                                     <div
-                                        v-if="mayEdit"
+                                        v-if="can.edit"
                                         class="flex shrink-0 items-center gap-1"
                                     >
                                         <Button
@@ -652,7 +1069,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                                     </p>
                                 </div>
                                 <Button
-                                    v-if="mayEdit"
+                                    v-if="can.edit"
                                     size="icon"
                                     variant="ghost"
                                     title="Take it out"
@@ -711,7 +1128,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                             </p>
 
                             <div
-                                v-if="mayEdit"
+                                v-if="can.edit"
                                 class="grid gap-2 border-t pt-3"
                             >
                                 <Button
@@ -781,7 +1198,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                                     type="checkbox"
                                     class="size-4"
                                     :checked="paper.shuffleQuestions"
-                                    :disabled="!mayEdit"
+                                    :disabled="!can.edit"
                                     data-test="shuffle-questions"
                                     @change="
                                         setShuffle(
@@ -799,7 +1216,7 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                                     type="checkbox"
                                     class="size-4"
                                     :checked="paper.shuffleOptions"
-                                    :disabled="!mayEdit"
+                                    :disabled="!can.edit"
                                     data-test="shuffle-options"
                                     @change="
                                         setShuffle(

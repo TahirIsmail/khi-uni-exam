@@ -2,23 +2,29 @@
 import { Link } from '@inertiajs/vue3';
 import { Check } from '@lucide/vue';
 import { computed } from 'vue';
-import type { BlueprintStatus } from '@/types';
+import type { BlueprintStatus, PaperStatus } from '@/types';
 
 /**
  * The way an examination is built, as the university does it: the examination, its blueprint, its
- * paper, and moderation. The step it is at is highlighted, what happens now is said in one line, and
- * a step already reached is a link, so moving between them does not mean hunting for the right button.
+ * paper, and moderating and locking it. The step it is at is highlighted, what happens now is said
+ * in one line, and a step already reached is a link, so moving between them does not mean hunting
+ * for the right button.
  */
 const props = defineProps<{
     /** 'new' before the examination exists, otherwise the stage of its blueprint. */
     stage: 'new' | BlueprintStatus;
     /** Left out only on the "new examination" form, where there is nothing to link to yet. */
     examId?: number;
+    /** The paper's own status, once it has been started — carries the last two steps. */
+    paperStatus?: PaperStatus;
 }>();
 
 const steps = ['Examination', 'Blueprint', 'Paper', 'Moderate & lock'];
 
 const current = computed(() => {
+    if (props.paperStatus !== undefined) {
+        return props.paperStatus === 'draft' ? 2 : 3;
+    }
     switch (props.stage) {
         case 'new':
             return 0;
@@ -30,23 +36,43 @@ const current = computed(() => {
     }
 });
 
-// The paper is not opened until the blueprint is approved (step 15); moderation is not built yet
-// (step 16), so it is never a link.
+// A step is a link once it can be reached: the blueprint once the examination exists, the paper
+// once the blueprint is approved, and "Moderate & lock" once the paper has something to moderate —
+// all on the one paper page, which shows the builder or the moderation view by the paper's status.
 const hrefs = computed<(string | null)[]>(() => {
     if (props.examId === undefined) {
         return [null, null, null, null];
     }
     const base = `/exams/${props.examId}`;
+    const paperReached = current.value >= 2;
 
     return [
         base,
         `${base}/blueprint`,
-        current.value >= 2 ? `${base}/paper` : null,
-        null,
+        paperReached ? `${base}/paper` : null,
+        paperReached &&
+        props.paperStatus !== undefined &&
+        props.paperStatus !== 'draft'
+            ? `${base}/paper`
+            : null,
     ];
 });
 
 const next = computed(() => {
+    if (props.paperStatus !== undefined) {
+        switch (props.paperStatus) {
+            case 'draft':
+                return 'Fill it from the question bank, or choose questions yourself.';
+            case 'submitted':
+                return 'Waiting for the committee to moderate it.';
+            case 'approved':
+                return 'Approved — ready to be finalised and locked.';
+            case 'finalised':
+                return 'Finalised. Publish it when it is ready for delivery.';
+            case 'published':
+                return 'Published: ready for delivery.';
+        }
+    }
     switch (props.stage) {
         case 'new':
             return 'Say what the examination is: the course, the date and the marks.';

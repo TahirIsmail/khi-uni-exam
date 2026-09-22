@@ -42,6 +42,9 @@ trait BuildsExaminations
         $this->approverRole = $this->cmsRole('Examination committee');
         $this->cmsGrant($this->approverRole, 'exam_blueprints', 'view');
         $this->cmsGrant($this->approverRole, 'exam_blueprints_approve', 'view');
+        $this->cmsGrant($this->approverRole, 'exam_papers', 'view');
+        $this->cmsGrant($this->approverRole, 'exam_papers_approve', 'view');
+        $this->cmsGrant($this->approverRole, 'exam_papers_finalise', 'view');
         $this->approver = $this->staffUser([$this->approverRole], $this->branch);
     }
 

@@ -201,15 +201,62 @@ export type PaperMixRow = {
     actual: number;
 };
 
+export type PaperStatus =
+    | 'draft'
+    | 'submitted'
+    | 'approved'
+    | 'finalised'
+    | 'published';
+
+export type PaperCommentData = {
+    id: number;
+    itemId: number | null;
+    itemReference: string | null;
+    body: string;
+    status: 'open' | 'resolved';
+    createdBy: string | null;
+    createdAt: string | null;
+    resolvedBy: string | null;
+    resolvedAt: string | null;
+};
+
+export type PaperVersionData = {
+    id: number;
+    versionNo: number;
+    status: PaperStatus;
+    statusLabel: string;
+    isCurrent: boolean;
+};
+
+export type PaperAbilities = {
+    start: boolean;
+    edit: boolean;
+    submit: boolean;
+    approve: boolean;
+    sendBack: boolean;
+    finalise: boolean;
+    publish: boolean;
+    unlockVersion: boolean;
+    comment: boolean;
+    resolveComments: boolean;
+};
+
+export type PaperReport = {
+    isComplete: boolean;
+    blockers: string[];
+    advisories: string[];
+};
+
 export type PaperScreen = {
     paper: {
         id: number;
         versionNo: number;
-        status: string;
+        status: PaperStatus;
         statusLabel: string;
         shuffleQuestions: boolean;
         shuffleOptions: boolean;
         blueprintChanged: boolean;
+        returnReason: string | null;
     } | null;
     rows: PaperRowData[];
     unassigned: PaperItemData[];
@@ -223,10 +270,12 @@ export type PaperScreen = {
     mix: { cognitive: PaperMixRow[]; difficulty: PaperMixRow[] };
     warnings: { kind: string; message: string; references: string[] }[];
     mayRead: boolean;
-    mayEdit: boolean;
-    mayStart: boolean;
+    can: PaperAbilities;
     blueprintApproved: boolean;
     limits: { candidates: number; recentMonths: number };
+    report: PaperReport | null;
+    comments: PaperCommentData[];
+    versions: PaperVersionData[];
 };
 
 export type PaperSummary = {

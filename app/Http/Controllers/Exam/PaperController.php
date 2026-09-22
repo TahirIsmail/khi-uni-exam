@@ -8,9 +8,13 @@ use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\Paper\Actions\ChangePaperItems;
 use App\Domain\Paper\Actions\CreatePaper;
 use App\Domain\Paper\Actions\FillPaper;
+use App\Domain\Paper\Actions\PaperComments;
 use App\Domain\Paper\Actions\PaperGuard;
+use App\Domain\Paper\Actions\PaperWorkflow;
+use App\Domain\Paper\Actions\StartNewPaperVersion;
 use App\Domain\Paper\Actions\UpdatePaperSettings;
 use App\Domain\Paper\Models\Paper;
+use App\Domain\Paper\Models\PaperComment;
 use App\Domain\Paper\Models\PaperItem;
 use App\Domain\Paper\PaperItems;
 use App\Domain\Paper\Queries\PaperData;
@@ -23,8 +27,8 @@ use Inertia\Response;
 
 /**
  * The paper of an examination: choosing its questions from the question bank to match the approved
- * blueprint. Reading it needs the right to see papers; every change needs the right to choose
- * questions, and each action checks that, the campus and the course again.
+ * blueprint, moderating it, and locking it. Reading it needs the right to see papers; every change
+ * needs its own right, and each action checks that, the campus and the course again.
  */
 class PaperController extends ExamAreaController
 {
@@ -33,9 +37,14 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $this->mustSeePapers($request, $exam);
 
+        $input = $request->validate(['version' => ['nullable', 'integer', 'min:1']]);
+        $paper = isset($input['version'])
+            ? Paper::query()->where('examination_id', $exam->id)->where('version_no', (int) $input['version'])->firstOrFail()
+            : $this->paperOf($exam);
+
         return Inertia::render('exams/Paper', [
             'examination' => $examinations->detail($exam),
-            ...$data->screen($request->user(), $exam, $this->paperOf($exam)),
+            ...$data->screen($request->user(), $exam, $paper),
         ]);
     }
 
@@ -134,6 +143,92 @@ class PaperController extends ExamAreaController
         $input = $request->validate(['locked' => ['required', 'boolean']]);
 
         $change->lock($request->user(), $exam, $this->paperOrFail($exam), $item, (bool) $input['locked']);
+
+        return back();
+    }
+
+    public function submit(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $workflow->submit($request->user(), $exam, $this->paperOrFail($exam));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Submitted for moderation.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function approve(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $workflow->approve($request->user(), $exam, $this->paperOrFail($exam));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Approved. It can now be finalised.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function sendBack(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
+        $workflow->returnToDraft($request->user(), $exam, $this->paperOrFail($exam), (string) $input['reason']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent back with your reason.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function finalise(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $workflow->finalise($request->user(), $exam, $this->paperOrFail($exam));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Finalised and locked.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function publish(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $workflow->publish($request->user(), $exam, $this->paperOrFail($exam));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Published, ready for delivery.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    /** A new draft version of a finalised or published paper, to correct it. */
+    public function newVersion(Request $request, Examination $exam, StartNewPaperVersion $start): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $start($request->user(), $exam, $this->paperOrFail($exam));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('A new version is ready to change.')]);
+
+        return to_route('papers.show', $exam);
+    }
+
+    public function addComment(Request $request, Examination $exam, PaperComments $comments): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate([
+            'item_id' => ['nullable', 'integer', 'min:1'],
+            'body' => ['required', 'string', 'max:2000'],
+        ]);
+        $item = isset($input['item_id']) ? PaperItem::query()->whereKey($input['item_id'])->firstOrFail() : null;
+
+        $comments->add($request->user(), $exam, $this->paperOrFail($exam), $item, (string) $input['body']);
+
+        return back();
+    }
+
+    public function resolveComment(Request $request, Examination $exam, PaperComment $comment, PaperComments $comments): RedirectResponse
+    {
+        $this->guard($request, $exam);
+        $input = $request->validate(['resolved' => ['required', 'boolean']]);
+
+        $comments->resolve($request->user(), $exam, $this->paperOrFail($exam), $comment, (bool) $input['resolved']);
 
         return back();
     }

@@ -377,7 +377,8 @@ only. The tests that write no questions still clean up after themselves in kmu-c
 | 12   | Review, pre-hoc, approval                                                                                 | both       | Done                            |
 | 13   | Acceptance testing of the increment                                                                       | both       | Done                            |
 
-Steps 14 onwards are the examination phase — step 14, "Create Exam", the examination and its
-blueprint, is built and waiting for approval: see [exam-phase.md](exam-phase.md). Its permissions,
-campus rules and audit log were built in step 7, and ADR-0003 settled how a candidate's exam
-survives a crash, so nothing built in the first increment has to change.
+Steps 14 onwards are the examination phase: the examination and its blueprint, building a paper from
+the question bank, and moderating, finalising, locking and versioning it are built — see
+[exam-phase.md](exam-phase.md). Its permissions, campus rules and audit log were built in step 7, and
+ADR-0003 settled how a candidate's exam survives a crash, so nothing built in the first increment has
+to change.

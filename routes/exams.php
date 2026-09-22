@@ -40,6 +40,18 @@ Route::middleware('auth')->prefix('exams')->group(function () {
                 Route::post('lock', [PaperController::class, 'lockItem'])->middleware(['can:exam.select_questions', 'throttle:120,1'])->name('papers.items.lock');
                 Route::delete('/', [PaperController::class, 'removeItem'])->middleware(['can:exam.select_questions', 'throttle:120,1'])->name('papers.items.remove');
             });
+
+            // Moderating and locking it (step 4): submitted by whoever built it, approved — or sent
+            // back — by somebody else, finalised, then published; each its own right.
+            Route::post('submit', [PaperController::class, 'submit'])->middleware(['can:exam.submit', 'throttle:30,1'])->name('papers.submit');
+            Route::post('approve', [PaperController::class, 'approve'])->middleware(['can:exam.approve', 'throttle:30,1'])->name('papers.approve');
+            Route::post('send-back', [PaperController::class, 'sendBack'])->middleware(['can:exam.approve', 'throttle:30,1'])->name('papers.send-back');
+            Route::post('finalise', [PaperController::class, 'finalise'])->middleware(['can:exam.finalise', 'throttle:30,1'])->name('papers.finalise');
+            Route::post('publish', [PaperController::class, 'publish'])->middleware(['can:exam.publish', 'throttle:30,1'])->name('papers.publish');
+            Route::post('new-version', [PaperController::class, 'newVersion'])->middleware(['can:exam.unlock_version', 'throttle:30,1'])->name('papers.new-version');
+
+            Route::post('comments', [PaperController::class, 'addComment'])->middleware(['can:exam.view', 'throttle:120,1'])->name('papers.comments.add');
+            Route::post('comments/{comment}/resolve', [PaperController::class, 'resolveComment'])->middleware(['can:exam.approve', 'throttle:120,1'])->whereNumber('comment')->name('papers.comments.resolve');
         });
     });
 });
