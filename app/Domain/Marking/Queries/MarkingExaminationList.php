@@ -17,7 +17,7 @@ final class MarkingExaminationList
      */
     public function forBranch(int $branchId): array
     {
-        $examIds = DB::table('cand_candidate_exams')->where('status', AttemptStatus::Submitted->value)
+        $examIds = DB::table('cand_candidate_exams')->where('cand_candidate_exams.status', AttemptStatus::Submitted->value)
             ->join('exm_examinations', 'exm_examinations.id', '=', 'cand_candidate_exams.examination_id')
             ->where('exm_examinations.branch_id', $branchId)
             ->distinct()->pluck('cand_candidate_exams.examination_id');
@@ -25,7 +25,7 @@ final class MarkingExaminationList
         $examinations = Examination::query()->whereIn('id', $examIds)->orderByDesc('id')->get();
 
         $submittedCounts = DB::table('cand_candidate_exams')->whereIn('examination_id', $examIds)
-            ->where('status', AttemptStatus::Submitted->value)
+            ->where('cand_candidate_exams.status', AttemptStatus::Submitted->value)
             ->selectRaw('examination_id, count(*) as total') // raw-sql-reviewed: no user input, plain aggregate
             ->groupBy('examination_id')->pluck('total', 'examination_id');
 
