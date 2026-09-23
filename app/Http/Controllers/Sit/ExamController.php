@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Sit;
 
+use App\Domain\Candidate\Actions\RegisterOrCheckDevice;
 use App\Domain\Delivery\Actions\EnforceDeadline;
 use App\Domain\Delivery\Actions\Heartbeat;
 use App\Domain\Delivery\Actions\RecordAnswer;
+use App\Domain\Delivery\Actions\RecordProctorEvent;
 use App\Domain\Delivery\Actions\SubmitAttempt;
 use App\Domain\Delivery\Enums\AttemptStatus;
+use App\Domain\Delivery\Enums\ProctorEventType;
 use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\CandidatePaperItem;
 use App\Domain\Delivery\Models\DeliverySession;
@@ -18,6 +21,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -83,6 +87,31 @@ class ExamController extends Controller
         );
 
         return response()->json(['ok' => true, 'sequence' => $input['sequence']]);
+    }
+
+    public function device(Request $request, Examination $exam, RegisterOrCheckDevice $check): JsonResponse
+    {
+        $input = $request->validate(['fingerprint' => ['required', 'string', 'max:255']]);
+
+        $attempt = $this->attemptFor($request, $exam);
+        $result = $check($attempt, $input['fingerprint']);
+
+        return response()->json(['status' => $result['status']]);
+    }
+
+    public function proctorEvent(Request $request, Examination $exam, RecordProctorEvent $record): JsonResponse
+    {
+        $input = $request->validate([
+            'type' => ['required', Rule::enum(ProctorEventType::class)],
+            'detail' => ['nullable', 'array'],
+        ]);
+
+        $attempt = $this->attemptFor($request, $exam);
+        $session = $this->sessionFor($request, $attempt);
+
+        $record($attempt, $session, ProctorEventType::from($input['type']), $input['detail'] ?? []);
+
+        return response()->json(['ok' => true]);
     }
 
     public function submit(Request $request, Examination $exam, SubmitAttempt $submit): RedirectResponse

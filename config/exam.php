@@ -52,6 +52,12 @@ return [
         // Sitting past the deadline by this much still autosaves and submits; after it, the attempt
         // is auto-submitted as it stands.
         'grace_seconds' => env('EXAM_GRACE_SECONDS', 120),
+        // A device (browser + machine) not seen before at a candidate's centre needs an
+        // invigilator's approval before the attempt may proceed. Set to false where centres cannot
+        // support that (e.g. candidates' own laptops).
+        'device_approval_required' => env('EXAM_DEVICE_APPROVAL_REQUIRED', true),
+        // How long proctoring evidence (events, decisions) is kept before it may be purged.
+        'proctor_evidence_retention_days' => env('EXAM_PROCTOR_RETENTION_DAYS', 365),
     ],
 
 ];

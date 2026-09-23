@@ -12,6 +12,7 @@ enum AttemptStatus: string
     case InProgress = 'in_progress';
     case Paused = 'paused';
     case Submitted = 'submitted';
+    case Voided = 'voided';
 
     public function label(): string
     {
@@ -20,6 +21,7 @@ enum AttemptStatus: string
             self::InProgress => 'In progress',
             self::Paused => 'Paused',
             self::Submitted => 'Submitted',
+            self::Voided => 'Voided',
         };
     }
 }

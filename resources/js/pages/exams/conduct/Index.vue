@@ -124,6 +124,20 @@ function clear(): void {
                                 data-test="checkin-link"
                                 >Check-in</Link
                             >
+                            ·
+                            <Link
+                                :href="conduct.monitor(row.id)"
+                                class="underline-offset-4 hover:underline"
+                                data-test="monitor-link"
+                                >Monitor</Link
+                            >
+                            ·
+                            <Link
+                                :href="conduct.proctoring(row.id)"
+                                class="underline-offset-4 hover:underline"
+                                data-test="proctoring-link"
+                                >Proctoring</Link
+                            >
                         </td>
                     </tr>
                     <tr v-if="examinations.data.length === 0">

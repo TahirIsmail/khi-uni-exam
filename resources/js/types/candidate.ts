@@ -23,10 +23,18 @@ export type CentreRow = {
     address: string | null;
     isActive: boolean;
     capacity: number;
+    devicesPendingCount: number;
     rooms: RoomRow[];
 };
 
 export type CentreAbilities = { manage: boolean };
+
+export type PendingDevice = {
+    id: number;
+    fingerprint: string;
+    firstSeenCandidate: string;
+    firstSeenAt: string;
+};
 
 export type CandidateRow = {
     id: number;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3';
-import { DoorOpen, Pencil, Plus } from '@lucide/vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { DoorOpen, Laptop, Pencil, Plus } from '@lucide/vue';
 import { ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import conduct from '@/routes/conduct';
-import type { CentreAbilities, CentreRow } from '@/types';
+import type { CentreAbilities, CentreRow, PendingDevice } from '@/types';
 
 defineOptions({
     layout: {
@@ -96,6 +96,41 @@ function saveRoom(centre: CentreRow, roomId: number): void {
             editingRoom.value = null;
         },
     });
+}
+
+// ---- centre device approval (step 19): folded away until there is something to approve --------
+const openDevices = ref<number | null>(null);
+const pendingDevices = ref<Record<number, PendingDevice[]>>({});
+async function toggleDevices(centre: CentreRow): Promise<void> {
+    if (openDevices.value === centre.id) {
+        openDevices.value = null;
+
+        return;
+    }
+    openDevices.value = centre.id;
+    const response = await fetch(conduct.centres.devices(centre.id).url, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+    });
+    const data = (await response.json()) as { devices: PendingDevice[] };
+    pendingDevices.value = { ...pendingDevices.value, [centre.id]: data.devices };
+}
+function approveDevice(centre: CentreRow, device: PendingDevice): void {
+    router.post(
+        conduct.centres.devices.approve([centre.id, device.id]).url,
+        {},
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                pendingDevices.value = {
+                    ...pendingDevices.value,
+                    [centre.id]: (pendingDevices.value[centre.id] ?? []).filter(
+                        (d) => d.id !== device.id,
+                    ),
+                };
+            },
+        },
+    );
 }
 </script>
 
@@ -243,6 +278,17 @@ function saveRoom(centre: CentreRow, roomId: number): void {
                             >{{ centre.capacity }} seats</span
                         >
                         <Button
+                            v-if="centre.devicesPendingCount > 0"
+                            size="sm"
+                            variant="outline"
+                            data-test="toggle-devices"
+                            @click="toggleDevices(centre)"
+                        >
+                            <Laptop class="size-3" />
+                            {{ centre.devicesPendingCount }} device(s)
+                            awaiting approval
+                        </Button>
+                        <Button
                             v-if="can.manage"
                             size="sm"
                             variant="ghost"
@@ -256,6 +302,41 @@ function saveRoom(centre: CentreRow, roomId: number): void {
             </header>
 
             <div class="grid gap-3 p-4">
+                <div
+                    v-if="openDevices === centre.id"
+                    class="grid gap-2 rounded-lg border p-3"
+                    data-test="devices-list"
+                >
+                    <p
+                        v-if="(pendingDevices[centre.id] ?? []).length === 0"
+                        class="text-muted-foreground text-sm"
+                    >
+                        Nothing waiting.
+                    </p>
+                    <div
+                        v-for="device in pendingDevices[centre.id] ?? []"
+                        :key="device.id"
+                        class="flex items-center justify-between gap-2 text-sm"
+                        :data-device="device.id"
+                    >
+                        <div>
+                            <span class="font-mono text-xs"
+                                >{{ device.fingerprint }}…</span
+                            >
+                            <span class="text-muted-foreground ml-2"
+                                >first seen with
+                                {{ device.firstSeenCandidate }}</span
+                            >
+                        </div>
+                        <Button
+                            size="sm"
+                            data-test="approve-device"
+                            @click="approveDevice(centre, device)"
+                            >Approve</Button
+                        >
+                    </div>
+                </div>
+
                 <table
                     v-if="centre.rooms.length > 0"
                     class="w-full text-left text-sm"

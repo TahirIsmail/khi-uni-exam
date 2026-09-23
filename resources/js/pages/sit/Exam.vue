@@ -3,10 +3,16 @@ import { Head, router } from '@inertiajs/vue3';
 import { Flag } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AnswerCapture from '@/components/sit/AnswerCapture.vue';
+import DeviceApprovalWait from '@/components/sit/DeviceApprovalWait.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import sit from '@/routes/sit';
-import type { AnswerPayload, AttemptItem, AttemptState } from '@/types';
+import type {
+    AnswerPayload,
+    AttemptItem,
+    AttemptState,
+    ProctorEventType,
+} from '@/types';
 
 const props = defineProps<{
     examination: { id: number; title: string; instructions: string | null };
@@ -213,9 +219,99 @@ async function heartbeat(): Promise<void> {
 }
 
 let tickTimer: number | undefined;
+
+// ---- centre device approval (ADR-0003's own lockdown step, exam phase step 19) ------------------
+const deviceWaiting = ref(false);
+function deviceFingerprint(): string {
+    return [
+        navigator.userAgent,
+        `${screen.width}x${screen.height}`,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ].join('|');
+}
+let deviceCheckTimer: number | undefined;
+async function checkDevice(): Promise<void> {
+    try {
+        const response = await post(sit.device(props.examination.id).url, {
+            fingerprint: deviceFingerprint(),
+        });
+        const data = (await response.json()) as { status: string };
+        deviceWaiting.value = data.status === 'pending';
+    } catch {
+        // Offline: try again on the next tick rather than blocking on a network error.
+    }
+    if (deviceWaiting.value) {
+        deviceCheckTimer = window.setTimeout(() => void checkDevice(), 5000);
+    } else {
+        startLockdown();
+    }
+}
+
+// ---- browser lockdown (exam phase step 19): fullscreen, and every attempt to leave it, copy, ----
+// paste, right-click, print or open developer tools is reported, never silently blocked alone.
+function reportProctorEvent(type: ProctorEventType, detail?: Record<string, unknown>): void {
+    void post(sit.proctorEvent(props.examination.id).url, { type, detail });
+}
+function onVisibilityChange(): void {
+    if (document.hidden) {
+        reportProctorEvent('tab_hidden');
+    }
+}
+function onFullscreenChange(): void {
+    if (document.fullscreenElement === null) {
+        reportProctorEvent('fullscreen_exited');
+    }
+}
+function onContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    reportProctorEvent('right_click');
+}
+function onCopy(event: ClipboardEvent): void {
+    event.preventDefault();
+    reportProctorEvent('copy_attempt');
+}
+function onPaste(event: ClipboardEvent): void {
+    event.preventDefault();
+    reportProctorEvent('paste_attempt');
+}
+function onBeforePrint(): void {
+    reportProctorEvent('print_attempt');
+}
+function onKeydown(event: KeyboardEvent): void {
+    const isDevtoolsShortcut =
+        event.key === 'F12' ||
+        ((event.ctrlKey || event.metaKey) &&
+            event.shiftKey &&
+            ['I', 'J', 'C'].includes(event.key.toUpperCase()));
+    if (isDevtoolsShortcut) {
+        event.preventDefault();
+        reportProctorEvent('devtools_opened');
+    }
+}
+function startLockdown(): void {
+    document.documentElement.requestFullscreen?.().catch(() => undefined);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('contextmenu', onContextMenu);
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('paste', onPaste);
+    document.addEventListener('keydown', onKeydown);
+    window.addEventListener('beforeprint', onBeforePrint);
+}
+function stopLockdown(): void {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
+    document.removeEventListener('contextmenu', onContextMenu);
+    document.removeEventListener('copy', onCopy);
+    document.removeEventListener('paste', onPaste);
+    document.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('beforeprint', onBeforePrint);
+}
+
 onMounted(() => {
     void flushQueue();
     void heartbeat();
+    void checkDevice();
     heartbeatTimer = window.setInterval(() => void heartbeat(), 20000);
     tickTimer = window.setInterval(() => {
         if (!paused.value) {
@@ -227,7 +323,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
     window.clearInterval(heartbeatTimer);
     window.clearInterval(tickTimer);
+    window.clearTimeout(deviceCheckTimer);
     window.removeEventListener('online', flushQueue);
+    stopLockdown();
 });
 
 // ---- submitting ---------------------------------------------------------------------------------
@@ -257,6 +355,11 @@ const answeredCount = computed(
 
 <template>
     <Head :title="examination.title" />
+
+    <DeviceApprovalWait
+        v-if="deviceWaiting"
+        :examination-title="examination.title"
+    />
 
     <div class="bg-background flex min-h-screen flex-col">
         <header

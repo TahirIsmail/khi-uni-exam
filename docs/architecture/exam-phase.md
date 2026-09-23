@@ -368,6 +368,48 @@ lockdown, centre device approval and proctoring events are step 19, not this one
 `candidate.session_ended_by_invigilator`, `candidate.room_paused`, `candidate.room_resumed`,
 `candidate.compensating_time_granted`.
 
+## What step 19 built: browser lockdown and proctoring events
+
+**Lockdown is enforced by the candidate's own browser**, not a separate client: on starting the
+exam it asks for fullscreen, and reports every attempt to leave it, switch tabs, copy, paste,
+right-click, print or open developer tools. Each report is a `dlv_proctor_event` — append-only,
+severity fixed by its type (`ProctorEventType::severity()`) so the same kind of event always
+weighs the same — never a silent block alone. A high-severity event (devtools, print, an
+unapproved device) is also written to the tamper-evident audit log.
+
+**Known simplification, disclosed rather than silently skipped**: this is JS-enforced lockdown,
+not a Safe Exam Browser (SEB) client integration — there is no browser-exam-key config file to
+generate or verify. A determined candidate with local admin rights could defeat JS-only lockdown;
+what is guaranteed is that every attempt is *recorded*, for the committee to act on, the same way
+the security table below has always promised evidence and a decision rather than an unbreakable
+wall.
+
+**Centre device approval.** A device (browser + machine) not seen before at a candidate's centre
+is recorded as `cand_devices` and blocks the attempt — the exam screen shows "waiting for your
+invigilator" — until an invigilator approves it from **Centres & rooms**. Approval is of the
+device, not the candidate: once approved it stays approved for whoever sits at it next, the same
+way a room, once set up, is reused across every examination held in it. Turned off with
+`EXAM_DEVICE_APPROVAL_REQUIRED=false` for centres that cannot support it (candidates' own
+laptops). Known simplification: approval does not pause the candidate's clock while they wait —
+the exam's deadline runs from sign-in, as it always has.
+
+**The committee's review** sits in the CMS's Exams menu as **Proctoring**, alongside Monitor: a
+list of attempts with any events, each opening onto that candidate's full timeline and a form to
+record one of four decisions — no action, a warning, flagged for review, or voiding the attempt.
+A decision is itself a permanent record (`dlv_proctor_decisions`), never changed once written, the
+same as the event it answers. Voiding is allowed even after the candidate has submitted, since a
+case is often only found once marking or a complaint follows — the attempt's own workflow now
+allows `submitted → voided` and `in_progress/paused → voided`, enforced by the database the same
+way every other step of it already is.
+
+**Who may do what**: `proctor.events.view` / `proctor_events` to see the case list and a
+candidate's timeline; `proctor.review.decide` / `proctor_decisions` to record a decision.
+Approving a device needs `centre.manage`, the same right that manages centres and rooms — seeing
+the pending list only needs `centre.view`.
+
+**Audited:** `proctor.event_recorded` (high severity only), `proctor.decision_recorded`,
+`device.seen`, `device.approved`.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -396,7 +438,7 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 16   | Moderation, finalising, locking and paper versions                     | kmu-assess | Done    |
 | 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Done    |
 | 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Done    |
-| 19   | Browser lockdown and proctoring events                                 | kmu-assess | Planned |
+| 19   | Browser lockdown and proctoring events                                 | kmu-assess | Done    |
 | 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Planned |
 | 21   | Results: pass mark, approval and publication                           | kmu-assess | Planned |
 | 22   | Post-hoc analysis, and the decision going back to the question bank    | kmu-assess | Planned |

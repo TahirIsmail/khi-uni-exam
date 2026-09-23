@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { Head, router, useForm } from '@inertiajs/vue3';
-import { Clock, Pause, Play, Power } from '@lucide/vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { AlertTriangle, Clock, Pause, Play, Power } from '@lucide/vue';
 import { ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import conduct from '@/routes/conduct';
-import type { AttemptStatus, ExaminationDetail, MonitorRow } from '@/types';
+import type {
+    AttemptStatus,
+    ExaminationDetail,
+    MonitorRow,
+    ProctorSeverity,
+} from '@/types';
 
 const props = defineProps<{
     examination: ExaminationDetail;
@@ -70,7 +75,14 @@ const statusStyle: Record<AttemptStatus, 'secondary' | 'outline' | 'default'> =
         in_progress: 'default',
         paused: 'outline',
         submitted: 'secondary',
+        voided: 'secondary',
     };
+
+const severityStyle: Record<ProctorSeverity, 'outline' | 'secondary' | 'destructive'> = {
+    low: 'outline',
+    medium: 'secondary',
+    high: 'destructive',
+};
 
 function minutes(seconds: number | null): string {
     if (seconds === null) {
@@ -101,6 +113,7 @@ function minutes(seconds: number | null): string {
                         <th class="px-3 py-2 font-medium">Status</th>
                         <th class="px-3 py-2 font-medium">Remaining</th>
                         <th class="px-3 py-2 font-medium">Computer</th>
+                        <th class="px-3 py-2 font-medium">Proctoring</th>
                         <th class="px-3 py-2 font-medium"></th>
                     </tr>
                 </thead>
@@ -214,6 +227,32 @@ function minutes(seconds: number | null): string {
                             >
                         </td>
                         <td class="px-3 py-2">
+                            <Link
+                                v-if="attempt.proctorEventCount > 0"
+                                :href="
+                                    conduct.proctoring.case([
+                                        examination.id,
+                                        attempt.id,
+                                    ])
+                                "
+                                class="inline-flex items-center gap-1"
+                                data-test="proctor-events"
+                            >
+                                <Badge
+                                    :variant="
+                                        severityStyle[
+                                            attempt.proctorHighestSeverity ??
+                                                'low'
+                                        ]
+                                    "
+                                >
+                                    <AlertTriangle class="size-3" />
+                                    {{ attempt.proctorEventCount }}
+                                </Badge>
+                            </Link>
+                            <span v-else class="text-muted-foreground">—</span>
+                        </td>
+                        <td class="px-3 py-2">
                             <Button
                                 v-if="attempt.hasOpenSession"
                                 size="sm"
@@ -227,7 +266,7 @@ function minutes(seconds: number | null): string {
                     </tr>
                     <tr v-if="attempts.length === 0">
                         <td
-                            colspan="6"
+                            colspan="7"
                             class="text-muted-foreground px-3 py-10 text-center"
                         >
                             Nobody has started this exam yet.

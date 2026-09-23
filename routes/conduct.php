@@ -5,6 +5,7 @@ use App\Http\Controllers\Exam\CentreController;
 use App\Http\Controllers\Exam\CheckInController;
 use App\Http\Controllers\Exam\ConductController;
 use App\Http\Controllers\Exam\MonitorController;
+use App\Http\Controllers\Exam\ProctorController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,6 +22,10 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::put('{centre}', [CentreController::class, 'update'])->whereNumber('centre')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.centres.update');
         Route::post('{centre}/rooms', [CentreController::class, 'storeRoom'])->whereNumber('centre')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.rooms.store');
         Route::put('{centre}/rooms/{room}', [CentreController::class, 'updateRoom'])->whereNumber('centre')->whereNumber('room')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.rooms.update');
+
+        // Centre device approval (step 19): a device not seen before at a centre needs one-time approval.
+        Route::get('{centre}/devices', [CentreController::class, 'devices'])->whereNumber('centre')->middleware('can:centre.view')->name('conduct.centres.devices');
+        Route::post('{centre}/devices/{device}/approve', [CentreController::class, 'approveDevice'])->whereNumber('centre')->whereNumber('device')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.centres.devices.approve');
     });
 
     Route::prefix('{exam}')->whereNumber('exam')->group(function () {
@@ -40,5 +45,10 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::post('monitor/attempts/{attempt}/add-time', [MonitorController::class, 'addTime'])->whereNumber('attempt')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.add-time');
         Route::post('monitor/rooms/{room}/pause', [MonitorController::class, 'pauseRoom'])->whereNumber('room')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.pause-room');
         Route::post('monitor/rooms/{room}/resume', [MonitorController::class, 'resumeRoom'])->whereNumber('room')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.resume-room');
+
+        // Reviewing proctoring cases and recording the committee's decision (step 19).
+        Route::get('proctoring', [ProctorController::class, 'index'])->middleware('can:proctor.events.view')->name('conduct.proctoring');
+        Route::get('proctoring/{attempt}', [ProctorController::class, 'show'])->whereNumber('attempt')->middleware('can:proctor.events.view')->name('conduct.proctoring.case');
+        Route::post('proctoring/{attempt}/decide', [ProctorController::class, 'decide'])->whereNumber('attempt')->middleware(['can:proctor.review.decide', 'throttle:30,1'])->name('conduct.proctoring.decide');
     });
 });

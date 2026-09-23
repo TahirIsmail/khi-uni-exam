@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers\Exam;
 
+use App\Domain\Candidate\Actions\ApproveDevice;
 use App\Domain\Candidate\Actions\SaveCentre;
 use App\Domain\Candidate\Actions\SaveRoom;
+use App\Domain\Candidate\Models\CandidateDevice;
 use App\Domain\Candidate\Models\Centre;
 use App\Domain\Candidate\Models\Room;
 use App\Domain\Candidate\Queries\CentreData;
 use App\Domain\Identity\ActiveBranch;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -70,6 +73,25 @@ class CentreController extends Controller
         $save($request->user('web'), $centre, $room, $input);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
+
+        return to_route('conduct.centres');
+    }
+
+    public function devices(Request $request, Centre $centre, CentreData $data): JsonResponse
+    {
+        $this->guard($request, $centre);
+
+        return response()->json(['devices' => $data->pendingDevices($centre->id)]);
+    }
+
+    public function approveDevice(Request $request, Centre $centre, CandidateDevice $device, ApproveDevice $approve): RedirectResponse
+    {
+        $this->guard($request, $centre);
+        abort_unless($device->centre_id === $centre->id, 404);
+
+        $approve($request->user('web'), $device);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Device approved.')]);
 
         return to_route('conduct.centres');
     }
