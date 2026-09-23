@@ -1,6 +1,6 @@
 # ADR-0003 — A candidate's exam survives a crash or network loss and resumes on another computer
 
-Status: Accepted (17 Sep 2026). Implemented in the exam delivery phase.
+Status: Accepted (17 Sep 2026). Implemented in step 18 (see exam-phase.md, "What step 18 built").
 
 ## Decision
 
@@ -38,16 +38,20 @@ on, and the remaining time calculated by the server.
   its unsent journal entries are still accepted when their sequence numbers are newer and they
   were made before the deadline.
 
-## Data (designed now, built in the delivery phase)
+## Data (as built in step 18)
 
-`cand_candidate_exams` (status, paper version, `last_item_position`), `cand_papers` /
-`cand_paper_items` (order and option order), `dlv_sessions` (token hash, device, heartbeat,
-end reason), `dlv_timers`, `dlv_answer_events` (append-only, unique per sequence number),
-`dlv_answers_current`, `dlv_submissions`.
+`cand_candidate_exams` (status, paper version, timer, `last_item_id`) — the timer (`deadline_at`,
+`paused_at`, `extra_seconds`) lives on this same row rather than a separate `dlv_timers` table, and
+it stands in for the `cand_papers` record too, since one candidate has exactly one paper per
+examination. `cand_paper_items` (order and option order). `dlv_sessions` (token hash, device,
+heartbeat, end reason). `dlv_answer_events` (append-only, unique per sequence number).
+`dlv_answers_current`. `dlv_submissions`.
 
-## Tests required in the delivery phase
+## Tests (done — see tests/Feature/Exam/DeliveryTest.php and tests/browser/exam_delivery.mjs)
 
-Pull the network for 10 s / 2 min; power off mid-exam and resume on another computer with all
-acknowledged answers and the correct remaining time; attempt a second login while the first
-computer is alive (blocked); invigilator-approved move; replayed autosave rejected; no resume after
-submission or deadline.
+Power off mid-exam and resume on another computer with all acknowledged answers, the flag and the
+correct remaining time; attempt a second sign-in while the first computer is alive (blocked); an
+invigilator ending the stuck session so the candidate may resume; a replayed autosave changing
+nothing and an older, out-of-order one never overwriting a newer answer; no resume after submission;
+the database itself refusing a change to an answer event, to a submitted attempt's answers, or to a
+candidate's paper once the attempt has started; a room pause freezing every deadline in it.

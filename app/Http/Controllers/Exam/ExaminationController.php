@@ -38,8 +38,8 @@ class ExaminationController extends ExamAreaController
         $branchId = $this->branchId($request);
 
         return Inertia::render('exams/Index', [
-            'examinations' => $list->paginate($request->user(), $branchId, $filters),
-            'stages' => $list->stageCounts($request->user(), $branchId),
+            'examinations' => $list->paginate($request->user('web'), $branchId, $filters),
+            'stages' => $list->stageCounts($request->user('web'), $branchId),
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'programme_id' => isset($filters['programme_id']) ? (int) $filters['programme_id'] : null,
@@ -48,9 +48,9 @@ class ExaminationController extends ExamAreaController
                 'course_id' => isset($filters['course_id']) ? (int) $filters['course_id'] : null,
                 'stage' => $filters['stage'] ?? '',
             ],
-            'canCreate' => $request->user()->can('exam.create'),
-            'waitingForMe' => $request->user()->can('exam.blueprint.approve') ? $list->awaitingApproval($request->user(), $branchId) : 0,
-            ...$data->choices($request->user(), $branchId),
+            'canCreate' => $request->user('web')->can('exam.create'),
+            'waitingForMe' => $request->user('web')->can('exam.blueprint.approve') ? $list->awaitingApproval($request->user('web'), $branchId) : 0,
+            ...$data->choices($request->user('web'), $branchId),
         ]);
     }
 
@@ -59,13 +59,13 @@ class ExaminationController extends ExamAreaController
         return Inertia::render('exams/ExamForm', [
             'examination' => null,
             'fixed' => false,
-            ...$data->choices($request->user(), $this->branchId($request)),
+            ...$data->choices($request->user('web'), $this->branchId($request)),
         ]);
     }
 
     public function store(SaveExaminationRequest $request, CreateExamination $create): RedirectResponse
     {
-        $examination = $create($request->user(), $this->branchId($request), $request->examinationInput());
+        $examination = $create($request->user('web'), $this->branchId($request), $request->examinationInput());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':ref is set up. Now plan its blueprint.', ['ref' => $examination->public_ref])]);
 
@@ -81,11 +81,11 @@ class ExaminationController extends ExamAreaController
 
         return Inertia::render('exams/Show', [
             'examination' => $data->detail($exam),
-            'can' => $data->abilities($request->user(), $exam, $blueprint),
+            'can' => $data->abilities($request->user('web'), $exam, $blueprint),
             'paper' => $papers->summary($exam),
             // Whom to ask, while it waits.
             'approvers' => $blueprint->status === BlueprintStatus::Submitted ? $approvers->names($exam, $blueprint) : [],
-            'canOpenPaper' => $request->user()->can('exam.view'),
+            'canOpenPaper' => $request->user('web')->can('exam.view'),
             ...$data->blueprint($exam, $blueprint, false),
         ]);
     }
@@ -95,20 +95,20 @@ class ExaminationController extends ExamAreaController
         $this->guard($request, $exam);
         $exam->load('blueprint');
         $blueprint = $exam->blueprint ?? abort(404);
-        abort_unless($data->abilities($request->user(), $exam, $blueprint)['edit'], 403, 'You cannot change examinations of this course.');
+        abort_unless($data->abilities($request->user('web'), $exam, $blueprint)['edit'], 403, 'You cannot change examinations of this course.');
 
         return Inertia::render('exams/ExamForm', [
             'examination' => $data->detail($exam),
             // Once the blueprint is submitted, what it was checked against is fixed.
             'fixed' => $blueprint->status !== BlueprintStatus::Draft,
-            ...$data->choices($request->user(), $this->branchId($request)),
+            ...$data->choices($request->user('web'), $this->branchId($request)),
         ]);
     }
 
     public function update(SaveExaminationRequest $request, Examination $exam, UpdateExamination $update): RedirectResponse
     {
         $this->guard($request, $exam);
-        $update($request->user(), $exam, $request->examinationInput());
+        $update($request->user('web'), $exam, $request->examinationInput());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 

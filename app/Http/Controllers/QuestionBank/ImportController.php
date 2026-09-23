@@ -52,9 +52,9 @@ class ImportController extends Controller
                     'uploadedBy' => $import->uploadedBy?->name,
                     'uploadedAt' => $import->created_at?->toIso8601String(),
                 ]),
-            'canCommit' => $request->user()->can('qbank.import.commit'),
+            'canCommit' => $request->user('web')->can('qbank.import.commit'),
             'columns' => SpreadsheetReader::COLUMNS,
-            ...$this->editorData->forCreate($request->user(), $branchId),
+            ...$this->editorData->forCreate($request->user('web'), $branchId),
         ]);
     }
 
@@ -73,7 +73,7 @@ class ImportController extends Controller
             'file.max' => 'The file must be 10 MB or smaller.',
         ]);
 
-        $import = $check($request->user(), $branchId, $request->file('file'), [
+        $import = $check($request->user('web'), $branchId, $request->file('file'), [
             'course_id' => isset($input['course_id']) ? (int) $input['course_id'] : null,
             'node_id' => isset($input['node_id']) ? (int) $input['node_id'] : null,
             'type_id' => isset($input['type_id']) ? (int) $input['type_id'] : null,
@@ -121,7 +121,7 @@ class ImportController extends Controller
                     'questionId' => $row->question_id,
                     'versionId' => $row->version_id,
                 ]),
-            'canCommit' => $request->user()->can('qbank.import.commit'),
+            'canCommit' => $request->user('web')->can('qbank.import.commit'),
         ]);
     }
 
@@ -129,7 +129,7 @@ class ImportController extends Controller
     {
         $this->authoriseImport($request, $import);
 
-        $result = $commit($request->user(), $import);
+        $result = $commit($request->user('web'), $import);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':created questions were added as drafts.', ['created' => $result->rows_committed])]);
 
@@ -146,7 +146,7 @@ class ImportController extends Controller
 
         $import->update(['status' => 'discarded']);
         Storage::disk($import->disk)->delete($import->path);
-        $audit->record('qbank.import.discarded', 'question_import', $import->id, null, ['file' => $import->original_name], null, $request->user(), $import->branch_id);
+        $audit->record('qbank.import.discarded', 'question_import', $import->id, null, ['file' => $import->original_name], null, $request->user('web'), $import->branch_id);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The file was discarded.')]);
 
@@ -200,6 +200,6 @@ class ImportController extends Controller
 
     private function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 }

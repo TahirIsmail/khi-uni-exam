@@ -17,11 +17,11 @@ class BranchController extends Controller
     {
         $input = $request->validate(['branch_id' => ['required', 'integer', 'min:1', 'max:4294967295']]);
 
-        if (! $activeBranch->switchTo($request->user(), (int) $input['branch_id'])) {
+        if (! $activeBranch->switchTo($request->user('web'), (int) $input['branch_id'])) {
             abort(403, 'You do not work in that campus.');
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Campus changed to :name.', ['name' => $activeBranch->name($request->user())])]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Campus changed to :name.', ['name' => $activeBranch->name($request->user('web'))])]);
 
         return back();
     }

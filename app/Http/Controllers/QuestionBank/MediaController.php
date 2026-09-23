@@ -22,7 +22,7 @@ class MediaController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $branchId = $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        $branchId = $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
 
         $input = $request->validate([
             'file' => [
@@ -57,7 +57,7 @@ class MediaController extends Controller
             'width' => is_array($size) ? (int) $size[0] : null,
             'height' => is_array($size) ? (int) $size[1] : null,
             'alt_text' => $input['alt_text'],
-            'uploaded_by' => $request->user()->id,
+            'uploaded_by' => $request->user('web')->id,
         ]);
 
         return response()->json($this->present($media), 201);
@@ -65,7 +65,7 @@ class MediaController extends Controller
 
     public function show(Request $request, Media $media): StreamedResponse
     {
-        abort_unless((int) $media->branch_id === $this->activeBranch->id($request->user()), 404);
+        abort_unless((int) $media->branch_id === $this->activeBranch->id($request->user('web')), 404);
         abort_unless(Storage::disk($media->disk)->exists($media->path), 404);
 
         // SecurityHeaders adds "no-store, private": exam pictures are not cached anywhere.

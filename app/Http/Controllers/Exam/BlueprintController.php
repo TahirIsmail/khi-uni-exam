@@ -23,7 +23,7 @@ class BlueprintController extends ExamAreaController
         $this->guard($request, $exam);
         $exam->load('blueprint');
         $blueprint = $exam->blueprint ?? abort(404);
-        $can = $data->abilities($request->user(), $exam, $blueprint);
+        $can = $data->abilities($request->user('web'), $exam, $blueprint);
 
         return Inertia::render('exams/Blueprint', [
             'examination' => $data->detail($exam),
@@ -35,7 +35,7 @@ class BlueprintController extends ExamAreaController
     public function update(SaveBlueprintRequest $request, Examination $exam, SaveBlueprint $save): RedirectResponse
     {
         $this->guard($request, $exam);
-        $save($request->user(), $exam, $request->blueprintInput());
+        $save($request->user('web'), $exam, $request->blueprintInput());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Blueprint saved.')]);
 
@@ -45,7 +45,7 @@ class BlueprintController extends ExamAreaController
     public function submit(Request $request, Examination $exam, BlueprintWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->submit($request->user(), $exam);
+        $workflow->submit($request->user('web'), $exam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Submitted for approval.')]);
 
@@ -55,7 +55,7 @@ class BlueprintController extends ExamAreaController
     public function approve(Request $request, Examination $exam, BlueprintWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->approve($request->user(), $exam);
+        $workflow->approve($request->user('web'), $exam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Blueprint approved. The paper can be built next.')]);
 
@@ -66,7 +66,7 @@ class BlueprintController extends ExamAreaController
     {
         $this->guard($request, $exam);
         $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
-        $workflow->returnToDraft($request->user(), $exam, (string) $input['reason']);
+        $workflow->returnToDraft($request->user('web'), $exam, (string) $input['reason']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent back with your reason.')]);
 
@@ -77,7 +77,7 @@ class BlueprintController extends ExamAreaController
     {
         $this->guard($request, $exam);
         $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
-        $workflow->reopen($request->user(), $exam, (string) $input['reason']);
+        $workflow->reopen($request->user('web'), $exam, (string) $input['reason']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The blueprint is back in preparation.')]);
 

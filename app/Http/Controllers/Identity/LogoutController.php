@@ -46,7 +46,7 @@ final class LogoutController extends Controller
 
     private function endSession(Request $request, AuditLogger $audit, string $startedIn): void
     {
-        $user = $request->user();
+        $user = $request->user('web');
         if ($user !== null) {
             $audit->record('identity.logout', 'user', $user->id, null, ['started_in' => $startedIn], null, $user);
         }

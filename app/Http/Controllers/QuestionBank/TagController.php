@@ -17,7 +17,7 @@ class TagController extends Controller
 {
     public function store(Request $request, ActiveBranch $activeBranch): JsonResponse
     {
-        $branchId = $activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        $branchId = $activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
         $input = $request->validate(['name' => ['required', 'string', 'max:60']]);
 
         $name = trim($input['name']);
@@ -25,7 +25,7 @@ class TagController extends Controller
 
         $tag = Tag::query()->firstOrCreate(
             ['branch_id' => $branchId, 'slug' => mb_substr($slug, 0, 60)],
-            ['name' => $name, 'created_by' => $request->user()->id],
+            ['name' => $name, 'created_by' => $request->user('web')->id],
         );
 
         return response()->json(['id' => $tag->id, 'name' => $tag->name], $tag->wasRecentlyCreated ? 201 : 200);

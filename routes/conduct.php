@@ -4,6 +4,7 @@ use App\Http\Controllers\Exam\CandidateController;
 use App\Http\Controllers\Exam\CentreController;
 use App\Http\Controllers\Exam\CheckInController;
 use App\Http\Controllers\Exam\ConductController;
+use App\Http\Controllers\Exam\MonitorController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -32,5 +33,12 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::get('checkin', [CheckInController::class, 'index'])->middleware('can:candidate.checkin')->name('conduct.checkin');
         Route::post('checkin/{candidate}', [CheckInController::class, 'checkIn'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.do');
         Route::post('checkin/{candidate}/reissue-pin', [CheckInController::class, 'reissuePin'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.reissue-pin');
+
+        // Watching an examination while it is sat, and the invigilator's own actions on it (step 18).
+        Route::get('monitor', [MonitorController::class, 'index'])->middleware('can:delivery.monitor')->name('conduct.monitor');
+        Route::post('monitor/attempts/{attempt}/end-session', [MonitorController::class, 'endSession'])->whereNumber('attempt')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.end-session');
+        Route::post('monitor/attempts/{attempt}/add-time', [MonitorController::class, 'addTime'])->whereNumber('attempt')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.add-time');
+        Route::post('monitor/rooms/{room}/pause', [MonitorController::class, 'pauseRoom'])->whereNumber('room')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.pause-room');
+        Route::post('monitor/rooms/{room}/resume', [MonitorController::class, 'resumeRoom'])->whereNumber('room')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.resume-room');
     });
 });

@@ -42,4 +42,16 @@ return [
         'require_questions_in_bank' => env('EXAM_REQUIRE_QUESTIONS_IN_BANK', true),
     ],
 
+    'delivery' => [
+        // A previous computer silent for this long is treated as crashed: the next sign-in resumes
+        // automatically. Silent for less, and it is treated as still working: the sign-in is blocked
+        // until an invigilator ends that session (ADR-0003).
+        'session_stale_after_seconds' => env('EXAM_SESSION_STALE_SECONDS', 60),
+        // How often the candidate's browser is expected to send a heartbeat.
+        'heartbeat_interval_seconds' => 20,
+        // Sitting past the deadline by this much still autosaves and submits; after it, the attempt
+        // is auto-submitted as it stands.
+        'grace_seconds' => env('EXAM_GRACE_SECONDS', 120),
+    ],
+
 ];

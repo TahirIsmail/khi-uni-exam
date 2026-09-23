@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Candidate\Models\Candidate;
 use App\Models\User;
 
 return [
@@ -42,6 +43,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // A candidate sitting an exam signs in with their candidate number and exam PIN
+        // (App\Domain\Delivery\Actions\StartOrResumeAttempt), never through kmu-cms SSO.
+        'candidate' => [
+            'driver' => 'session',
+            'provider' => 'candidates',
+        ],
     ],
 
     /*
@@ -65,6 +73,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'candidates' => [
+            'driver' => 'eloquent',
+            'model' => Candidate::class,
         ],
 
         // 'users' => [

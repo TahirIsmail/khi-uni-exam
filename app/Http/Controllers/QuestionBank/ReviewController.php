@@ -44,9 +44,9 @@ class ReviewController extends Controller
         $show = $input['show'] ?? 'open';
 
         return Inertia::render('qbank/ReviewQueue', [
-            'assignments' => $this->board->myQueue($request->user(), $this->branchId($request), $show),
+            'assignments' => $this->board->myQueue($request->user('web'), $this->branchId($request), $show),
             'show' => $show,
-            'canApprove' => $request->user()->can('qbank.question.approve'),
+            'canApprove' => $request->user('web')->can('qbank.question.approve'),
         ]);
     }
 
@@ -54,7 +54,7 @@ class ReviewController extends Controller
     public function show(Request $request, Question $question, QuestionVersion $version, VersionContentReader $reader, ReviewerPool $pool): Response
     {
         $this->authoriseVersion($request, $question, $version);
-        $user = $request->user();
+        $user = $request->user('web');
 
         $mayReview = $pool->allowsAny($user, $version);
         $mayApprove = $user->can('qbank.question.approve') && $version->author_id !== $user->id;
@@ -115,7 +115,7 @@ class ReviewController extends Controller
             ->whereKey((int) $input['assignment_id'])
             ->firstOrFail();
 
-        $review = $submit($request->user(), $assignment, new ReviewInput(
+        $review = $submit($request->user('web'), $assignment, new ReviewInput(
             outcome: (string) $input['outcome'],
             decisionId: isset($input['decision_id']) ? (int) $input['decision_id'] : null,
             comments: $input['comments'] ?? null,
@@ -142,7 +142,7 @@ class ReviewController extends Controller
         ]);
         $reviewer = User::query()->where('is_active', true)->findOrFail((int) $input['reviewer_id']);
 
-        $assign->to($request->user(), $version, $reviewer, ReviewStage::from($input['stage'] ?? 'subject'));
+        $assign->to($request->user('web'), $version, $reviewer, ReviewStage::from($input['stage'] ?? 'subject'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':name was asked to review it.', ['name' => $reviewer->name])]);
 
@@ -156,7 +156,7 @@ class ReviewController extends Controller
         abort_unless($assignment->version_id === $version->id, 404);
 
         $input = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:255']]);
-        $assign->cancel($request->user(), $assignment, (string) $input['reason']);
+        $assign->cancel($request->user('web'), $assignment, (string) $input['reason']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The review was taken back.')]);
 
@@ -167,7 +167,7 @@ class ReviewController extends Controller
     private function authoriseReviewer(Request $request): void
     {
         abort_unless(
-            $request->user()->can('qbank.review.perform') || $request->user()->can('qbank.review.academic'),
+            $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic'),
             403,
             'You do not review questions.',
         );
@@ -181,6 +181,6 @@ class ReviewController extends Controller
 
     private function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 }

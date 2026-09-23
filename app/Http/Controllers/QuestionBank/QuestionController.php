@@ -86,7 +86,7 @@ class QuestionController extends Controller
         $number = fn (string $key): ?int => isset($filters[$key]) ? (int) $filters[$key] : null;
 
         return Inertia::render('qbank/Questions', [
-            'questions' => $list->paginate($request->user(), $branchId, $filters),
+            'questions' => $list->paginate($request->user('web'), $branchId, $filters),
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'status' => $filters['status'] ?? '',
@@ -113,13 +113,13 @@ class QuestionController extends Controller
                 'duplicates' => $filters['duplicates'],
                 'archived' => $filters['archived'],
             ],
-            'statuses' => $list->statusGroupCounts($request->user(), $branchId),
-            'authors' => $list->authors($request->user(), $branchId),
-            ...$this->editorData->forSearch($request->user(), $branchId),
-            'canCreate' => $request->user()->can('qbank.question.create'),
-            'canExport' => $request->user()->can('qbank.question.export'),
-            'canEditOwn' => $request->user()->can('qbank.question.edit_own'),
-            'canEditAny' => $request->user()->can('qbank.question.edit_any'),
+            'statuses' => $list->statusGroupCounts($request->user('web'), $branchId),
+            'authors' => $list->authors($request->user('web'), $branchId),
+            ...$this->editorData->forSearch($request->user('web'), $branchId),
+            'canCreate' => $request->user('web')->can('qbank.question.create'),
+            'canExport' => $request->user('web')->can('qbank.question.export'),
+            'canEditOwn' => $request->user('web')->can('qbank.question.edit_own'),
+            'canEditAny' => $request->user('web')->can('qbank.question.edit_any'),
         ]);
     }
 
@@ -128,14 +128,14 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionEditor', [
             'version' => null,
             'reference' => null,
-            'can' => ['edit' => true, 'submit' => $request->user()->can('qbank.question.submit'), 'newVersion' => false],
-            ...$this->editorData->forCreate($request->user(), $this->branchId($request)),
+            'can' => ['edit' => true, 'submit' => $request->user('web')->can('qbank.question.submit'), 'newVersion' => false],
+            ...$this->editorData->forCreate($request->user('web'), $this->branchId($request)),
         ]);
     }
 
     public function store(SaveQuestionRequest $request, CreateQuestionDraft $create): RedirectResponse
     {
-        $version = $create($request->user(), $this->branchId($request), $request->content());
+        $version = $create($request->user('web'), $this->branchId($request), $request->content());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Draft saved as :ref.', ['ref' => $version->question->public_ref])]);
 
@@ -155,15 +155,15 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionEditor', [
             'version' => $this->editorData->version($version),
             'reference' => $question->public_ref,
-            'can' => $this->editorData->abilities($request->user(), $version),
-            ...$this->editorData->forCreate($request->user(), $this->branchId($request)),
+            'can' => $this->editorData->abilities($request->user('web'), $version),
+            ...$this->editorData->forCreate($request->user('web'), $this->branchId($request)),
         ]);
     }
 
     public function update(SaveQuestionRequest $request, Question $question, QuestionVersion $version, SaveQuestionDraft $save): RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
-        $save($request->user(), $version, $request->content());
+        $save($request->user('web'), $version, $request->content());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Draft saved.')]);
 
@@ -175,7 +175,7 @@ class QuestionController extends Controller
         $this->authoriseVersion($request, $question, $version);
         $input = $request->validate(['note' => ['nullable', 'string', 'max:500']]);
 
-        $submit($request->user(), $version, $input['note'] ?? null);
+        $submit($request->user('web'), $version, $input['note'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent for review.')]);
 
@@ -186,7 +186,7 @@ class QuestionController extends Controller
     {
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
 
-        $version = $start($request->user(), $question);
+        $version = $start($request->user('web'), $question);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Version :no started as a draft.', ['no' => $version->version_no])]);
 
@@ -204,7 +204,7 @@ class QuestionController extends Controller
         $filters['duplicates'] = $request->boolean('duplicates');
         $filters['archived'] = $request->boolean('archived');
 
-        return $export->stream($request->user(), $this->branchId($request), $filters);
+        return $export->stream($request->user('web'), $this->branchId($request), $filters);
     }
 
     /** Live checks while the author types: the same rules that submission applies. */
@@ -219,7 +219,7 @@ class QuestionController extends Controller
         $input = $request->validate(['course_id' => ['required', 'integer', 'min:1', 'max:4294967295']]);
         $courseId = (int) $input['course_id'];
 
-        $allowed = collect($this->editorData->courses($request->user(), $this->branchId($request)))->contains('id', $courseId);
+        $allowed = collect($this->editorData->courses($request->user('web'), $this->branchId($request)))->contains('id', $courseId);
         abort_unless($allowed, 403, 'That course is not in your campus or exam access.');
 
         return response()->json(['nodes' => $this->editorData->curriculum($courseId)]);
@@ -232,7 +232,7 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionPreview', [
             'reference' => $question->public_ref,
             'version' => $this->editorData->version($version),
-            'can' => $this->editorData->abilities($request->user(), $version),
+            'can' => $this->editorData->abilities($request->user('web'), $version),
             'checks' => $validator->check($reader->read($version)),
             ...$this->editorData->lookups(),
         ]);
@@ -242,13 +242,13 @@ class QuestionController extends Controller
     public function history(Request $request, Question $question, QuestionHistory $history): Response
     {
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
-        abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
+        abort_unless($this->editorData->allowsQuestion($request->user('web'), 'qbank.question.view', $question), 403);
 
         $latest = $question->versions()->orderByDesc('version_no')->firstOrFail();
 
         return Inertia::render('qbank/QuestionHistory', [
-            ...$history->for($question, $request->user()),
-            'can' => $this->editorData->abilities($request->user(), $latest),
+            ...$history->for($question, $request->user('web')),
+            'can' => $this->editorData->abilities($request->user('web'), $latest),
         ]);
     }
 
@@ -256,7 +256,7 @@ class QuestionController extends Controller
     public function diff(Request $request, Question $question, VersionDiff $diff): Response
     {
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
-        abort_unless($this->editorData->allowsQuestion($request->user(), 'qbank.question.view', $question), 403);
+        abort_unless($this->editorData->allowsQuestion($request->user('web'), 'qbank.question.view', $question), 403);
 
         $input = $request->validate([
             'from' => ['required', 'integer', 'min:1'],
@@ -284,12 +284,12 @@ class QuestionController extends Controller
         abort_unless((int) $version->question_id === $question->id, 404);
         abort_unless((int) $question->branch_id === $this->branchId($request), 404);
 
-        $permission = $view ? 'qbank.question.view' : ($version->author_id === $request->user()->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any');
-        abort_unless($this->editorData->allows($request->user(), $permission, $version), 403);
+        $permission = $view ? 'qbank.question.view' : ($version->author_id === $request->user('web')->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any');
+        abort_unless($this->editorData->allows($request->user('web'), $permission, $version), 403);
     }
 
     private function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 }

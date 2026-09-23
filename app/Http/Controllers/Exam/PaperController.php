@@ -44,14 +44,14 @@ class PaperController extends ExamAreaController
 
         return Inertia::render('exams/Paper', [
             'examination' => $examinations->detail($exam),
-            ...$data->screen($request->user(), $exam, $paper),
+            ...$data->screen($request->user('web'), $exam, $paper),
         ]);
     }
 
     public function store(Request $request, Examination $exam, CreatePaper $create): RedirectResponse
     {
         $this->guard($request, $exam);
-        $create($request->user(), $exam);
+        $create($request->user('web'), $exam);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The paper is started. Fill it from the question bank, or choose the questions yourself.')]);
 
@@ -66,7 +66,7 @@ class PaperController extends ExamAreaController
             'shuffle_options' => ['required', 'boolean'],
         ]);
 
-        $update($request->user(), $exam, $this->paperOrFail($exam), (bool) $input['shuffle_questions'], (bool) $input['shuffle_options']);
+        $update($request->user('web'), $exam, $this->paperOrFail($exam), (bool) $input['shuffle_questions'], (bool) $input['shuffle_options']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
@@ -79,7 +79,7 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $input = $request->validate(['mode' => ['required', Rule::in(['gaps', 'redraw'])]]);
 
-        $result = $fill($request->user(), $exam, $this->paperOrFail($exam), (string) $input['mode']);
+        $result = $fill($request->user('web'), $exam, $this->paperOrFail($exam), (string) $input['mode']);
 
         Inertia::flash('toast', [
             'type' => $result['missing'] > 0 ? 'warning' : 'success',
@@ -95,12 +95,12 @@ class PaperController extends ExamAreaController
     public function candidates(Request $request, Examination $exam, PaperItems $items, PaperGuard $guard, PaperData $data): JsonResponse
     {
         $this->guard($request, $exam);
-        $guard->authorise($request->user(), $exam);
+        $guard->authorise($request->user('web'), $exam);
         $input = $request->validate($this->slotRules() + ['search' => ['nullable', 'string', 'max:100']]);
 
         $slot = $items->slot($exam, (int) $input['node_id'], (int) $input['question_type_id'], (float) $input['marks_each'], $this->section($input));
 
-        return response()->json(['candidates' => $data->candidates($request->user(), $exam, $this->paperOrFail($exam), $slot, (string) ($input['search'] ?? ''))]);
+        return response()->json(['candidates' => $data->candidates($request->user('web'), $exam, $this->paperOrFail($exam), $slot, (string) ($input['search'] ?? ''))]);
     }
 
     public function addItem(Request $request, Examination $exam, ChangePaperItems $change): RedirectResponse
@@ -108,7 +108,7 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $input = $request->validate($this->slotRules() + ['question_id' => ['required', 'integer', 'min:1']]);
 
-        $change->add($request->user(), $exam, $this->paperOrFail($exam), (int) $input['node_id'], (int) $input['question_type_id'], (float) $input['marks_each'], $this->section($input), (int) $input['question_id']);
+        $change->add($request->user('web'), $exam, $this->paperOrFail($exam), (int) $input['node_id'], (int) $input['question_type_id'], (float) $input['marks_each'], $this->section($input), (int) $input['question_id']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Question added.')]);
 
@@ -120,7 +120,7 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $input = $request->validate(['question_id' => ['required', 'integer', 'min:1']]);
 
-        $change->swap($request->user(), $exam, $this->paperOrFail($exam), $item, (int) $input['question_id']);
+        $change->swap($request->user('web'), $exam, $this->paperOrFail($exam), $item, (int) $input['question_id']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Question swapped.')]);
 
@@ -130,7 +130,7 @@ class PaperController extends ExamAreaController
     public function removeItem(Request $request, Examination $exam, PaperItem $item, ChangePaperItems $change): RedirectResponse
     {
         $this->guard($request, $exam);
-        $change->remove($request->user(), $exam, $this->paperOrFail($exam), $item);
+        $change->remove($request->user('web'), $exam, $this->paperOrFail($exam), $item);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Question taken out.')]);
 
@@ -142,7 +142,7 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $input = $request->validate(['locked' => ['required', 'boolean']]);
 
-        $change->lock($request->user(), $exam, $this->paperOrFail($exam), $item, (bool) $input['locked']);
+        $change->lock($request->user('web'), $exam, $this->paperOrFail($exam), $item, (bool) $input['locked']);
 
         return back();
     }
@@ -150,7 +150,7 @@ class PaperController extends ExamAreaController
     public function submit(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->submit($request->user(), $exam, $this->paperOrFail($exam));
+        $workflow->submit($request->user('web'), $exam, $this->paperOrFail($exam));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Submitted for moderation.')]);
 
@@ -160,7 +160,7 @@ class PaperController extends ExamAreaController
     public function approve(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->approve($request->user(), $exam, $this->paperOrFail($exam));
+        $workflow->approve($request->user('web'), $exam, $this->paperOrFail($exam));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Approved. It can now be finalised.')]);
 
@@ -171,7 +171,7 @@ class PaperController extends ExamAreaController
     {
         $this->guard($request, $exam);
         $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
-        $workflow->returnToDraft($request->user(), $exam, $this->paperOrFail($exam), (string) $input['reason']);
+        $workflow->returnToDraft($request->user('web'), $exam, $this->paperOrFail($exam), (string) $input['reason']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent back with your reason.')]);
 
@@ -181,7 +181,7 @@ class PaperController extends ExamAreaController
     public function finalise(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->finalise($request->user(), $exam, $this->paperOrFail($exam));
+        $workflow->finalise($request->user('web'), $exam, $this->paperOrFail($exam));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Finalised and locked.')]);
 
@@ -191,7 +191,7 @@ class PaperController extends ExamAreaController
     public function publish(Request $request, Examination $exam, PaperWorkflow $workflow): RedirectResponse
     {
         $this->guard($request, $exam);
-        $workflow->publish($request->user(), $exam, $this->paperOrFail($exam));
+        $workflow->publish($request->user('web'), $exam, $this->paperOrFail($exam));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Published, ready for delivery.')]);
 
@@ -202,7 +202,7 @@ class PaperController extends ExamAreaController
     public function newVersion(Request $request, Examination $exam, StartNewPaperVersion $start): RedirectResponse
     {
         $this->guard($request, $exam);
-        $start($request->user(), $exam, $this->paperOrFail($exam));
+        $start($request->user('web'), $exam, $this->paperOrFail($exam));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('A new version is ready to change.')]);
 
@@ -218,7 +218,7 @@ class PaperController extends ExamAreaController
         ]);
         $item = isset($input['item_id']) ? PaperItem::query()->whereKey($input['item_id'])->firstOrFail() : null;
 
-        $comments->add($request->user(), $exam, $this->paperOrFail($exam), $item, (string) $input['body']);
+        $comments->add($request->user('web'), $exam, $this->paperOrFail($exam), $item, (string) $input['body']);
 
         return back();
     }
@@ -228,7 +228,7 @@ class PaperController extends ExamAreaController
         $this->guard($request, $exam);
         $input = $request->validate(['resolved' => ['required', 'boolean']]);
 
-        $comments->resolve($request->user(), $exam, $this->paperOrFail($exam), $comment, (bool) $input['resolved']);
+        $comments->resolve($request->user('web'), $exam, $this->paperOrFail($exam), $comment, (bool) $input['resolved']);
 
         return back();
     }
@@ -237,7 +237,7 @@ class PaperController extends ExamAreaController
     private function mustSeePapers(Request $request, Examination $exam): void
     {
         abort_unless(
-            $this->access->allows($request->user(), 'exam.view', new ScopeTarget($exam->branch_id, $exam->programme_id, $exam->professional_id, $exam->course_id)),
+            $this->access->allows($request->user('web'), 'exam.view', new ScopeTarget($exam->branch_id, $exam->programme_id, $exam->professional_id, $exam->course_id)),
             403,
             'You cannot open the papers of this course.',
         );

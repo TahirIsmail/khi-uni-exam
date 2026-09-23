@@ -34,13 +34,13 @@ class CandidateController extends Controller
     public function index(Request $request, Examination $exam, ExaminationData $examinations, CandidateData $candidates, CentreData $centres): Response
     {
         $this->guard($request, $exam);
-        abort_unless($request->user()->can('candidate.view'), 403, 'You cannot see this course\'s candidates.');
+        abort_unless($request->user('web')->can('candidate.view'), 403, 'You cannot see this course\'s candidates.');
 
         return Inertia::render('exams/conduct/Candidates', [
             'examination' => $examinations->detail($exam),
             'candidates' => $candidates->list($exam),
             'summary' => $candidates->summary($exam),
-            'can' => $candidates->abilities($request->user(), $exam),
+            'can' => $candidates->abilities($request->user('web'), $exam),
             'centres' => $centres->choices($exam->branch_id),
         ]);
     }
@@ -50,7 +50,7 @@ class CandidateController extends Controller
         $this->guard($request, $exam);
         $input = $request->validate(['file' => ['required', 'file', 'max:5120', 'mimes:csv,txt']]);
 
-        $result = $import($request->user(), $exam, $input['file']);
+        $result = $import($request->user('web'), $exam, $input['file']);
 
         $message = $result['imported'].' candidate(s) added.'.($result['skipped'] > 0 ? " {$result['skipped']} row(s) were skipped — see below." : '');
         Inertia::flash('toast', ['type' => $result['skipped'] > 0 ? 'info' : 'success', 'message' => $message]);
@@ -65,7 +65,7 @@ class CandidateController extends Controller
         $input = $request->validate(['centre_id' => ['required', 'integer', 'min:1']]);
         $centre = Centre::query()->findOrFail((int) $input['centre_id']);
 
-        $result = $allocate->auto($request->user(), $exam, $centre);
+        $result = $allocate->auto($request->user('web'), $exam, $centre);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $result['allocated'].' candidate(s) allocated.'.($result['unseated'] > 0 ? ' '.$result['unseated'].' could not be seated — add more room capacity.' : '')]);
 
@@ -81,7 +81,7 @@ class CandidateController extends Controller
         ]);
         $room = Room::query()->findOrFail((int) $input['room_id']);
 
-        $allocate->one($request->user(), $exam, $candidate, $room, $input['seat_no'] ?? null);
+        $allocate->one($request->user('web'), $exam, $candidate, $room, $input['seat_no'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Allocated.')]);
 
@@ -96,7 +96,7 @@ class CandidateController extends Controller
             'reason' => ['nullable', 'string', 'max:300'],
         ]);
 
-        $grant($request->user(), $exam, $candidate, $input['minutes'] ?? null, $input['reason'] ?? null);
+        $grant($request->user('web'), $exam, $candidate, $input['minutes'] ?? null, $input['reason'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
@@ -105,7 +105,7 @@ class CandidateController extends Controller
 
     protected function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 
     /** An examination of another campus does not exist for this user. */

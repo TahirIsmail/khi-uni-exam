@@ -22,7 +22,7 @@ abstract class ExamAreaController extends Controller
 
     protected function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 
     /** An examination of another campus does not exist for this user; one they may not see is forbidden. */
@@ -31,7 +31,7 @@ abstract class ExamAreaController extends Controller
         abort_unless($examination->branch_id === $this->branchId($request), 404);
 
         $target = new ScopeTarget($examination->branch_id, $examination->programme_id, $examination->professional_id, $examination->course_id);
-        $user = $request->user();
+        $user = $request->user('web');
         abort_unless(
             $this->access->allows($user, 'exam.view', $target) || $this->access->allows($user, 'exam.blueprint.view', $target),
             403,

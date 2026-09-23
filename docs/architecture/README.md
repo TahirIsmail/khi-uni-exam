@@ -378,8 +378,8 @@ only. The tests that write no questions still clean up after themselves in kmu-c
 | 13   | Acceptance testing of the increment                                                                       | both       | Done                            |
 
 Steps 14 onwards are the examination phase: the examination and its blueprint, building a paper from
-the question bank, moderating, finalising, locking and versioning it, and candidates, centres, rooms,
-allocation and check-in are built — see [exam-phase.md](exam-phase.md). Its permissions, campus rules
-and audit log were built in step 7, and ADR-0003 settled how a candidate's exam survives a crash, so
-nothing built in the first increment has
+the question bank, moderating, finalising, locking and versioning it, candidates, centres, rooms,
+allocation and check-in, and sitting the exam itself — including resuming on another computer
+(ADR-0003) — are built — see [exam-phase.md](exam-phase.md). Its permissions, campus rules and audit
+log were built in step 7, so nothing built in the first increment has
 to change.

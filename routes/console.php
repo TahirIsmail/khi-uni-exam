@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('sso:purge-tickets')->daily();
 Schedule::command('audit:verify')->dailyAt('02:30');
+Schedule::command('exam:close-expired-attempts')->everyMinute();

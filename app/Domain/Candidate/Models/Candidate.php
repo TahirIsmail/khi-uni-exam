@@ -5,8 +5,9 @@ namespace App\Domain\Candidate\Models;
 use App\Domain\Candidate\Enums\CandidateStatus;
 use App\Domain\Exam\Models\Examination;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Carbon;
 
 /**
@@ -48,7 +49,8 @@ use Illuminate\Support\Carbon;
     'pin_hash', 'pin_issued_by', 'pin_issued_at', 'checked_in_by', 'checked_in_at',
     'created_by', 'updated_by',
 ])]
-final class Candidate extends Model
+#[Hidden(['pin_hash'])]
+final class Candidate extends Authenticatable
 {
     protected $table = 'cand_candidates';
 
@@ -61,6 +63,29 @@ final class Candidate extends Model
             'pin_issued_at' => 'datetime',
             'checked_in_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Sitting the exam authenticates a candidate by their PIN and candidate number, not through
+     * kmu-cms SSO (App\Domain\Delivery\Actions\StartOrResumeAttempt) — this is only what the
+     * `Authenticatable` contract requires of the model; nothing calls Auth::attempt() with it.
+     */
+    public function getAuthPassword(): string
+    {
+        return (string) $this->pin_hash;
+    }
+
+    /** There is no "remember me" for sitting an exam, and no such column on this table. */
+    public function getRememberToken(): ?string
+    {
+        return null;
+    }
+
+    public function setRememberToken($value): void {}
+
+    public function getRememberTokenName(): ?string
+    {
+        return null;
     }
 
     /**

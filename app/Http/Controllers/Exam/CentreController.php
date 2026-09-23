@@ -27,14 +27,14 @@ class CentreController extends Controller
 
         return Inertia::render('exams/conduct/Centres', [
             'centres' => $data->list($branchId),
-            'can' => $data->abilities($request->user()),
+            'can' => $data->abilities($request->user('web')),
         ]);
     }
 
     public function store(Request $request, SaveCentre $save): RedirectResponse
     {
         $input = $this->validated($request);
-        $save($request->user(), $this->branchId($request), null, $input);
+        $save($request->user('web'), $this->branchId($request), null, $input);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Centre added.')]);
 
@@ -45,7 +45,7 @@ class CentreController extends Controller
     {
         $this->guard($request, $centre);
         $input = $this->validated($request);
-        $save($request->user(), $this->branchId($request), $centre, $input);
+        $save($request->user('web'), $this->branchId($request), $centre, $input);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
@@ -56,7 +56,7 @@ class CentreController extends Controller
     {
         $this->guard($request, $centre);
         $input = $this->validatedRoom($request);
-        $save($request->user(), $centre, null, $input);
+        $save($request->user('web'), $centre, null, $input);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Room added.')]);
 
@@ -67,7 +67,7 @@ class CentreController extends Controller
     {
         $this->guard($request, $centre);
         $input = $this->validatedRoom($request);
-        $save($request->user(), $centre, $room, $input);
+        $save($request->user('web'), $centre, $room, $input);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved.')]);
 
@@ -76,7 +76,7 @@ class CentreController extends Controller
 
     private function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 
     /** A centre of another campus does not exist for this user. */

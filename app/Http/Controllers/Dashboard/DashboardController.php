@@ -21,7 +21,7 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request, ActiveBranch $activeBranch, QuestionList $list, QuestionEditorData $editorData): Response
     {
-        $user = $request->user();
+        $user = $request->user('web');
         $branchId = $activeBranch->id($user);
         $canSee = $branchId !== null && $user->can('qbank.question.view');
 

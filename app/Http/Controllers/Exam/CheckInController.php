@@ -25,7 +25,7 @@ class CheckInController extends Controller
     public function index(Request $request, Examination $exam, ExaminationData $examinations): Response
     {
         $this->guard($request, $exam);
-        abort_unless($request->user()->can('candidate.checkin'), 403, 'You cannot check candidates in for this course.');
+        abort_unless($request->user('web')->can('candidate.checkin'), 403, 'You cannot check candidates in for this course.');
 
         $search = trim((string) $request->query('search', ''));
         $found = $search === '' ? [] : Candidate::query()->where('examination_id', $exam->id)
@@ -54,7 +54,7 @@ class CheckInController extends Controller
     public function checkIn(Request $request, Examination $exam, Candidate $candidate, CheckInCandidate $checkIn): RedirectResponse
     {
         $this->guard($request, $exam);
-        $result = $checkIn($request->user(), $exam, $candidate);
+        $result = $checkIn($request->user('web'), $exam, $candidate);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Checked in.')]);
         Inertia::flash('pin', ['candidateNo' => $result['candidate']->candidate_no, 'pin' => $result['pin']]);
@@ -65,7 +65,7 @@ class CheckInController extends Controller
     public function reissuePin(Request $request, Examination $exam, Candidate $candidate, ReissuePin $reissue): RedirectResponse
     {
         $this->guard($request, $exam);
-        $result = $reissue($request->user(), $exam, $candidate);
+        $result = $reissue($request->user('web'), $exam, $candidate);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('A new PIN was issued.')]);
         Inertia::flash('pin', ['candidateNo' => $result['candidate']->candidate_no, 'pin' => $result['pin']]);
@@ -75,7 +75,7 @@ class CheckInController extends Controller
 
     protected function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 
     protected function guard(Request $request, Examination $examination): void

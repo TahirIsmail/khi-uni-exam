@@ -314,6 +314,60 @@ blueprint named for it in step 7.
 `candidate.pin_reissued`, `candidate.extra_time_granted`, `centre.created`, `centre.updated`,
 `room.created`, `room.updated`.
 
+## What step 18 built: sitting the exam, and resuming it on another computer
+
+**A candidate is not a kmu-cms account.** They sign in on the examination's own page with their
+candidate number and exam PIN (a separate `candidate` guard, never the `web` guard staff use), and
+reach only `/sit/...` — never the CMS sidebar, never anything else this module holds.
+
+**The attempt is the record, not the screen.** Signing in for the first time assigns the published
+paper's items in this candidate's own order, with their own option order if the paper shuffles them
+(`cand_paper_items`) — fixed from that moment on, the database's own promise, not just the
+application's. The deadline is the examination's duration plus whatever extra time (step 17) they
+were granted, computed once and stored, not recalculated from a client clock.
+
+**One computer at a time (ADR-0003).** Each sign-in opens a `dlv_sessions` row with a heartbeat, sent
+by the candidate's browser every 20 seconds:
+
+- A previous session silent for a minute or more (`exam.delivery.session_stale_after_seconds`) is
+  treated as crashed: the new sign-in ends it and resumes automatically, and the swap is audited
+  (`candidate.device_changed`) — not a misconduct finding, a record.
+- A previous session still sending heartbeats blocks the new sign-in outright. There is no separate
+  request-and-approve flow for the invigilator: from the monitor screen they end the stuck session
+  directly (`delivery.session_control`), and the candidate's very next attempt finds nothing in its
+  way.
+- Once submitted, no sign-in reaches the exam again — only the read-only submitted screen.
+
+**Every answer is a sequence-numbered event (ADR-0003).** The candidate's browser keeps a small local
+journal (in `localStorage`, not just in memory) of every change not yet acknowledged, and resends it
+until the server confirms — on a flaky connection, after a reload, or after the crash a resume on
+another computer follows. The server records each one append-only (`dlv_answer_events`, the database
+itself refusing any update or delete to it) and keeps the current answer per item alongside it
+(`dlv_answers_current`) so a resume reads one row per item instead of replaying history. A sequence
+number sent twice does nothing the second time; an older one never overwrites a newer answer that
+already arrived. **The answer key never reaches the browser**: every column the candidate's screen is
+given is content meant to be seen — marking (step 20) reads the key server-side, from the paper's own
+items.
+
+**The deadline is enforced on the server, on the next request that touches it** — a heartbeat or an
+answer — not by a scheduler: an attempt nobody ever calls back into past its deadline and grace period
+(`exam.delivery.grace_seconds`) is auto-submitted the moment anything does. `php artisan
+exam:close-expired-attempts` is the safety net for one nobody calls back into at all.
+
+**A room-wide outage is handled by pausing the room** (`delivery.session_control`), which freezes
+every running deadline in it at once and adds the outage back when it resumes — rather than each
+invigilator working out compensating time by hand afterwards. A single candidate's own outage is
+compensating time added to their attempt alone, with a reason, always audited.
+
+**Known simplification, disclosed rather than silently skipped:** sections with their own time
+(exam-phase.md's "Section A multiple choice, Section B short answer") are planned at the blueprint
+but not separately timed at delivery in this pass — one deadline covers the whole paper. Browser
+lockdown, centre device approval and proctoring events are step 19, not this one.
+
+**Audited:** `candidate.exam_started`, `candidate.device_changed`, `candidate.exam_submitted`,
+`candidate.session_ended_by_invigilator`, `candidate.room_paused`, `candidate.room_resumed`,
+`candidate.compensating_time_granted`.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -341,7 +395,7 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 15   | The examination, and building a paper from the QBank                   | kmu-assess | Done    |
 | 16   | Moderation, finalising, locking and paper versions                     | kmu-assess | Done    |
 | 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Done    |
-| 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Planned |
+| 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Done    |
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Planned |
 | 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Planned |
 | 21   | Results: pass mark, approval and publication                           | kmu-assess | Planned |

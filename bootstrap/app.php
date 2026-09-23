@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\EnsureDeliverySessionActive;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequireMfa;
 use App\Http\Middleware\SecurityHeaders;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -29,8 +31,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // The CMS sign-on ticket (signed, 60 s, single use) replaces the CSRF token on this route only.
         $middleware->validateCsrfTokens(except: ['sso/cms']);
 
-        // There is no login screen here: guests sign in to kmu-cms and come back through "Question Bank & Exams".
-        $middleware->redirectGuestsTo(fn (): string => rtrim((string) config('services.kmu_cms.url'), '/').'/site/login');
+        // There is no login screen here: staff guests sign in to kmu-cms and come back through
+        // "Question Bank & Exams". A candidate sitting an exam signs in on the exam's own page instead.
+        $middleware->redirectGuestsTo(function (Request $request): string {
+            $name = $request->route()?->getName();
+            if (is_string($name) && str_starts_with($name, 'sit.')) {
+                $exam = $request->route('exam');
+
+                return route('sit.login', $exam instanceof Model ? $exam->getKey() : $exam);
+            }
+
+            return rtrim((string) config('services.kmu_cms.url'), '/').'/site/login';
+        });
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
@@ -41,6 +53,8 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        $middleware->alias(['delivery.session' => EnsureDeliverySessionActive::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

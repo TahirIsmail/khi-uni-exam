@@ -20,12 +20,12 @@ class ConductController extends Controller
     public function index(Request $request, ExaminationList $list): Response
     {
         $filters = $request->validate(['search' => ['nullable', 'string', 'max:100'], 'page' => ['nullable', 'integer', 'min:1']]);
-        $branchId = $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        $branchId = $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
 
         return Inertia::render('exams/conduct/Index', [
-            'examinations' => $list->paginate($request->user(), $branchId, $filters),
+            'examinations' => $list->paginate($request->user('web'), $branchId, $filters),
             'filters' => ['search' => $filters['search'] ?? ''],
-            'canManageCentres' => $request->user()->can('centre.manage') || $request->user()->can('centre.view'),
+            'canManageCentres' => $request->user('web')->can('centre.manage') || $request->user('web')->can('centre.view'),
         ]);
     }
 }

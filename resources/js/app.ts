@@ -12,6 +12,10 @@ void createInertiaApp({
         switch (true) {
             case name === 'Welcome':
                 return null;
+            // A candidate sitting an exam never sees the staff sidebar: these pages are their own,
+            // full-screen chrome.
+            case name.startsWith('sit/'):
+                return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
             default:

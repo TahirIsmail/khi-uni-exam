@@ -35,7 +35,7 @@ class ApprovalController extends Controller
         $show = $input['show'] ?? 'ready';
 
         return Inertia::render('qbank/ApprovalQueue', [
-            'versions' => $this->board->approvalQueue($request->user(), $this->branchId($request), $show),
+            'versions' => $this->board->approvalQueue($request->user('web'), $this->branchId($request), $show),
             'show' => $show,
         ]);
     }
@@ -51,7 +51,7 @@ class ApprovalController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $approved = $approve($request->user(), $version, new ConsolidatedPrehoc(
+        $approved = $approve($request->user('web'), $version, new ConsolidatedPrehoc(
             decisionId: (int) $input['decision_id'],
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
@@ -80,7 +80,7 @@ class ApprovalController extends Controller
             'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $decided = $decide($request->user(), $version, new ConsolidatedPrehoc(
+        $decided = $decide($request->user('web'), $version, new ConsolidatedPrehoc(
             decisionId: (int) $input['decision_id'],
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
@@ -102,7 +102,7 @@ class ApprovalController extends Controller
         $this->authoriseVersion($request, $question, $version);
 
         $input = $request->validate(['note' => ['nullable', 'string', 'max:500']]);
-        $activate($request->user(), $version, $input['note'] ?? null);
+        $activate($request->user('web'), $version, $input['note'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('It can now be used in examinations.')]);
 
@@ -114,7 +114,7 @@ class ApprovalController extends Controller
         $this->authoriseVersion($request, $question, $version);
 
         $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
-        $reject($request->user(), $version, (string) $input['reason']);
+        $reject($request->user('web'), $version, (string) $input['reason']);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The question was turned down and archived.')]);
 
@@ -129,6 +129,6 @@ class ApprovalController extends Controller
 
     private function branchId(Request $request): int
     {
-        return $this->activeBranch->id($request->user()) ?? abort(403, 'You do not work in any campus.');
+        return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');
     }
 }

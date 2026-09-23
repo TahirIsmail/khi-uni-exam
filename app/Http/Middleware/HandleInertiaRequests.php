@@ -43,17 +43,17 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user('web'),
                 // Only what the navigation needs; every route and action checks the permission again.
-                'can' => $request->user() === null ? [] : [
-                    'viewQuestions' => $request->user()->can('qbank.question.view'),
-                    'createQuestions' => $request->user()->can('qbank.question.create'),
-                    'importQuestions' => $request->user()->can('qbank.import.run'),
-                    'reviewQuestions' => $request->user()->can('qbank.review.perform') || $request->user()->can('qbank.review.academic'),
-                    'approveQuestions' => $request->user()->can('qbank.question.approve'),
-                    'viewExams' => $request->user()->can('exam.access'),
-                    'createExams' => $request->user()->can('exam.create'),
-                    'approveBlueprints' => $request->user()->can('exam.blueprint.approve'),
+                'can' => $request->user('web') === null ? [] : [
+                    'viewQuestions' => $request->user('web')->can('qbank.question.view'),
+                    'createQuestions' => $request->user('web')->can('qbank.question.create'),
+                    'importQuestions' => $request->user('web')->can('qbank.import.run'),
+                    'reviewQuestions' => $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic'),
+                    'approveQuestions' => $request->user('web')->can('qbank.question.approve'),
+                    'viewExams' => $request->user('web')->can('exam.access'),
+                    'createExams' => $request->user('web')->can('exam.create'),
+                    'approveBlueprints' => $request->user('web')->can('exam.blueprint.approve'),
                 ],
                 // What is waiting for this person, for the badge in the menu. Worked out only for those who approve.
                 'awaiting' => [
@@ -61,10 +61,10 @@ class HandleInertiaRequests extends Middleware
                 ],
             ],
             // The campus being worked in, and the user's campuses for the switcher.
-            'branch' => $request->user() === null ? null : [
-                'id' => $this->activeBranch->id($request->user()),
-                'name' => $this->activeBranch->name($request->user()),
-                'options' => $this->activeBranch->options($request->user()),
+            'branch' => $request->user('web') === null ? null : [
+                'id' => $this->activeBranch->id($request->user('web')),
+                'name' => $this->activeBranch->name($request->user('web')),
+                'options' => $this->activeBranch->options($request->user('web')),
             ],
             // "Back to CMS" link.
             'cmsUrl' => rtrim((string) config('services.kmu_cms.url'), '/').'/admin/admin/dashboard',
@@ -75,7 +75,7 @@ class HandleInertiaRequests extends Middleware
     /** Blueprints waiting for the signed-in person to approve; none for a guest or for somebody who does not approve. */
     private function awaitingBlueprints(Request $request): int
     {
-        $user = $request->user();
+        $user = $request->user('web');
         $branchId = $user === null ? null : $this->activeBranch->id($user);
 
         return $user !== null && $branchId !== null && $user->can('exam.blueprint.approve')

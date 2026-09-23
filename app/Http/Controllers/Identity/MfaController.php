@@ -23,7 +23,7 @@ class MfaController extends Controller
 
     public function challenge(Request $request): Response|RedirectResponse
     {
-        $user = $request->user();
+        $user = $request->user('web');
         if (! $this->mfa->isEnrolled($user)) {
             return to_route('mfa.setup');
         }
@@ -38,14 +38,14 @@ class MfaController extends Controller
             'recovery_code' => ['nullable', 'string', 'max:64'],
         ]);
 
-        $verify($request->user(), $request->session(), $input['code'] ?? null, $input['recovery_code'] ?? null);
+        $verify($request->user('web'), $request->session(), $input['code'] ?? null, $input['recovery_code'] ?? null);
 
         return redirect()->intended(config('fortify.home'));
     }
 
     public function setup(Request $request): Response|RedirectResponse
     {
-        $user = $request->user();
+        $user = $request->user('web');
         if ($this->mfa->isEnrolled($user)) {
             return to_route('mfa.challenge');
         }
@@ -62,7 +62,7 @@ class MfaController extends Controller
 
     public function start(Request $request, EnableTwoFactorAuthentication $enable): RedirectResponse
     {
-        $user = $request->user();
+        $user = $request->user('web');
         abort_if($this->mfa->isEnrolled($user), 403, 'An authenticator is already set up. Ask an administrator to reset it.');
 
         // A new secret each time, so a half-finished setup (for example a QR code someone else saw) is discarded.
@@ -73,7 +73,7 @@ class MfaController extends Controller
 
     public function confirm(Request $request, ConfirmTwoFactorAuthentication $confirm): RedirectResponse
     {
-        $user = $request->user();
+        $user = $request->user('web');
         abort_if($this->mfa->isEnrolled($user), 403);
 
         $input = $request->validate(['code' => ['required', 'string', 'regex:/^\d{6}$/']]);
@@ -98,7 +98,7 @@ class MfaController extends Controller
         }
 
         return Inertia::render('auth/MfaRecoveryCodes', [
-            'codes' => $request->user()->recoveryCodes(),
+            'codes' => $request->user('web')->recoveryCodes(),
             'continueUrl' => $request->session()->get('url.intended', config('fortify.home')),
         ]);
     }
