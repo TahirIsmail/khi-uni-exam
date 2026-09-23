@@ -45,6 +45,7 @@ class ResultsController extends Controller
                 'approve' => $user->can('result.approve'),
                 'publish' => $user->can('result.publish'),
                 'rescore' => $user->can('result.rescore'),
+                'analytics' => $user->can('analytics.view') || $user->can('analytics.run') || $user->can('analytics.decision.record'),
             ],
         ]);
     }

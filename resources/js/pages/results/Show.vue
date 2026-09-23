@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
@@ -86,6 +86,13 @@ function submitRekey(item: ResultItemRow): void {
                     data-test="publish-results"
                     @click="publish"
                     >Publish</Button
+                >
+                <Link
+                    v-if="can.analytics"
+                    :href="results.analysis(examination.id)"
+                    class="text-sm underline-offset-4 hover:underline"
+                    data-test="analysis-link"
+                    >Item analysis</Link
                 >
             </div>
         </div>

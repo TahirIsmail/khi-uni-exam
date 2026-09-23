@@ -66,4 +66,10 @@ return [
         'adjudication_threshold_fraction' => env('EXAM_ADJUDICATION_THRESHOLD_FRACTION', 0.1),
     ],
 
+    'analytics' => [
+        // Discrimination and reliability figures are reported as unavailable, not a meaningless
+        // number, below this many candidates.
+        'min_candidates' => env('EXAM_ANALYTICS_MIN_CANDIDATES', 10),
+    ],
+
 ];

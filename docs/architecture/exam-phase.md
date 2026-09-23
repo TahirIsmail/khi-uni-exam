@@ -33,8 +33,8 @@ Everything is administered in kmu-cms and done in this module, as
 | Exam Module Settings       | the CMS's own screen | Super Admin                                         |
 
 **Create Exam, Conduct Exam, Marking and Results & Marks are in the menu now.** Item analysis
-(`exam_item_analysis`), step 22's own screen, is not gated into Results & Marks — it will get its
-own place once it exists, the same rule that kept every one of these out of the menu until it did.
+(`exam_item_analysis`), step 22's own screen, opens from within Results & Marks (`/results/{exam}/analysis`)
+rather than as a menu item of its own — the same examination's outcome, one step further.
 
 Each link carries a single-use SSO ticket, so nobody signs in twice
 ([ADR-0002](adr-0002-sso-from-cms.md)). Every permission already exists in the CMS: the
@@ -524,6 +524,70 @@ computed or shown to staff before then," and a candidate-facing view is left for
 **Audited:** `result.approved`, `result.published`, `result.rekeyed` (with the before and after
 mark for every affected attempt).
 
+## What step 22 built: post-hoc analysis, and the decision going back to the question bank
+
+**`qb_question_usage` and `qb_posthoc_decisions` already existed**, created back in steps 8–9 with
+every column this needed and a comment on each saying the screens that fill them belonged to this
+phase. Nothing new was migrated for either — this step is the screens.
+
+**Item analysis reads the same final mark results already compile from**
+(`App\Domain\Marking\Queries\FinalMark`): for every item, how many candidates it was administered
+to, its difficulty (the mean fraction of its marks awarded — the classic proportion-correct for an
+all-or-nothing item, and the fair extension of it for partial credit), its discrimination (the
+classic upper/lower ~27%-of-candidates method, by each attempt's compiled total), and, for a
+single/multi-select item, the share of candidates who chose each option. **Discrimination, and the
+paper's overall reliability, are reported as unavailable — not a number from too few candidates to
+mean anything — below `config('exam.analytics.min_candidates')`** (10 by default).
+
+**Reliability is Cronbach's alpha**, computed over the whole paper's item-score matrix; when every
+item in it turns out dichotomous (every candidate's mark for it is either zero or full), that
+figure *is* KR-20, and is labelled that way rather than computed twice.
+
+**Compliance with the table of specification** compares what the paper actually drew against the
+blueprint it was built to: each row's planned question count and marks against what was delivered
+under its topic and question type, and the planned cognitive/difficulty mix against the delivered
+items' actual levels.
+
+**Running analysis writes to `qb_question_usage`**, one row per version per examination (its own
+unique key already enforces that), and refuses outright while any attempt is still pending marking
+— analysis on partial data would be misleading, the same check results already make before
+approval. Every affected question's rollup columns (`times_used`, `candidates_total`,
+`last_used_at`, `last_p`, `last_d`) are recomputed from its usage rows afterward.
+
+**The decision going back to the question bank uses KMU's own five words — the same ones pre-hoc
+review already uses** (migration `2026_09_25_000102_kmu_posthoc_decision_words.php` brought the two
+lists into line, after an earlier pass had invented its own wording): Accept, Retain in QBank,
+Review, Revise, Remove/Discard. Only the one whose `keeps_question` is false (Remove/Discard)
+reaches into the bank itself, retiring the version and — if no other version of the question is
+still usable — archiving the question, exactly the way an approver already archives a question
+with no live version left (`App\Domain\QuestionBank\Review\RejectVersion`). The other four are
+recorded and shown on the question's history; a Revise decision does not itself reopen the version
+for editing — that stays the same separate, deliberate action a pre-hoc revise already needs.
+Deciding is refused until analysis has actually been run for that examination: there is nothing to
+decide from otherwise.
+
+**What is never changed, and where:** a post-hoc decision, once written, refuses `UPDATE` and
+`DELETE` at the database itself — the same append-only pattern every other decision log in this
+module already follows. `qb_question_usage` is deliberately not made immutable: like `exm_results`,
+it is a recomputed cache, not a fact of its own.
+
+**Known simplification, disclosed rather than silently skipped:** Reports (`report.view`/
+`report.export`) and a management screen for the analysis threshold
+(`analytics.thresholds.manage`) are out of scope this pass — the threshold is a fixed config value.
+Analysis lives as a second screen of Results & Marks for one examination (`/results/{exam}/analysis`),
+not a new top-level menu item of its own — it is the same examination's outcome, one step further.
+
+**Who may do what** (checkboxes already pre-seeded back in step 7, unlike step 20's `marking.*`):
+`analytics.view` / `exam_item_analysis` view; `analytics.run` / `exam_item_analysis` add;
+`analytics.decision.record` / `exam_item_analysis` edit.
+
+**Audited:** `analytics.run`, `analytics.decision_recorded` (with the decision and whether the
+question was also archived).
+
+This closes the exam phase (steps 14–22): a question is chosen for a paper, the paper is sat, the
+answers are marked, the results are published, and what the statistics say goes back to the
+question — the same five decisions, before and after.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -555,4 +619,4 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Done    |
 | 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Done    |
 | 21   | Results: pass mark, approval and publication                           | kmu-assess | Done    |
-| 22   | Post-hoc analysis, and the decision going back to the question bank    | kmu-assess | Planned |
+| 22   | Post-hoc analysis, and the decision going back to the question bank    | kmu-assess | Done    |

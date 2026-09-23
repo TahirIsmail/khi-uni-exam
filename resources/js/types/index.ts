@@ -4,6 +4,7 @@ export * from './candidate';
 export * from './delivery';
 export * from './marking';
 export * from './results';
+export * from './analytics';
 export * from './auth';
 export * from './navigation';
 export * from './ui';
