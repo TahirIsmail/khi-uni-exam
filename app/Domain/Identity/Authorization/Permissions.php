@@ -75,6 +75,11 @@ final class Permissions
             'proctor.evidence.export' => ['Export proctoring evidence', 'proctor_evidence_export', 'view'],
             'proctor.review.decide' => ['Decide proctoring review cases', 'proctor_decisions', 'view'],
         ],
+        'Marking' => [
+            'marking.assign' => ['Assign examiners', 'exam_marking_assign', 'view'],
+            'marking.mark' => ['Mark manually-marked items', 'exam_marking', 'view'],
+            'marking.adjudicate' => ['Adjudicate disagreements between examiners', 'exam_marking_adjudicate', 'view'],
+        ],
         'Results' => [
             'result.view' => ['View results', 'exam_results', 'view'],
             'result.rescore' => ['Re-key or remove items and rescore', 'exam_results_rescore', 'view'],

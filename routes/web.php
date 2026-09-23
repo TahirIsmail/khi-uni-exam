@@ -20,4 +20,5 @@ require __DIR__.'/mfa.php';
 require __DIR__.'/qbank.php';
 require __DIR__.'/exams.php';
 require __DIR__.'/conduct.php';
+require __DIR__.'/marking.php';
 require __DIR__.'/sit.php';

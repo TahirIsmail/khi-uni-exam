@@ -26,13 +26,15 @@ Everything is administered in kmu-cms and done in this module, as
 | Open Question Bank & Exams | the question bank    | `qbank_questions`                                   |
 | **Create Exam**            | `/exams`             | `exam_blueprints` or `exam_papers`                  |
 | Conduct Exam               | `/exams/conduct`     | `exam_candidates`, `exam_checkin` or `exam_monitor` |
+| **Marking**                 | `/marking`           | `exam_marking_assign`, `exam_marking` or `exam_marking_adjudicate` |
 | Results & Marks            | `/results`           | `exam_results` or `exam_item_analysis`              |
 | Exam Access                | the CMS's own screen | `exam_access`                                       |
 | Exam Audit Log             | the CMS's own screen | `exam_audit_log`                                    |
 | Exam Module Settings       | the CMS's own screen | Super Admin                                         |
 
-**Create Exam and Conduct Exam are in the menu now.** Results & Marks is added in the step that
-builds it (20–21), so nobody is ever shown a button with nothing behind it.
+**Create Exam, Conduct Exam and Marking are in the menu now.** Results & Marks is left for step 21,
+when the results and analysis screens it names actually exist — the same rule that kept it out of
+the menu until now, applied to itself: nobody is ever shown a button with nothing behind it.
 
 Each link carries a single-use SSO ticket, so nobody signs in twice
 ([ADR-0002](adr-0002-sso-from-cms.md)). Every permission already exists in the CMS: the
@@ -410,6 +412,59 @@ the pending list only needs `centre.view`.
 **Audited:** `proctor.event_recorded` (high severity only), `proctor.decision_recorded`,
 `device.seen`, `device.approved`.
 
+## What step 20 built: marking, automatic and rubric-based with two examiners
+
+**Objective items are marked the moment an attempt is submitted.** `AutoMarkAttempt` runs inside
+`SubmitAttempt`'s own transaction — the candidate's, the auto-deadline's and the invigilator's
+submission paths all go through it, so nothing extra had to be wired up. It reads the sealed key
+server-side, exactly where ADR-0003 always said it would be read: `qb_question_options.is_correct`
+and `weight` for single- and multiple-response items, `qb_question_items.is_true`/
+`correct_option_id`/`marks_fraction` for true/false, matching and EMQ and ordering sub-parts, and
+`qb_question_answers` (by `match_mode`: exact, contains, regex or numeric with a tolerance) for
+short-answer, numerical and cloze blanks. Essays (`is_manually_marked`) are left untouched for an
+examiner.
+
+**Whether an essay needs one examiner or two is the examination's own setting**
+(`require_double_marking`, mutable — not one of the fields the blueprint freezes). Examiners are
+assigned per examination, not per question: a controller (`marking.assign`) picks a first and
+second examiner, and optionally an adjudicator, from the campus's staff who hold `marking.mark` —
+every manually-marked item of the paper goes to the same pair. Marking against the rubric
+(`qb_question_rubric_criteria`, already built with the question bank) means giving marks per
+criterion that add up to the item's mark; a non-rubric manually-marked type takes a flat mark.
+
+**Marking is blind.** An examiner's marking screen shows whether their peer has marked an item yet
+— never what they gave — until their own mark for it is in; only then, and only for someone who
+holds `marking.adjudicate`, are both numbers shown side by side. This is enforced server-side
+(`MarkingController::hidePeerMarkIfBlind`), not just hidden in the UI.
+
+**How the final mark for an item is decided**, by priority, in one place
+(`App\Domain\Marking\Queries\FinalMark`) so results (step 21) never disagree with the marking
+screens about which mark counts: an adjudicator's mark, if one exists; else an agreed `final` row;
+else — only when double-marking is not required — the first examiner's own mark; else the
+automatic mark. Two examiners' marks that differ by no more than
+`exam.marking.adjudication_threshold_fraction` (10% of the item's marks, by default) are averaged
+into that `final` row the moment the second one arrives; beyond it, the item sits pending until an
+adjudicator's mark — itself final, no further review — arrives. Adjudication is allowed even after
+the candidate has submitted and been marked once already, since a case is often only found once
+marking is under way.
+
+**What is never changed, and where:** a mark, once recorded, is a fact — `mrk_item_marks` and its
+rubric breakdown (`mrk_item_mark_criteria`) refuse `UPDATE` and `DELETE` at the database itself, the
+same pattern proctoring's own log already uses. Assignments are not append-only: reassigning a role
+replaces the row, since who marks is a roster, not a record of what happened.
+
+**Known simplification, disclosed rather than silently skipped:** an examiner is chosen from staff
+who already have a kmu-cms account in this app (someone who has signed in via SSO at least once) —
+someone with the right CMS checkbox who has never opened the module cannot yet be assigned, unlike
+`BlueprintApprovers`' "ask them anyway" list for blueprint approval.
+
+**Who may do what** (new checkboxes, added the same way the `proctor_*` ones were):
+`marking.assign` / `exam_marking_assign` to assign examiners; `marking.mark` / `exam_marking` to
+mark; `marking.adjudicate` / `exam_marking_adjudicate` to adjudicate. **Marking**, in the CMS's Exams
+menu, opens for anybody holding any of the three.
+
+**Audited:** `marking.examiner_assigned`, `marking.item_finalised`, `marking.adjudicated`.
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -439,6 +494,6 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 17   | Candidates, centres, rooms, allocation, check-in and PINs              | kmu-assess | Done    |
 | 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Done    |
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Done    |
-| 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Planned |
+| 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Done    |
 | 21   | Results: pass mark, approval and publication                           | kmu-assess | Planned |
 | 22   | Post-hoc analysis, and the decision going back to the question bank    | kmu-assess | Planned |

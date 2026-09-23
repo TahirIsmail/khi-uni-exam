@@ -27,11 +27,13 @@ final class AssignPaperItems
 
         $rows = [];
         foreach (array_values($order) as $index => $item) {
+            $optionOrder = $paper->shuffle_options ? $this->shuffledOptionOrder($item) : null;
             $rows[] = [
                 'candidate_exam_id' => $attempt->id,
                 'paper_item_id' => $item->id,
                 'position' => $index + 1,
-                'option_order' => $paper->shuffle_options ? $this->shuffledOptionOrder($item) : null,
+                // A raw insert() does not apply the model's array cast, unlike save()/create().
+                'option_order' => $optionOrder === null ? null : json_encode($optionOrder),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];

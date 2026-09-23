@@ -32,12 +32,13 @@ use Illuminate\Support\Carbon;
  * @property float $pass_percentage
  * @property bool $negative_marking
  * @property float|null $negative_fraction
+ * @property bool $require_double_marking
  * @property string|null $instructions
  * @property ExaminationStatus $status
  * @property int $created_by
  * @property int|null $updated_by
  */
-#[Fillable(['public_ref', 'branch_id', 'title', 'programme_id', 'professional_id', 'term_id', 'course_id', 'exam_type_id', 'intake_id', 'starts_at', 'duration_minutes', 'total_marks', 'pass_percentage', 'negative_marking', 'negative_fraction', 'instructions', 'status', 'created_by', 'updated_by'])]
+#[Fillable(['public_ref', 'branch_id', 'title', 'programme_id', 'professional_id', 'term_id', 'course_id', 'exam_type_id', 'intake_id', 'starts_at', 'duration_minutes', 'total_marks', 'pass_percentage', 'negative_marking', 'negative_fraction', 'require_double_marking', 'instructions', 'status', 'created_by', 'updated_by'])]
 final class Examination extends Model
 {
     protected $table = 'exm_examinations';
@@ -50,6 +51,7 @@ final class Examination extends Model
             'pass_percentage' => 'float',
             'negative_marking' => 'boolean',
             'negative_fraction' => 'float',
+            'require_double_marking' => 'boolean',
             'status' => ExaminationStatus::class,
         ];
     }

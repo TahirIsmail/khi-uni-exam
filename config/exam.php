@@ -60,4 +60,10 @@ return [
         'proctor_evidence_retention_days' => env('EXAM_PROCTOR_RETENTION_DAYS', 365),
     ],
 
+    'marking' => [
+        // Two examiners' marks for an item that differ by more than this fraction of the item's
+        // marks go to a third opinion (adjudication) instead of being averaged.
+        'adjudication_threshold_fraction' => env('EXAM_ADJUDICATION_THRESHOLD_FRACTION', 0.1),
+    ],
+
 ];
