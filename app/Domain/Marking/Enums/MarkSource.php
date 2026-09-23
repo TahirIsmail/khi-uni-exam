@@ -4,8 +4,9 @@ namespace App\Domain\Marking\Enums;
 
 /**
  * Where one mark for one item came from. "The final mark" for an item is decided by priority, not
- * stored separately: adjudicator if present, else final (the examiners' agreed average), else
- * examiner_1 (single-marking) or auto — see App\Domain\Marking\Queries\FinalMark.
+ * stored separately: rekeyed outranks everything (it corrects the question, not the marking), then
+ * adjudicator, then final (the examiners' agreed average), then examiner_1 (single-marking) or
+ * auto — see App\Domain\Marking\Queries\FinalMark.
  */
 enum MarkSource: string
 {
@@ -14,6 +15,7 @@ enum MarkSource: string
     case Examiner2 = 'examiner_2';
     case Adjudicator = 'adjudicator';
     case Final = 'final';
+    case Rekeyed = 'rekeyed';
 
     public function label(): string
     {
@@ -23,6 +25,7 @@ enum MarkSource: string
             self::Examiner2 => 'Second examiner',
             self::Adjudicator => 'Adjudicator',
             self::Final => 'Agreed average',
+            self::Rekeyed => 'Corrected after re-keying',
         };
     }
 }

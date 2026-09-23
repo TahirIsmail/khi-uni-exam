@@ -20,9 +20,11 @@ final class FinalMark
     {
         $bySource = $marksForItem->keyBy(fn (ItemMark $m): string => $m->source->value);
 
+        // A re-key corrects the question itself, so it outranks every marking decision regardless
+        // of whether double-marking was required.
         $priority = $requireDoubleMarking
-            ? [MarkSource::Adjudicator, MarkSource::Final, MarkSource::Auto]
-            : [MarkSource::Adjudicator, MarkSource::Final, MarkSource::Examiner1, MarkSource::Auto];
+            ? [MarkSource::Rekeyed, MarkSource::Adjudicator, MarkSource::Final, MarkSource::Auto]
+            : [MarkSource::Rekeyed, MarkSource::Adjudicator, MarkSource::Final, MarkSource::Examiner1, MarkSource::Auto];
 
         foreach ($priority as $source) {
             $mark = $bySource->get($source->value);

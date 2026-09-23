@@ -27,14 +27,14 @@ Everything is administered in kmu-cms and done in this module, as
 | **Create Exam**            | `/exams`             | `exam_blueprints` or `exam_papers`                  |
 | Conduct Exam               | `/exams/conduct`     | `exam_candidates`, `exam_checkin` or `exam_monitor` |
 | **Marking**                 | `/marking`           | `exam_marking_assign`, `exam_marking` or `exam_marking_adjudicate` |
-| Results & Marks            | `/results`           | `exam_results` or `exam_item_analysis`              |
+| **Results & Marks**        | `/results`           | `exam_results`, `exam_results_approve`, `exam_results_publish` or `exam_results_rescore` |
 | Exam Access                | the CMS's own screen | `exam_access`                                       |
 | Exam Audit Log             | the CMS's own screen | `exam_audit_log`                                    |
 | Exam Module Settings       | the CMS's own screen | Super Admin                                         |
 
-**Create Exam, Conduct Exam and Marking are in the menu now.** Results & Marks is left for step 21,
-when the results and analysis screens it names actually exist — the same rule that kept it out of
-the menu until now, applied to itself: nobody is ever shown a button with nothing behind it.
+**Create Exam, Conduct Exam, Marking and Results & Marks are in the menu now.** Item analysis
+(`exam_item_analysis`), step 22's own screen, is not gated into Results & Marks — it will get its
+own place once it exists, the same rule that kept every one of these out of the menu until it did.
 
 Each link carries a single-use SSO ticket, so nobody signs in twice
 ([ADR-0002](adr-0002-sso-from-cms.md)). Every permission already exists in the CMS: the
@@ -465,6 +465,65 @@ menu, opens for anybody holding any of the three.
 
 **Audited:** `marking.examiner_assigned`, `marking.item_finalised`, `marking.adjudicated`.
 
+## What step 21 built: results, pass mark, approval and publication
+
+**A result is compiled, not stored as its own fact.** `CompileResult` sums, for every item of an
+attempt, `App\Domain\Marking\Queries\FinalMark::of()` — the exact same priority step 20 built for
+the marking screens, so results never disagree with marking about which mark counts for an item.
+If any item has no final mark yet, the attempt is `pending_items` and has no total — it cannot be
+approved until every one of its items is. The compiled numbers (`exm_results`) are a cache,
+recomputed every time this runs, not an append-only record: correcting a mark is meant to change
+the number, not be fought by it.
+
+**Negative marking applies only where there is a key to be wrong against**: an item whose final
+mark came from `auto` (never an examiner's or an adjudicator's judgement, never an essay), scored
+zero, that the candidate actually answered — a blank is not a guess, so a blank is never penalised.
+The deduction is `examination.negative_fraction × the item's marks`, summed and subtracted from the
+raw total, floored at zero. This was already a setting on the examination
+(`negative_marking`/`negative_fraction`) that nothing applied until now.
+
+**Approval and publication are two separate rights over the whole examination**, all its attempts
+at once — the same granularity the blueprint and paper are already approved at, not
+candidate-by-candidate. Approving recompiles every submitted attempt first, so it can never approve
+a stale number, and refuses outright while anything is still `pending_items`. Publishing needs
+approval to have happened first. Both are recorded on `exm_result_publications`, one row per
+examination, not on the results themselves.
+
+**Re-keying corrects the paper's own item, never the reusable question in the bank.** The bank's
+record was reviewed and approved on its own merits and is left exactly as it was — a correction
+here is scoped to the one paper it was found faulty in. Two decisions are offered: discard it
+(full marks to everyone who sat it) or, for a plain single/multi-select item with no sub-parts,
+say which option is actually correct. Sub-item types (matching, true/false sets, cloze, ordering)
+can only be discarded — disclosed rather than silently narrowed, the same way step 18/19 disclosed
+their own simplifications. An essay has no key to re-key at all; that is a marking dispute, handled
+by marking it again, not this.
+
+**Rescoring is automatic and exhaustive**: re-keying writes one `mrk_item_marks` row per affected
+candidate with `source = rekeyed` — a new mark source that outranks even an adjudicator's, because
+it corrects the question, not the marking — using the exact scoring logic `AutoMarkAttempt` itself
+uses (`App\Domain\Marking\Support\ObjectiveItemScorer`, extracted from step 20's own code so the
+two can never quietly disagree). Every affected attempt is recompiled immediately. If the
+examination's results were already approved or published, that drops back to draft: a correction
+found after publication has to be looked at again before anyone re-publishes it.
+
+**What is never changed, and where:** a re-key, once written (`exm_item_rekeys`), refuses `UPDATE`
+and `DELETE` at the database itself — the same append-only pattern every other decision log in this
+module already follows. Re-keying the same item twice is refused outright, in words: a second
+problem with an item is a fresh decision, not a retry of the first.
+
+**Known simplification, disclosed rather than silently skipped:** results are staff-only in this
+pass. There is no candidate-facing screen yet showing a published result — the security table's
+"no result is visible before it is approved and published" is enforced here as "no result is
+computed or shown to staff before then," and a candidate-facing view is left for later.
+
+**Who may do what** (checkboxes already pre-seeded back in step 7, unlike step 20's `marking.*`):
+`result.view` / `exam_results`; `result.approve` / `exam_results_approve`; `result.publish` /
+`exam_results_publish`; `result.rescore` / `exam_results_rescore` for re-keying. **Results & Marks**
+— the menu item this doc named from the start — now opens for anybody holding any of the four.
+
+**Audited:** `result.approved`, `result.published`, `result.rekeyed` (with the before and after
+mark for every affected attempt).
+
 ## Security while an exam is being sat
 
 | Layer                  | What it does                                                                                                                                  |
@@ -495,5 +554,5 @@ Each step ends with its tests, screenshots and the university's approval before 
 | 18   | The delivery engine, including resuming on another computer (ADR-0003) | kmu-assess | Done    |
 | 19   | Browser lockdown and proctoring events                                 | kmu-assess | Done    |
 | 20   | Marking: automatic, and rubric-based with two examiners                | kmu-assess | Done    |
-| 21   | Results: pass mark, approval and publication                           | kmu-assess | Planned |
+| 21   | Results: pass mark, approval and publication                           | kmu-assess | Done    |
 | 22   | Post-hoc analysis, and the decision going back to the question bank    | kmu-assess | Planned |
