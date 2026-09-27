@@ -30,12 +30,22 @@ use Inertia\Response;
  */
 class MarkingController extends Controller
 {
-    public function __construct(private readonly ActiveBranch $activeBranch) {}
+    public function __construct(
+        private readonly ActiveBranch $activeBranch,
+        private readonly MarkingExaminationList $list,
+    ) {}
 
-    public function index(Request $request, MarkingExaminationList $list): Response
+    public function index(Request $request): Response
     {
+        $user = $request->user('web');
+        $this->abortUnlessMarker($user);
+
         return Inertia::render('marking/Index', [
-            'examinations' => $list->forBranch($this->branchId($request)),
+            'examinations' => $this->list->forBranch($this->branchId($request), $user),
+            // So an empty table can say why it is empty: nobody has assigned this teacher to a
+            // programme yet, rather than there being nothing to mark.
+            'scopedByTeaching' => $this->list->isScopedByTeaching($user),
+            'hasTeachingAssignments' => $this->list->hasTeachingAssignments($user),
         ]);
     }
 
@@ -162,6 +172,20 @@ class MarkingController extends Controller
     {
         abort_unless($examination->branch_id === $this->branchId($request), 404);
         $user = $request->user('web');
-        abort_unless($user->can('marking.assign') || $user->can('marking.mark') || $user->can('marking.adjudicate'), 403, 'You cannot open marking for this course.');
+        $this->abortUnlessMarker($user);
+
+        // The same rule the list uses, so an examination that is not on somebody's Marking screen
+        // cannot be reached by typing its address either.
+        abort_unless($this->list->maySee($user, $examination), 404);
+    }
+
+    /** Marking is opened by anybody holding any one of its three permissions. */
+    private function abortUnlessMarker(User $user): void
+    {
+        abort_unless(
+            $user->can('marking.assign') || $user->can('marking.mark') || $user->can('marking.adjudicate'),
+            403,
+            'You cannot open marking for this course.'
+        );
     }
 }

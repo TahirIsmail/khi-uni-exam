@@ -9,8 +9,10 @@ use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Mfa\RecordTwoFactorEvents;
 use App\Domain\Identity\Mfa\SingleUseTotpProvider;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
+use App\Domain\Results\Support\GradeScales;
 use App\Models\User;
 use App\Support\Cms\CmsSettings;
+use App\Support\Cms\CmsTeaching;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Repository;
@@ -55,6 +57,8 @@ class AppServiceProvider extends ServiceProvider
         // One instance per request, so permission lookups and the request context are not shared between requests.
         $this->app->scoped(AccessControl::class);
         $this->app->scoped(CmsSettings::class);
+        $this->app->scoped(CmsTeaching::class);
+        $this->app->scoped(GradeScales::class);
         $this->app->scoped(ActiveBranch::class);
         $this->app->scoped(AuditLogger::class, fn (): AuditLogger => new AuditLogger);
     }

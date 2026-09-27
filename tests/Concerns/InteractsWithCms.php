@@ -5,6 +5,7 @@ namespace Tests\Concerns;
 use App\Domain\Identity\Authorization\Permissions;
 use App\Domain\Identity\Sso\CmsTicketVerifier;
 use App\Models\User;
+use App\Support\Cms\CmsTeaching;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -235,6 +236,23 @@ trait InteractsWithCms
         DB::table(config('database.cms_source_database').'.acad_staff_exam_scopes')->insert([
             'staff_id' => $user->cms_staff_id, 'scope_type' => $type, 'scope_id' => $id,
         ]);
+    }
+
+    /**
+     * A teaching assignment made in kmu-cms (Academics → Assign Program Teacher): this staff member
+     * teaches this programme in this intake, which is what puts its examinations on their Marking
+     * screen.
+     */
+    protected function cmsTeaches(User $user, int $programmeId, int $intakeId, int $sectionId = 1): void
+    {
+        DB::table(config('database.cms_source_database').'.class_teacher')->insert([
+            'class_id' => $programmeId,
+            'staff_id' => $user->cms_staff_id,
+            'section_id' => $sectionId,
+            'session_id' => $intakeId,
+        ]);
+
+        app(CmsTeaching::class)->forget();
     }
 
     /** Turns two-factor authentication on or off in kmu-cms (Exam Module Settings). */

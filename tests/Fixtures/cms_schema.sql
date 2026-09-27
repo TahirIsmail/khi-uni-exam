@@ -168,6 +168,16 @@ CREATE TABLE `sections` (
   KEY `idx_sections_branch_id` (`branch_id`),
   KEY `idx_sections_education_type` (`education_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+CREATE TABLE `class_teacher` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `class_id` int NOT NULL,
+  `staff_id` int NOT NULL,
+  `section_id` int NOT NULL,
+  `session_id` int NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_class_teacher_staff` (`staff_id`),
+  KEY `idx_class_teacher_class_session` (`class_id`,`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 CREATE TABLE `acad_level_types` (
   `id` tinyint unsigned NOT NULL AUTO_INCREMENT,
   `code` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'module, course, discipline, topic, subtopic, ...',
@@ -255,6 +265,7 @@ CREATE TABLE `acad_courses` (
   `professional_id` int unsigned NOT NULL,
   `term_id` int unsigned DEFAULT NULL COMMENT 'Only for semester programmes',
   `course_kind` enum('module','course') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `credit_hours` decimal(4,1) DEFAULT NULL COMMENT 'Semester programmes only; a GPA cannot be worked out without it',
   `subject_id` int DEFAULT NULL COMMENT 'Optional link to the timetable subject',
   `description` text COLLATE utf8mb4_unicode_ci,
   `status` enum('active','inactive','retired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
@@ -377,4 +388,21 @@ CREATE TABLE `sch_settings` (
   `kmu_assess_reviewer_anonymous` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+-- The two fixed lookups kmu-cms seeds in migration 20260917_0004, seeded here for the same reason
+-- production seeds them: they are a closed list, not test data. Without them every test that needs
+-- one inserts it again — a rolled-back transaction gives the row back but never the auto-increment
+-- id, and both tables key on a tinyint, so a long run would exhaust 255 and start failing.
+INSERT INTO `acad_level_types` (`code`, `name`) VALUES
+  ('module', 'Module'),
+  ('course', 'Course'),
+  ('discipline', 'Discipline / Subject'),
+  ('topic', 'Topic'),
+  ('subtopic', 'Subtopic');
+
+INSERT INTO `acad_exam_types` (`code`, `name`, `calendar_type`, `is_resit`, `sort_order`, `is_active`) VALUES
+  ('annual', 'Annual', 'annual', 0, 1, 1),
+  ('supplementary', 'Supplementary', 'annual', 1, 2, 1),
+  ('regular', 'Regular', 'semester', 0, 3, 1),
+  ('retake', 'Retake', 'semester', 1, 4, 1);
+
 SET FOREIGN_KEY_CHECKS = 1;

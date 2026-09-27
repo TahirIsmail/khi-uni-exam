@@ -137,6 +137,19 @@ test('negative marking deducts only for a wrong, answered, auto-marked item', fu
         ->and((float) $result->total_marks)->toBe(5.0);
 });
 
+test('a compiled result carries the grade its programme awards, and an annual one carries no grade point', function () {
+    $built = resultsSitAndSubmitWrong();
+    markEssay($built['essayItem']);
+
+    $this->actingAs($this->controller, 'web')->post("/results/{$this->exam->id}/approve")->assertSessionHasNoErrors();
+
+    // BuildsExaminations makes annual programmes, which are graded out of marks and have no points.
+    $result = DB::table('exm_results')->where('candidate_exam_id', $built['attempt']->id)->first();
+    expect($result->grade)->not->toBeNull()
+        ->and($result->grade_remark)->not->toBeNull()
+        ->and($result->grade_point)->toBeNull();
+});
+
 test('approval needs every attempt clear, and publishing needs approval first', function () {
     $built = resultsSitAndSubmitWrong();
     markEssay($built['essayItem']);

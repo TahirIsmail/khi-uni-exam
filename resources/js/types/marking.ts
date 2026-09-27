@@ -6,6 +6,10 @@ export type MarkingExaminationRow = {
     title: string;
     requireDoubleMarking: boolean;
     submittedCount: number;
+    programme: string | null;
+    year: string | null;
+    intake: string | null;
+    course: string | null;
 };
 
 export type ExaminerRow = {

@@ -3,6 +3,7 @@ export * from './exam';
 export * from './candidate';
 export * from './delivery';
 export * from './marking';
+export * from './reports';
 export * from './results';
 export * from './analytics';
 export * from './auth';

@@ -7,6 +7,8 @@ use App\Domain\Marking\Enums\MarkSource;
 use App\Domain\Marking\Models\ItemMark;
 use App\Domain\Marking\Queries\FinalMark;
 use App\Domain\Results\Models\Result;
+use App\Domain\Results\Support\GradeScales;
+use App\Support\Cms\CmsAcademic;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,8 +18,17 @@ use Illuminate\Support\Facades\DB;
  */
 final class CompileResult
 {
+    public function __construct(
+        private readonly CmsAcademic $academic,
+        private readonly GradeScales $scales,
+    ) {}
+
     public function __invoke(CandidateExam $attempt): Result
     {
+        // Callers reach this with attempts fetched several different ways, so the examination is
+        // loaded here rather than relied on being eager-loaded by each of them.
+        $attempt->loadMissing('examination');
+
         $examination = $attempt->examination;
         $items = $attempt->items()->with('paperItem')->get();
 
@@ -55,6 +66,9 @@ final class CompileResult
         $totalMarks = $pending ? 0.0 : max(0.0, $rawMarks - $deduction);
         $percentage = ($pending || $examination->total_marks <= 0) ? 0.0 : ($totalMarks / $examination->total_marks) * 100;
 
+        // A grade is only meaningful once everything is marked; a half-marked attempt gets none.
+        $awarded = $pending ? null : $this->grade($examination->programme_id, $percentage);
+
         return Result::query()->updateOrCreate(
             ['candidate_exam_id' => $attempt->id],
             [
@@ -62,10 +76,30 @@ final class CompileResult
                 'negative_deduction' => round($deduction, 2),
                 'total_marks' => round($totalMarks, 2),
                 'percentage' => round($percentage, 2),
+                'grade' => $awarded['grade'] ?? null,
+                'grade_point' => $awarded['point'] ?? null,
+                'grade_remark' => $awarded['remark'] ?? null,
                 'is_pass' => ! $pending && $percentage >= $examination->pass_percentage,
                 'pending_items' => $pending,
                 'compiled_at' => now(),
             ],
         );
+    }
+
+    /**
+     * Which scale applies is the programme's own business: annual programmes are graded out of
+     * marks, semester ones on the 4.00 scale.
+     *
+     * @return array{grade: string, point: ?float, remark: string}|null
+     */
+    private function grade(?int $programmeId, float $percentage): ?array
+    {
+        if ($programmeId === null) {
+            return null;
+        }
+
+        $calendar = $this->academic->programmeCalendar($programmeId);
+
+        return $calendar === null ? null : $this->scales->award($calendar, $percentage);
     }
 }

@@ -18,11 +18,14 @@ use Illuminate\Support\Carbon;
  * @property float $negative_deduction
  * @property float $total_marks
  * @property float $percentage
+ * @property string|null $grade
+ * @property float|null $grade_point
+ * @property string|null $grade_remark
  * @property bool $is_pass
  * @property bool $pending_items
  * @property Carbon $compiled_at
  */
-#[Fillable(['candidate_exam_id', 'raw_marks', 'negative_deduction', 'total_marks', 'percentage', 'is_pass', 'pending_items', 'compiled_at'])]
+#[Fillable(['candidate_exam_id', 'raw_marks', 'negative_deduction', 'total_marks', 'percentage', 'grade', 'grade_point', 'grade_remark', 'is_pass', 'pending_items', 'compiled_at'])]
 final class Result extends Model
 {
     protected $table = 'exm_results';
@@ -34,6 +37,7 @@ final class Result extends Model
             'negative_deduction' => 'float',
             'total_marks' => 'float',
             'percentage' => 'float',
+            'grade_point' => 'float',
             'is_pass' => 'boolean',
             'pending_items' => 'boolean',
             'compiled_at' => 'datetime',

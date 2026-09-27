@@ -22,4 +22,5 @@ require __DIR__.'/exams.php';
 require __DIR__.'/conduct.php';
 require __DIR__.'/marking.php';
 require __DIR__.'/results.php';
+require __DIR__.'/reports.php';
 require __DIR__.'/sit.php';

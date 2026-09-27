@@ -39,6 +39,13 @@ final class CmsViews
             // Exam access limits (CMS Question Bank & Exams → Exam Access).
             'v_cms_staff_exam_scopes' => "SELECT x.staff_id, x.scope_type, x.scope_id FROM {$db}.acad_staff_exam_scopes x",
 
+            // Who teaches what (CMS Academics → Assign Program Teacher). The campus comes from the
+            // programme: class_teacher carries none of its own, and without it a programme of the
+            // same name on another campus would be read as the same one.
+            'v_cms_teaching_assignments' => "SELECT ct.staff_id, ct.class_id AS programme_id, ct.session_id AS intake_id,
+                       ct.section_id, c.branch_id
+                FROM {$db}.class_teacher ct JOIN {$db}.classes c ON c.id = ct.class_id",
+
             'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled, s.kmu_assess_reviews_required, s.kmu_assess_review_days,
                        s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous
                 FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
@@ -66,7 +73,7 @@ final class CmsViews
             'v_cms_disciplines' => "SELECT d.id, d.code, d.name, d.is_active FROM {$db}.acad_disciplines d",
 
             'v_cms_courses' => "SELECT co.id, c.branch_id, co.course_code, co.title, co.class_id AS programme_id, co.professional_id, co.term_id, co.course_kind,
-                    co.status, co.valid_from, co.valid_to, co.supersedes_course_id
+                    co.credit_hours, co.status, co.valid_from, co.valid_to, co.supersedes_course_id
                 FROM {$db}.acad_courses co JOIN {$db}.classes c ON c.id = co.class_id",
 
             'v_cms_curriculum_nodes' => "SELECT n.id, n.course_id, n.parent_id, ty.code AS level_code, n.discipline_id, n.code, n.name, n.path,

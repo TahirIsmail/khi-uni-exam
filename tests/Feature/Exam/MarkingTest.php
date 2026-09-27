@@ -266,6 +266,13 @@ test('only an assigned examiner may mark, and only a marking.assign holder may a
     $this->cmsGrant($strangerRole, 'exam_marking', 'view');
     $stranger = $this->staffUser([$strangerRole], $this->branch);
 
+    // Nothing connects this person to the examination — not a teaching assignment, not an
+    // appointment — so it is not theirs to see, never mind mark.
+    $this->actingAs($stranger, 'web')->post("/marking/{$this->exam->id}/items/{$essayItem->id}/mark", ['marks_awarded' => 5, 'criteria' => []])
+        ->assertNotFound();
+
+    // A teacher of the programme does see it, and is still refused until they are appointed.
+    $this->cmsTeaches($stranger, $this->exam->programme_id, (int) $this->exam->intake_id);
     $this->actingAs($stranger, 'web')->post("/marking/{$this->exam->id}/items/{$essayItem->id}/mark", ['marks_awarded' => 5, 'criteria' => []])
         ->assertInvalid(['examiner']);
 

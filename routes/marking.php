@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\Route;
  * question's rubric, and adjudicating disagreements between two examiners. Auto-marking of
  * objective items needs no route — it happens on submission (App\Domain\Marking\Actions\AutoMarkAttempt).
  */
+/*
+ * The three marking permissions are an "any of these" rule, which the `can:` middleware cannot
+ * express, so MarkingController checks them itself — on the list as well as on one examination.
+ */
 Route::middleware('auth')->prefix('marking')->group(function () {
     Route::get('/', [MarkingController::class, 'index'])->name('marking.index');
 

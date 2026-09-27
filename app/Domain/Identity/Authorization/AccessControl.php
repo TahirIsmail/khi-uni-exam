@@ -117,8 +117,26 @@ final class AccessControl
             return false;
         }
 
-        $scopes = $this->scopes($user);
-        if ($scopes === [] || $this->isSuperAdmin($user)) {
+        if ($this->isSuperAdmin($user)) {
+            return true;
+        }
+
+        return self::scopesAllow($this->scopes($user), $target);
+    }
+
+    /**
+     * Whether a set of exam-access limits reaches a place. No limits at all means everywhere, which
+     * is what an empty Exam Access screen means in kmu-cms.
+     *
+     * Static and given its scopes rather than a user, so the same rule can be applied to somebody
+     * else's limits — App\Domain\Marking\Queries\ExaminerCandidates asks it about every staff member
+     * it is about to offer as an examiner.
+     *
+     * @param  list<UserScope>  $scopes
+     */
+    public static function scopesAllow(array $scopes, ScopeTarget $target): bool
+    {
+        if ($scopes === []) {
             return true;
         }
 
