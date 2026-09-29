@@ -106,6 +106,10 @@ final class ReviewBoard
             ->select('qb_question_versions.*')
             ->selectSub($reviewsIn(ReviewStage::Subject), 'subject_in')
             ->selectSub($reviewsIn(ReviewStage::Academic), 'academic_in')
+            // Grouping by the primary key leaves the rows alone, but it lets HAVING name author_id:
+            // under ONLY_FULL_GROUP_BY a plain column in HAVING is rejected (MySQL error 1463)
+            // unless it is functionally dependent on the grouped key.
+            ->when(in_array($show, ['ready', 'waiting'], true), fn ($query) => $query->groupBy('qb_question_versions.id'))
             ->when($show === 'ready', fn ($query) => $query->havingRaw('subject_in >= ? AND academic_in >= 1 AND author_id <> ?', [$required, $approver->id])) // raw-sql-reviewed: bound values
             ->when($show === 'waiting', fn ($query) => $query->havingRaw('(subject_in < ? OR academic_in < 1 OR author_id = ?)', [$required, $approver->id])) // raw-sql-reviewed: bound values
             ->with(['type:id,name', 'question:id,public_ref', 'reviews'])
