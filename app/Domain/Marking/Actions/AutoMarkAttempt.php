@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\DB;
  * step 20): the answer key is read here, server-side, exactly as ADR-0003 always said it would be
  * — never sent to the candidate's browser. Manually-marked items (essays) are left for an examiner.
  * Called from SubmitAttempt, inside the same transaction as the submission itself.
+ *
+ * A type flagged requires_confirmation — short answers and cloze blanks, whose mark comes from
+ * matching typed text — is still scored here, but the mark is written provisional: a suggestion for
+ * the examiner to accept or replace, never a final mark on its own. See FinalMark.
  */
 final class AutoMarkAttempt
 {
@@ -50,6 +54,9 @@ final class AutoMarkAttempt
                 'cand_paper_item_id' => $item->id,
                 'source' => MarkSource::Auto->value,
                 'marks_awarded' => round($marks, 2),
+                // Typed text matched against a list of accepted answers: recorded, shown to the
+                // examiner as a suggestion, but not a mark until they confirm it.
+                'is_provisional' => $type->requires_confirmation,
                 'max_marks' => $paperItem->marks,
                 'marked_by' => null,
                 'comments' => null,

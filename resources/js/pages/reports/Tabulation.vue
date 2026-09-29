@@ -27,6 +27,27 @@ function printSheet(): void {
 function markFor(candidate: TabulationSheetData['candidates'][number], examinationId: number) {
     return candidate.courses[examinationId] ?? null;
 }
+
+/**
+ * Whether every subject on this sheet counts its practical and internal assessment, and is
+ * therefore the university's actual result rather than the theory paper standing in for one.
+ */
+const fullResult = computed(
+    () =>
+        props.sheet.courses.length > 0 &&
+        props.sheet.courses.every((c) => c.components.length > 0),
+);
+
+/** The halves a candidate failed on their own — the rule that no total can make up for. */
+function failedHalves(
+    candidate: TabulationSheetData['candidates'][number],
+): string[] {
+    return [
+        ...new Set(
+            Object.values(candidate.courses).flatMap((c) => c.failedGroups),
+        ),
+    ];
+}
 </script>
 
 <template>
@@ -54,10 +75,19 @@ function markFor(candidate: TabulationSheetData['candidates'][number], examinati
             </div>
         </div>
 
-        <p class="text-muted-foreground text-sm" data-test="provisional">
+        <p
+            v-if="!fullResult"
+            class="text-muted-foreground text-sm"
+            data-test="provisional"
+        >
             <strong>Provisional.</strong> These marks are from the computer-based
             papers held in this system only. A professional result also counts
             the practical, the viva and the internal assessment.
+        </p>
+        <p v-else class="text-muted-foreground text-sm" data-test="full-result">
+            Each subject here counts its theory paper, its practical and its
+            internal assessment. Theory and practical are passed separately: a
+            candidate who fails one fails the subject, whatever the total says.
         </p>
 
         <div
@@ -168,6 +198,12 @@ function markFor(candidate: TabulationSheetData['candidates'][number], examinati
                                     candidate.isPass ? 'default' : 'destructive'
                                 "
                                 >{{ candidate.isPass ? 'Pass' : 'Fail' }}</Badge
+                            >
+                            <span
+                                v-if="failedHalves(candidate).length > 0"
+                                class="text-destructive block text-xs"
+                                data-test="failed-halves"
+                                >failed {{ failedHalves(candidate).join(' and ') }}</span
                             >
                         </td>
                         <td class="px-3 py-2 tabular-nums">

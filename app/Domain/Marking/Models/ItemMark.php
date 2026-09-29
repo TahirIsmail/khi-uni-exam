@@ -21,12 +21,13 @@ use Illuminate\Support\Carbon;
  * @property int $cand_paper_item_id
  * @property MarkSource $source
  * @property float $marks_awarded
+ * @property bool $is_provisional
  * @property float $max_marks
  * @property int|null $marked_by
  * @property string|null $comments
  * @property Carbon $marked_at
  */
-#[Fillable(['candidate_exam_id', 'cand_paper_item_id', 'source', 'marks_awarded', 'max_marks', 'marked_by', 'comments', 'marked_at'])]
+#[Fillable(['candidate_exam_id', 'cand_paper_item_id', 'source', 'marks_awarded', 'is_provisional', 'max_marks', 'marked_by', 'comments', 'marked_at'])]
 final class ItemMark extends Model
 {
     protected $table = 'mrk_item_marks';
@@ -36,6 +37,7 @@ final class ItemMark extends Model
         return [
             'source' => MarkSource::class,
             'marks_awarded' => 'float',
+            'is_provisional' => 'boolean',
             'max_marks' => 'float',
             'marked_at' => 'datetime',
         ];

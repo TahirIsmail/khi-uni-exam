@@ -14,9 +14,10 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 
 /**
- * What one examiner still has to mark for an examination: every manually-marked item of every
- * submitted attempt they have not yet marked, and — blind — whether their peer has (never what the
- * peer gave).
+ * What one examiner still has to mark for an examination: every item of every submitted attempt
+ * they have not yet marked that either nobody can mark by machine (an essay) or that the machine has
+ * only guessed at (a short answer, a cloze blank) — and, blind, whether their peer has marked it
+ * (never what the peer gave).
  */
 final class MarkingQueue
 {
@@ -39,7 +40,10 @@ final class MarkingQueue
         $attempts = CandidateExam::query()->where('examination_id', $examination->id)
             ->where('status', AttemptStatus::Submitted)->with(['candidate', 'items.paperItem'])->get();
 
+        // Two kinds of item need this examiner: one nobody can mark by machine, and one the machine
+        // has already guessed at and must not be trusted on.
         $manualTypeIds = QuestionType::query()->where('is_manually_marked', true)->pluck('id');
+        $confirmTypeIds = QuestionType::query()->where('requires_confirmation', true)->pluck('id');
 
         $marks = ItemMark::query()->whereIn('candidate_exam_id', $attempts->pluck('id'))->get()
             ->groupBy('cand_paper_item_id');
@@ -47,7 +51,10 @@ final class MarkingQueue
         $rows = [];
         foreach ($attempts as $attempt) {
             foreach ($attempt->items as $item) {
-                if (! $manualTypeIds->contains($item->paperItem->question_type_id)) {
+                $typeId = $item->paperItem->question_type_id;
+                $needsConfirming = $confirmTypeIds->contains($typeId);
+
+                if (! $manualTypeIds->contains($typeId) && ! $needsConfirming) {
                     continue;
                 }
 
@@ -59,6 +66,8 @@ final class MarkingQueue
                     continue;
                 }
 
+                $auto = $bySource->get(MarkSource::Auto->value);
+
                 $rows[] = [
                     'attemptId' => $attempt->id,
                     'itemId' => $item->id,
@@ -66,6 +75,10 @@ final class MarkingQueue
                     'position' => $item->position,
                     'marks' => (float) $item->paperItem->marks,
                     'peerHasMarked' => $bySource->has($peerSource->value),
+                    // What the computer made of the typed answer, for the screen to fill in. Null
+                    // for an essay, which nothing has guessed at.
+                    'suggestedMarks' => $needsConfirming && $auto !== null ? $auto->marks_awarded : null,
+                    'needsConfirming' => $needsConfirming,
                 ];
             }
         }

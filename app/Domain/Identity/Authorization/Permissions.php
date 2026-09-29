@@ -85,6 +85,7 @@ final class Permissions
             'result.rescore' => ['Re-key or remove items and rescore', 'exam_results_rescore', 'view'],
             'result.approve' => ['Approve results', 'exam_results_approve', 'view'],
             'result.publish' => ['Publish results', 'exam_results_publish', 'view'],
+            'result.components' => ['Enter practical, viva and internal assessment marks', 'exam_result_components', 'view'],
         ],
         'Analytics' => [
             'analytics.view' => ['View item analysis', 'exam_item_analysis', 'view'],

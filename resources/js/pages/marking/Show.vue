@@ -144,6 +144,13 @@ function decide(row: AdjudicationQueueRow): void {
                             <td class="px-3 py-2">Q{{ row.position }}</td>
                             <td class="px-3 py-2 tabular-nums">
                                 {{ row.marks }}
+                                <Badge
+                                    v-if="row.suggestedMarks !== null"
+                                    variant="secondary"
+                                    class="ml-2"
+                                    data-test="suggested"
+                                    >suggests {{ row.suggestedMarks }}</Badge
+                                >
                             </td>
                             <td class="px-3 py-2">
                                 <span
@@ -165,7 +172,20 @@ function decide(row: AdjudicationQueueRow): void {
                                     "
                                     class="underline-offset-4 hover:underline"
                                     data-test="mark-item"
-                                    >Mark</Link
+                                    >{{
+                                        row.needsConfirming ? 'Check' : 'Mark'
+                                    }}</Link
+                                >
+                                <Link
+                                    :href="
+                                        marking.attempts.show([
+                                            examination.id,
+                                            row.attemptId,
+                                        ])
+                                    "
+                                    class="text-muted-foreground ml-3 underline-offset-4 hover:underline"
+                                    data-test="open-attempt"
+                                    >Whole paper</Link
                                 >
                             </td>
                         </tr>

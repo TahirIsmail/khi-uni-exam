@@ -46,4 +46,5 @@ export type ResultsAbilities = {
     publish: boolean;
     rescore: boolean;
     analytics: boolean;
+    components: boolean;
 };

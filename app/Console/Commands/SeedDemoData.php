@@ -11,6 +11,7 @@ use App\Domain\Candidate\Models\Candidate;
 use App\Domain\Delivery\Actions\RecordAnswer;
 use App\Domain\Delivery\Actions\StartOrResumeAttempt;
 use App\Domain\Delivery\Actions\SubmitAttempt;
+use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\CandidatePaperItem;
 use App\Domain\Exam\Actions\CreateExamination;
 use App\Domain\Exam\ExaminationInput;
@@ -55,6 +56,8 @@ class SeedDemoData extends Command
     private const NODE_BIOCHEM_CELL = 94;
 
     private const TYPE_SBA = 1;
+
+    private const TYPE_SHORT_ANSWER = 8;
 
     private const TYPE_ESSAY = 11;
 
@@ -121,6 +124,7 @@ class SeedDemoData extends Command
             'dlv_proctor_decisions', 'dlv_proctor_events',
             'cand_paper_items', 'cand_candidate_exams', 'cand_candidates', 'cand_devices',
             'cand_rooms', 'cand_centres',
+            'exm_component_marks', 'exm_result_components',
             'exm_result_publications', 'exm_results', 'exm_item_rekeys',
             'exm_paper_comments', 'exm_paper_items', 'exm_papers',
             'exm_blueprint_targets', 'exm_blueprint_rows', 'exm_blueprints',
@@ -164,7 +168,7 @@ class SeedDemoData extends Command
     }
 
     /**
-     * @param  array{node: int, type: int, cognitive: int, difficulty: int, stem: string, options?: list<array{0: string, 1: string, 2: bool}>, rubric?: list<array{0: string, 1: float}>}  $content
+     * @param  array{node: int, type: int, cognitive: int, difficulty: int, stem: string, options?: list<array{0: string, 1: string, 2: bool}>, rubric?: list<array{0: string, 1: float}>, accepted?: list<string>}  $content
      */
     private function writeQuestionRow(User $author, array $content): int
     {
@@ -228,6 +232,21 @@ class SeedDemoData extends Command
             ]);
         }
 
+        // What a short answer will accept. The computer matches against these and suggests a mark;
+        // an examiner still has to agree with it before it counts.
+        foreach ($content['accepted'] ?? [] as $index => $answer) {
+            DB::table('qb_question_answers')->insert([
+                'version_id' => $versionId,
+                'match_mode' => 'exact',
+                'answer_text' => $answer,
+                'case_sensitive' => false,
+                'marks_fraction' => 1,
+                'sort_order' => $index + 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
         foreach (['submitted', 'under_review', 'approved', 'active'] as $status) {
             DB::table('qb_question_versions')->where('id', $versionId)->update(['status' => $status]);
         }
@@ -258,7 +277,10 @@ class SeedDemoData extends Command
             rows: [
                 ['section' => null, 'node_id' => self::NODE_ANATOMY_TERMS, 'question_type_id' => self::TYPE_SBA, 'question_count' => 3, 'marks_each' => 5.0],
                 ['section' => null, 'node_id' => self::NODE_PHYSIOLOGY_HOMEOSTASIS, 'question_type_id' => self::TYPE_SBA, 'question_count' => 3, 'marks_each' => 5.0],
-                ['section' => null, 'node_id' => self::NODE_BIOCHEM_CELL, 'question_type_id' => self::TYPE_SBA, 'question_count' => 2, 'marks_each' => 5.0],
+                ['section' => null, 'node_id' => self::NODE_BIOCHEM_CELL, 'question_type_id' => self::TYPE_SBA, 'question_count' => 1, 'marks_each' => 5.0],
+                // One of each kind a person has to look at: a short answer the computer only
+                // suggests a mark for, and an essay nothing can mark but an examiner.
+                ['section' => null, 'node_id' => self::NODE_BIOCHEM_CELL, 'question_type_id' => self::TYPE_SHORT_ANSWER, 'question_count' => 1, 'marks_each' => 5.0],
                 ['section' => null, 'node_id' => self::NODE_ANATOMY_CELLS, 'question_type_id' => self::TYPE_ESSAY, 'question_count' => 1, 'marks_each' => 10.0],
             ],
             cognitive: [
@@ -345,6 +367,8 @@ class SeedDemoData extends Command
                 ->get()
                 ->filter(fn ($item): bool => (int) $item->paperItem->question_type_id === self::TYPE_ESSAY);
 
+            $this->confirmShortAnswers($attempt, $staff, $examinerMark, $finaliseMark);
+
             foreach ($essayItems as $item) {
 
                 $criteria = DB::table('qb_question_rubric_criteria')
@@ -381,12 +405,50 @@ class SeedDemoData extends Command
     }
 
     /**
+     * The examiner agreeing with the computer about a short answer.
+     *
+     * A typed answer is only ever a suggestion, so the finished examination's results would sit
+     * pending for ever if nobody confirmed them. The seeder confirms them as they stand — which is
+     * what an examiner would do for the ones the computer got right, and leaves the demo free to
+     * show the disagreement case live on the examination still to be sat.
+     */
+    private function confirmShortAnswers(
+        CandidateExam $attempt,
+        User $staff,
+        RecordExaminerMark $examinerMark,
+        FinaliseItemMark $finaliseMark,
+    ): void {
+        $items = $attempt->items()->with(['paperItem', 'candidateExam.examination'])->get()
+            ->filter(fn ($item): bool => (int) $item->paperItem->question_type_id === self::TYPE_SHORT_ANSWER);
+
+        foreach ($items as $item) {
+            $suggested = (float) DB::table('mrk_item_marks')
+                ->where('cand_paper_item_id', $item->id)->where('source', 'auto')->value('marks_awarded');
+
+            $examinerMark($staff, $item, $suggested, [], 'Confirmed the computer\'s reading of the typed answer.');
+
+            $finaliseMark(CandidatePaperItem::query()
+                ->with(['paperItem', 'candidateExam.examination'])
+                ->findOrFail($item->id));
+        }
+    }
+
+    /**
      * A stronger candidate answers more of the objective items correctly and writes a fuller essay.
      *
      * @return array<string, mixed>
      */
     private function answerFor(PaperItem $paperItem, float $ability, float $bar, int $position): array
     {
+        if ((int) $paperItem->question_type_id === self::TYPE_SHORT_ANSWER) {
+            // A weaker candidate writes something that will not match the accepted list — which is
+            // exactly the case an examiner has to look at rather than trust the computer on.
+            $accepted = (string) DB::table('qb_question_answers')
+                ->where('version_id', $paperItem->version_id)->orderBy('sort_order')->value('answer_text');
+
+            return ['text' => $ability > $bar ? $accepted : 'the cell body'];
+        }
+
         if ((int) $paperItem->question_type_id === self::TYPE_ESSAY) {
             return ['text' => $ability > 0.6
                 ? 'The plasma membrane is a phospholipid bilayer whose hydrophilic heads face the aqueous compartments and whose hydrophobic tails face inwards. Integral proteins span it and act as channels, carriers and pumps, so small non-polar molecules cross freely while ions and polar solutes cross only where a protein allows them. That is what makes the membrane selectively permeable.'
@@ -542,6 +604,16 @@ class SeedDemoData extends Command
             $sba(self::NODE_BIOCHEM_CELL, 2, 3, 'Which of the following is a purine base?', [
                 ['A', 'Adenine', true], ['B', 'Cytosine', false], ['C', 'Thymine', false], ['D', 'Uracil', false],
             ]),
+            [
+                'node' => self::NODE_BIOCHEM_CELL, 'type' => self::TYPE_SHORT_ANSWER, 'cognitive' => 1, 'difficulty' => 1,
+                'stem' => '<p>Name the organelle in which oxidative phosphorylation takes place.</p>',
+                'accepted' => ['mitochondrion', 'mitochondria'],
+            ],
+            [
+                'node' => self::NODE_BIOCHEM_CELL, 'type' => self::TYPE_SHORT_ANSWER, 'cognitive' => 1, 'difficulty' => 2,
+                'stem' => '<p>Name the storage polysaccharide of the human liver.</p>',
+                'accepted' => ['glycogen'],
+            ],
             [
                 'node' => self::NODE_ANATOMY_CELLS, 'type' => self::TYPE_ESSAY, 'cognitive' => 2, 'difficulty' => 2,
                 'stem' => '<p>Describe the structure of the plasma membrane and explain how its organisation supports selective permeability.</p>',

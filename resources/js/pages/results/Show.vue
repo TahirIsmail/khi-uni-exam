@@ -94,6 +94,13 @@ function submitRekey(item: ResultItemRow): void {
                     data-test="analysis-link"
                     >Item analysis</Link
                 >
+                <Link
+                    v-if="can.components"
+                    :href="results.components(examination.id)"
+                    class="text-sm underline-offset-4 hover:underline"
+                    data-test="components-link"
+                    >Practical &amp; internal marks</Link
+                >
             </div>
         </div>
 

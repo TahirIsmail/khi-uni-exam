@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $has_accepted_answers
  * @property bool $has_numeric_answer
  * @property bool $is_manually_marked
+ * @property bool $requires_confirmation
  * @property bool $supports_shuffle
  * @property bool $supports_partial_credit
  * @property bool $supports_negative_marks
@@ -48,6 +49,7 @@ final class QuestionType extends Model
             'has_accepted_answers' => 'boolean',
             'has_numeric_answer' => 'boolean',
             'is_manually_marked' => 'boolean',
+            'requires_confirmation' => 'boolean',
             'supports_shuffle' => 'boolean',
             'supports_partial_credit' => 'boolean',
             'supports_negative_marks' => 'boolean',

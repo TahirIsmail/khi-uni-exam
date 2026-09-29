@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Exam;
 
+use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\CandidatePaperItem;
 use App\Domain\Exam\Models\Examination;
 use App\Domain\Identity\ActiveBranch;
@@ -11,6 +12,7 @@ use App\Domain\Marking\Actions\RecordExaminerMark;
 use App\Domain\Marking\Enums\ExaminerRole;
 use App\Domain\Marking\Models\ExaminerAssignment;
 use App\Domain\Marking\Queries\AdjudicationQueue;
+use App\Domain\Marking\Queries\AttemptMarkSheet;
 use App\Domain\Marking\Queries\ExaminerCandidates;
 use App\Domain\Marking\Queries\ItemMarkData;
 use App\Domain\Marking\Queries\MarkingExaminationList;
@@ -85,6 +87,22 @@ class MarkingController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Examiner assigned.')]);
 
         return to_route('marking.show', $exam);
+    }
+
+    /**
+     * One candidate's whole paper, so an examiner can reach an item the marking queue never shows
+     * them — in practice, a machine-marked one somebody has queried.
+     */
+    public function attempt(Request $request, Examination $exam, CandidateExam $attempt, AttemptMarkSheet $sheet): Response
+    {
+        $this->guard($request, $exam);
+        abort_unless($attempt->examination_id === $exam->id, 404);
+
+        return Inertia::render('marking/Attempt', [
+            'examination' => ['id' => $exam->id, 'reference' => $exam->public_ref, 'title' => $exam->title],
+            'attempt' => $sheet->for($attempt),
+            'can' => ['mark' => $request->user('web')->can('marking.mark')],
+        ]);
     }
 
     public function showItem(Request $request, Examination $exam, CandidatePaperItem $item, ItemMarkData $data): Response

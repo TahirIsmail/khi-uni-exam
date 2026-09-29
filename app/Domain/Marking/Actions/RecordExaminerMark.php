@@ -8,6 +8,7 @@ use App\Domain\Marking\Enums\ExaminerRole;
 use App\Domain\Marking\Enums\MarkSource;
 use App\Domain\Marking\Models\ExaminerAssignment;
 use App\Domain\Marking\Models\ItemMark;
+use App\Domain\QuestionBank\Models\QuestionType;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -17,6 +18,11 @@ use Illuminate\Validation\ValidationException;
  * manually-marked type, or a set of per-criterion marks for an essay, which must add up to the
  * mark given. Marking is blind — this never reads or exposes the other examiner's mark; only
  * FinaliseItemMark, once both are in, compares them.
+ *
+ * The same path serves all three things an examiner does: marking what no machine can mark,
+ * confirming what a machine only suggested, and overturning what a machine decided. The last of
+ * those must carry a reason. Nothing is edited either way — mrk_item_marks is append-only, so an
+ * examiner's mark sits beside the auto mark for good and FinalMark decides which one counts.
  */
 final class RecordExaminerMark
 {
@@ -53,6 +59,15 @@ final class RecordExaminerMark
             throw ValidationException::withMessages(['marks_awarded' => 'The mark must be between 0 and the item\'s marks.']);
         }
 
+        // Overturning a mark the computer made against a sealed key is a decision an examination
+        // board may well ask about, so it is not allowed to be silent. Ordinary marking — an essay,
+        // or confirming a short answer the computer only guessed at — needs no such justification.
+        if ($this->overridesAMachineMark($item) && trim((string) $comments) === '') {
+            throw ValidationException::withMessages([
+                'comments' => 'Say why you are changing a mark the computer awarded.',
+            ]);
+        }
+
         if ($criteria !== [] && round(array_sum(array_column($criteria, 'marks_awarded')), 2) !== round($marksAwarded, 2)) {
             throw ValidationException::withMessages(['criteria' => 'The rubric criteria must add up to the mark given.']);
         }
@@ -81,5 +96,16 @@ final class RecordExaminerMark
         }
 
         return $mark;
+    }
+
+    /**
+     * Whether this mark replaces one the machine already settled — as opposed to marking something
+     * the machine never touched, or confirming something it only suggested.
+     */
+    private function overridesAMachineMark(CandidatePaperItem $item): bool
+    {
+        $type = QuestionType::query()->find($item->paperItem->question_type_id);
+
+        return $type !== null && ! $type->is_manually_marked && ! $type->requires_confirmation;
     }
 }

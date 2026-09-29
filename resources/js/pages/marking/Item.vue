@@ -27,11 +27,25 @@ const itemsById = computed(() =>
     Object.fromEntries(props.item.items.map((i) => [i.id, i])),
 );
 
+/** The computer's guess at a typed answer, waiting for this examiner to accept or replace it. */
+const suggestion = computed(
+    () => props.marks.find((m) => m.source === 'auto' && m.isProvisional) ?? null,
+);
+
+/**
+ * Whether this mark would overturn one the computer settled against the sealed key — as opposed to
+ * marking an essay, or confirming a short answer it only guessed at. The server enforces the same
+ * rule; this is only so the form can say so before it is submitted.
+ */
+const overridesMachine = computed(
+    () => !props.item.isManuallyMarked && !props.item.needsConfirming,
+);
+
 const criteriaMarks = useForm<Record<number, number | undefined>>(
     Object.fromEntries(props.item.rubricCriteria.map((c) => [c.id, undefined])),
 );
 const flatMark = useForm<{ marks_awarded: number | undefined; comments: string }>({
-    marks_awarded: undefined,
+    marks_awarded: suggestion.value?.marksAwarded ?? undefined,
     comments: '',
 });
 
@@ -62,6 +76,12 @@ function submit(): void {
             criteria,
         }))
         .post(marking.items.mark([props.examination.id, props.item.id]).url);
+}
+
+/** Accept the computer's suggestion as it stands — the same path as marking it by hand. */
+function confirmSuggestion(): void {
+    flatMark.marks_awarded = suggestion.value?.marksAwarded;
+    submit();
 }
 </script>
 
@@ -136,6 +156,39 @@ function submit(): void {
             </p>
         </div>
 
+        <div
+            v-if="item.acceptedAnswers.length > 0 || item.options.some((o) => o.isCorrect)"
+            class="grid gap-2 rounded-xl border p-4 shadow-xs"
+            data-test="model-answer"
+        >
+            <h2 class="text-sm font-medium">The answer that was wanted</h2>
+            <p
+                v-for="option in item.options.filter((o) => o.isCorrect)"
+                :key="option.id"
+                class="text-sm"
+            >
+                <span class="text-muted-foreground mr-2">{{ option.label }}</span>
+                <span v-html="option.body" />
+            </p>
+            <ul
+                v-if="item.acceptedAnswers.length > 0"
+                class="grid list-disc gap-1 pl-5 text-sm"
+            >
+                <li
+                    v-for="(accepted, index) in item.acceptedAnswers"
+                    :key="index"
+                >
+                    {{ accepted.answerText }}
+                    <span
+                        v-if="accepted.marksFraction < 1"
+                        class="text-muted-foreground"
+                        >({{ Math.round(accepted.marksFraction * 100) }}% of the
+                        marks)</span
+                    >
+                </li>
+            </ul>
+        </div>
+
         <div v-if="marks.length > 0" class="grid gap-2">
             <h2 class="text-sm font-medium">Marks recorded so far</h2>
             <div
@@ -146,6 +199,9 @@ function submit(): void {
             >
                 <span class="font-medium">{{ mark.sourceLabel }}:</span>
                 {{ mark.marksAwarded }} / {{ item.marks }}
+                <Badge v-if="mark.isProvisional" variant="secondary" class="ml-2"
+                    >Suggestion only</Badge
+                >
             </div>
         </div>
 
@@ -155,6 +211,25 @@ function submit(): void {
             @submit.prevent="submit"
         >
             <h2 class="text-sm font-medium">Your mark</h2>
+
+            <p
+                v-if="suggestion"
+                class="text-muted-foreground text-xs"
+                data-test="suggestion-notice"
+            >
+                The computer matched this typed answer and suggests
+                {{ suggestion.marksAwarded }} of {{ item.marks }}. It counts for
+                nothing until you record a mark here.
+            </p>
+            <p
+                v-else-if="overridesMachine"
+                class="text-xs text-amber-700 dark:text-amber-500"
+                data-test="override-notice"
+            >
+                This item was marked against the sealed answer key. Recording a
+                mark here replaces that one and needs a reason. Negative marking
+                no longer applies to it once you do.
+            </p>
 
             <div v-if="item.rubricCriteria.length > 0" class="grid gap-2">
                 <div
@@ -200,22 +275,38 @@ function submit(): void {
             </div>
 
             <div class="grid gap-1.5">
-                <Label for="comments">Comments (optional)</Label>
+                <Label for="comments">{{
+                    overridesMachine ? 'Why you are changing it' : 'Comments (optional)'
+                }}</Label>
                 <Input
                     id="comments"
                     v-model="flatMark.comments"
                     maxlength="500"
+                    :required="overridesMachine"
                     data-test="comments"
                 />
+                <p v-if="flatMark.errors.comments" class="text-destructive text-xs">
+                    {{ flatMark.errors.comments }}
+                </p>
             </div>
 
-            <Button
-                type="submit"
-                class="justify-self-start"
-                :disabled="flatMark.processing"
-                data-test="save-mark"
-                >Record mark</Button
-            >
+            <div class="flex items-center gap-2">
+                <Button
+                    type="submit"
+                    :disabled="flatMark.processing"
+                    data-test="save-mark"
+                    >Record mark</Button
+                >
+                <Button
+                    v-if="suggestion"
+                    type="button"
+                    variant="secondary"
+                    :disabled="flatMark.processing"
+                    data-test="confirm-suggestion"
+                    @click="confirmSuggestion"
+                    >Confirm {{ suggestion.marksAwarded }} / {{ item.marks }}</Button
+                >
+            </div>
         </form>
     </div>
 </template>

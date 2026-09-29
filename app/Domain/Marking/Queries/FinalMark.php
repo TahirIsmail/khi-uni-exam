@@ -10,6 +10,9 @@ use Illuminate\Support\Collection;
  * The one mark that counts for an item, out of however many sources have weighed in — the same
  * priority everywhere, so step 21's results never disagree with the marking screens about which
  * mark is final.
+ *
+ * A provisional mark counts for nothing here. That is how a short answer's computed mark reaches the
+ * examiner as a suggestion without ever reaching the candidate as a result.
  */
 final class FinalMark
 {
@@ -28,7 +31,11 @@ final class FinalMark
 
         foreach ($priority as $source) {
             $mark = $bySource->get($source->value);
-            if ($mark !== null) {
+
+            // A provisional auto mark is the computer's suggestion on typed text, not a decision:
+            // it is shown to the examiner and waits for them. Only the auto source is ever
+            // provisional, but the check is written once here rather than inside the loop's branch.
+            if ($mark !== null && ! $mark->is_provisional) {
                 return $mark;
             }
         }

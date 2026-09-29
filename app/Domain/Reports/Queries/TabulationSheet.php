@@ -5,6 +5,7 @@ namespace App\Domain\Reports\Queries;
 use App\Domain\Exam\Models\Examination;
 use App\Domain\Results\Enums\PublicationStatus;
 use App\Domain\Results\Models\ResultPublication;
+use App\Domain\Results\Support\GradeScales;
 use App\Support\Cms\CmsAcademic;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,14 @@ use stdClass;
  */
 final class TabulationSheet
 {
-    public function __construct(private readonly CmsAcademic $academic) {}
+    /** @var array<int, float> each examination's pass mark, read once for the whole sheet */
+    private array $passPercentages = [];
+
+    public function __construct(
+        private readonly CmsAcademic $academic,
+        private readonly CourseComponents $components,
+        private readonly GradeScales $scales,
+    ) {}
 
     /**
      * @return array{
@@ -43,6 +51,10 @@ final class TabulationSheet
     {
         $examinations = $this->examinationsOf($cohort);
         $published = $this->publishedIds($examinations);
+
+        $this->components->load($published);
+        $this->passPercentages = $examinations->pluck('pass_percentage', 'id')
+            ->map(fn (mixed $p): float => (float) $p)->all();
 
         $calendarType = $this->academic->programmeCalendar($cohort->programmeId);
         $courses = $this->coursesOf($examinations->whereIn('id', $published), $calendarType);
@@ -115,14 +127,25 @@ final class TabulationSheet
 
         return array_values($examinations->map(function (Examination $exam) use ($creditHours, $calendarType): array {
             $course = $creditHours->get($exam->course_id);
+            $parts = $this->components->of($exam->id);
 
             return [
                 'examinationId' => $exam->id,
                 'reference' => $exam->public_ref,
                 'code' => $course->course_code ?? ('#'.$exam->course_id),
                 'title' => $course->title ?? $exam->title,
-                'totalMarks' => (float) $exam->total_marks,
+                // Where a subject is made of several parts, what it is out of is all of them
+                // together — the paper alone is no longer the course's marks.
+                'totalMarks' => $parts === []
+                    ? (float) $exam->total_marks
+                    : round(array_sum(array_map(fn ($part): float => $part->max_marks, $parts)), 2),
                 'passPercentage' => (float) $exam->pass_percentage,
+                'components' => array_map(fn ($part): array => [
+                    'code' => $part->code,
+                    'name' => $part->name,
+                    'maxMarks' => $part->max_marks,
+                    'group' => $part->group,
+                ], $parts),
                 // Credit hours only matter where a GPA is worked out from them.
                 'creditHours' => $calendarType === 'semester'
                     ? (($course->credit_hours ?? null) === null ? null : (float) $course->credit_hours)
@@ -149,7 +172,7 @@ final class TabulationSheet
             ->leftJoin('exm_results as r', 'r.candidate_exam_id', '=', 'a.id')
             ->whereIn('c.examination_id', $examinations->pluck('id'))
             ->get([
-                'c.examination_id', 'c.candidate_no', 'c.name', 'c.roll_no', 'c.cnic',
+                'c.id as candidate_id', 'c.examination_id', 'c.candidate_no', 'c.name', 'c.roll_no', 'c.cnic',
                 'r.total_marks', 'r.percentage', 'r.grade', 'r.grade_point', 'r.is_pass', 'r.pending_items',
             ]);
 
@@ -172,14 +195,7 @@ final class TabulationSheet
                 $byCandidate[$number]['cnics'][(string) $row->cnic] = true;
             }
 
-            $byCandidate[$number]['courses'][(int) $row->examination_id] = [
-                'totalMarks' => $row->total_marks === null ? null : (float) $row->total_marks,
-                'percentage' => $row->percentage === null ? null : (float) $row->percentage,
-                'grade' => $row->grade === null ? null : (string) $row->grade,
-                'gradePoint' => $row->grade_point === null ? null : (float) $row->grade_point,
-                'isPass' => $row->is_pass === null ? null : (bool) $row->is_pass,
-                'pending' => (bool) ($row->pending_items ?? false),
-            ];
+            $byCandidate[$number]['courses'][(int) $row->examination_id] = $this->courseResult($row, $calendarType);
         }
 
         ksort($byCandidate);
@@ -188,6 +204,62 @@ final class TabulationSheet
             fn (array $candidate): array => $this->summarise($candidate, $courses, $calendarType, $creditHoursComplete),
             $byCandidate
         ));
+    }
+
+    /**
+     * What one candidate got for one course.
+     *
+     * Without components that is what the paper's marking produced, exactly as it always was. With
+     * them, the paper is one part of a subject that also has a practical, a viva and an internal
+     * assessment, so the marks, the percentage, the grade and the pass are all the subject's rather
+     * than the paper's — and a part nobody has entered yet leaves the subject incomplete rather than
+     * quietly scoring it nil.
+     *
+     * @return array<string, mixed>
+     */
+    private function courseResult(stdClass $row, ?string $calendarType): array
+    {
+        $examinationId = (int) $row->examination_id;
+        $paperMarks = $row->total_marks === null || (bool) ($row->pending_items ?? false)
+            ? null
+            : (float) $row->total_marks;
+
+        if (! $this->components->has($examinationId)) {
+            return [
+                'totalMarks' => $row->total_marks === null ? null : (float) $row->total_marks,
+                'percentage' => $row->percentage === null ? null : (float) $row->percentage,
+                'grade' => $row->grade === null ? null : (string) $row->grade,
+                'gradePoint' => $row->grade_point === null ? null : (float) $row->grade_point,
+                'isPass' => $row->is_pass === null ? null : (bool) $row->is_pass,
+                'pending' => (bool) ($row->pending_items ?? false),
+                'parts' => [],
+                'failedGroups' => [],
+            ];
+        }
+
+        $subject = $this->components->resultFor($examinationId, (int) $row->candidate_id, $paperMarks);
+        $awarded = $subject['complete'] && $calendarType !== null && $subject['percentage'] !== null
+            ? $this->scales->award($calendarType, $subject['percentage'])
+            : null;
+
+        return [
+            'totalMarks' => $subject['complete'] ? $subject['obtained'] : null,
+            'percentage' => $subject['complete'] ? $subject['percentage'] : null,
+            'grade' => $awarded['grade'] ?? null,
+            'gradePoint' => $awarded['point'] ?? null,
+            // Both bars: the subject's own pass mark, and each half passed on its own.
+            'isPass' => $subject['complete']
+                && $subject['isPass']
+                && $subject['percentage'] >= $this->passPercentage($examinationId),
+            'pending' => ! $subject['complete'],
+            'parts' => $subject['parts'],
+            'failedGroups' => $subject['failedGroups'],
+        ];
+    }
+
+    private function passPercentage(int $examinationId): float
+    {
+        return $this->passPercentages[$examinationId] ?? 0.0;
     }
 
     /**

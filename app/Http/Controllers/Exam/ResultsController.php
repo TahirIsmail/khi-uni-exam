@@ -46,6 +46,7 @@ class ResultsController extends Controller
                 'publish' => $user->can('result.publish'),
                 'rescore' => $user->can('result.rescore'),
                 'analytics' => $user->can('analytics.view') || $user->can('analytics.run') || $user->can('analytics.decision.record'),
+                'components' => $user->can('result.components'),
             ],
         ]);
     }

@@ -16,6 +16,13 @@ export type SheetCourse = {
     totalMarks: number;
     passPercentage: number;
     creditHours: number | null;
+    /** The parts this subject's result is made of; empty where it is the paper alone. */
+    components: {
+        code: string;
+        name: string;
+        maxMarks: number;
+        group: 'theory' | 'practical';
+    }[];
 };
 
 export type SheetCourseResult = {
@@ -25,6 +32,10 @@ export type SheetCourseResult = {
     gradePoint: number | null;
     isPass: boolean | null;
     pending: boolean;
+    /** What each part gave this candidate; empty where the subject is the paper alone. */
+    parts: CourseComponentPart[];
+    /** 'theory' or 'practical' where that half was failed on its own. */
+    failedGroups: string[];
 };
 
 export type SheetCandidate = {
@@ -72,4 +83,29 @@ export type CandidateStatementData = {
         year: string | null;
         intake: string | null;
     };
+};
+
+export type ResultComponentRow = {
+    id: number;
+    code: string;
+    name: string;
+    maxMarks: number;
+    group: 'theory' | 'practical';
+    minPassPercentage: number | null;
+    /** This system's own paper: shown, but never typed in. */
+    isPaper: boolean;
+};
+
+export type ComponentCandidate = {
+    id: number;
+    candidateNo: string;
+    name: string;
+};
+
+/** One part of a subject as it stands for one candidate; null marks are not yet entered. */
+export type CourseComponentPart = {
+    code: string;
+    name: string;
+    marks: number | null;
+    maxMarks: number;
 };
