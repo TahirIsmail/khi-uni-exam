@@ -16,15 +16,8 @@ export function updateTheme(value: Appearance): void {
     }
 
     if (value === 'system') {
-        const mediaQueryList = window.matchMedia(
-            '(prefers-color-scheme: dark)',
-        );
-        const systemTheme = mediaQueryList.matches ? 'dark' : 'light';
-
-        document.documentElement.classList.toggle(
-            'dark',
-            systemTheme === 'dark',
-        );
+        // Dark mode is off for now: 'system' resolves to light instead of following the OS.
+        document.documentElement.classList.toggle('dark', false);
     } else {
         document.documentElement.classList.toggle('dark', value === 'dark');
     }
@@ -61,7 +54,8 @@ const prefersDark = (): boolean => {
         return false;
     }
 
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Dark mode is off for now.
+    return false;
 };
 
 const handleSystemThemeChange = () => {
@@ -75,12 +69,13 @@ export function initializeTheme(): void {
         return;
     }
 
-    // Initialize theme from saved preference or default to system...
-    const savedAppearance = getStoredAppearance();
-    updateTheme(savedAppearance || 'system');
+    // Dark mode is off for now: always light, whatever the OS or a stored preference says.
+    // To bring dark mode back, restore the two lines below and the two edits above.
+    updateTheme('light');
 
-    // Set up system theme change listener...
-    mediaQuery()?.addEventListener('change', handleSystemThemeChange);
+    // const savedAppearance = getStoredAppearance();
+    // updateTheme(savedAppearance || 'system');
+    // mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }
 
 const appearance = ref<Appearance>('system');
