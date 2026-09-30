@@ -96,8 +96,7 @@ beforeEach(function () {
     $this->actingAs($assigner, 'web')->post("/marking/{$this->exam->id}/examiners", ['user_id' => $this->adjudicator->id, 'role' => 'adjudicator'])->assertSessionHasNoErrors();
 
     // A second examination, only so a test can try to reach this one's attempt through it. Bare —
-    // it needs no paper, and every extra request here eats into the rate limit the candidate below
-    // shares with it (Laravel's throttle keys on the user, not the route).
+    // it needs no paper.
     $this->otherExam = $this->newExam();
 });
 

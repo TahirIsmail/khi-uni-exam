@@ -75,6 +75,8 @@ class AppServiceProvider extends ServiceProvider
         // Authenticator and recovery codes: per user, so one account cannot be brute-forced from many IPs.
         RateLimiter::for('mfa', fn (Request $request) => Limit::perMinute(5)->by('mfa|'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
 
+        $this->configureSitRateLimits();
+
         Event::listen([
             ValidTwoFactorAuthenticationCodeProvided::class,
             TwoFactorAuthenticationConfirmed::class,
@@ -98,6 +100,26 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('exam.conduct.access', fn (User $user): bool => app(AccessControl::class)->has($user, 'candidate.view')
             || app(AccessControl::class)->has($user, 'candidate.checkin')
             || app(AccessControl::class)->has($user, 'delivery.monitor'));
+    }
+
+    /**
+     * Sitting an exam: each route counts on its own, and per candidate. A plain `throttle:10,1` keys
+     * on the signed-in user alone, so a candidate's autosaves would use up the allowance of their
+     * own submit; and before sign-in it keys on the IP, which a whole exam hall shares.
+     */
+    protected function configureSitRateLimits(): void
+    {
+        // PIN guessing is limited per candidate number; the per-IP limit is only a ceiling, high
+        // enough for a hall behind one address signing in together.
+        RateLimiter::for('sit-login', fn (Request $request) => [
+            Limit::perMinute(10)->by('sit-login|'.$request->route()?->originalParameter('exam').'|'.mb_strtolower(trim((string) $request->input('candidate_no')))),
+            Limit::perMinute(600)->by('sit-login-ip|'.$request->ip()),
+        ]);
+
+        foreach (['sit-heartbeat' => 60, 'sit-answer' => 120, 'sit-submit' => 10, 'sit-device' => 30, 'sit-proctor-event' => 120] as $name => $perMinute) {
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute($perMinute)
+                ->by($name.'|'.($request->user('candidate')?->getAuthIdentifier() ?? $request->ip())));
+        }
     }
 
     /**

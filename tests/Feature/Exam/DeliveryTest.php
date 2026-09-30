@@ -93,6 +93,36 @@ test('a wrong PIN is refused the same way an unknown candidate number is', funct
     signInPin('C-999', $this->pin)->assertInvalid(['pin']);
 });
 
+test('a candidate who has been saving answers quickly can still submit', function () {
+    signInPin('C-001', $this->pin)->assertRedirect();
+    $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
+    $item = $attempt->items()->firstOrFail();
+
+    foreach (range(1, 15) as $sequence) {
+        $this->postJson("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => $sequence, 'payload' => ['text' => (string) $sequence]])->assertOk();
+    }
+
+    $this->post("/sit/{$this->exam->id}/submit")->assertRedirect("/sit/{$this->exam->id}/submitted");
+    expect($attempt->fresh()->status)->toBe(AttemptStatus::Submitted);
+});
+
+test('a hall signing in from one address does not lock the next candidate out', function () {
+    foreach (range(1, 15) as $i) {
+        signInPin('C-9'.$i, '000000')->assertInvalid(['pin']);
+    }
+
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/exam");
+});
+
+test('guessing the PIN of one candidate number is cut off', function () {
+    foreach (range(1, 10) as $i) {
+        signInPin('C-001', '000000')->assertInvalid(['pin']);
+    }
+
+    signInPin('C-001', $this->pin)->assertStatus(429);
+    signInPin(' c-001 ', $this->pin)->assertStatus(429);
+});
+
 test('signing in again while the first computer is still active is blocked', function () {
     signInPin('C-001', $this->pin)->assertRedirect();
 
