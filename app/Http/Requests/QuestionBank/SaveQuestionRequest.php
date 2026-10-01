@@ -22,7 +22,8 @@ class SaveQuestionRequest extends FormRequest
         return [
             'question_type_id' => ['required', 'integer', Rule::exists('qb_question_types', 'id')->where('is_active', true)],
             'course_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
-            'node_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            // Empty: the course as a whole (BDS, DPT). An MBBS question names a subject (CmsAcademic::placeOf).
+            'node_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'vignette' => ['nullable', 'string', 'max:20000'],
             'stem' => ['required', 'string', 'max:20000'],
             'lead_in' => ['nullable', 'string', 'max:500'],
@@ -32,6 +33,8 @@ class SaveQuestionRequest extends FormRequest
             'negative_marks' => ['required', 'numeric', 'min:0', 'max:9999'],
             'discipline_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            // The Academic Session; when it is not sent, the one the user is working in.
+            'intake_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'cognitive_level_id' => ['nullable', 'integer', Rule::exists('qb_cognitive_levels', 'id')],
             'difficulty_level_id' => ['nullable', 'integer', Rule::exists('qb_difficulty_levels', 'id')],
 
@@ -95,7 +98,6 @@ class SaveQuestionRequest extends FormRequest
         return [
             'question_type_id.required' => 'Choose the type of question.',
             'course_id.required' => 'Choose the course.',
-            'node_id.required' => 'Choose the topic.',
             'stem.required' => 'Write the question.',
             'marks.required' => 'Enter the marks.',
         ];

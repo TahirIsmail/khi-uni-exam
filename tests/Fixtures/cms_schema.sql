@@ -189,6 +189,7 @@ CREATE TABLE `acad_programme_profiles` (
   `class_id` int NOT NULL COMMENT 'Programme = classes.id',
   `code` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Short programme code, e.g. MBBS',
   `calendar_type` enum('annual','semester') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `structure_type` enum('modular','subject') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'subject' COMMENT 'modular = module > subject (MBBS); subject = courses directly (BDS, DPT)',
   `duration_years` tinyint unsigned NOT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -385,6 +386,7 @@ CREATE TABLE `sch_settings` (
   `kmu_assess_reviews_required` tinyint unsigned NOT NULL DEFAULT '1',
   `kmu_assess_review_days` tinyint unsigned NOT NULL DEFAULT '7',
   `kmu_assess_auto_activate` tinyint(1) NOT NULL DEFAULT '1',
+  `kmu_assess_reviewer_accept_stores` tinyint(1) NOT NULL DEFAULT '1',
   `kmu_assess_reviewer_anonymous` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

@@ -7,7 +7,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('cms:audit-reader-sql {--user=kmu_audit_reader : MySQL user} {--host=localhost : Host part of the MySQL account}')]
-#[Description('Print SQL that creates the MySQL user kmu-cms uses for the Exam Audit Log screen (SELECT on v_cms_audit_entries only)')]
+#[Description('Print SQL that creates the MySQL user kmu-cms uses for the Exam Audit Log screen and its Course delete check (SELECT on v_cms_audit_entries and v_cms_course_usage only)')]
 final class CmsAuditReaderSql extends Command
 {
     public function handle(): int
@@ -32,12 +32,15 @@ final class CmsAuditReaderSql extends Command
         $quotedPassword = "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $password)."'";
         $schema = '`'.str_replace('`', '``', $database).'`';
 
-        $this->line(implode(PHP_EOL, [
+        foreach ([
             "CREATE USER IF NOT EXISTS {$account} IDENTIFIED BY {$quotedPassword};",
             "ALTER USER {$account} IDENTIFIED BY {$quotedPassword};",
             "REVOKE ALL PRIVILEGES, GRANT OPTION FROM {$account};",
             "GRANT SELECT ON {$schema}.`v_cms_audit_entries` TO {$account};",
-        ]));
+            "GRANT SELECT ON {$schema}.`v_cms_course_usage` TO {$account};",
+        ] as $statement) {
+            $this->line($statement);
+        }
 
         return self::SUCCESS;
     }

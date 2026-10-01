@@ -114,6 +114,7 @@ export type QuestionDraft = {
     node_id: number | null;
     discipline_id: number | null;
     exam_type_id: number | null;
+    intake_id: number | null;
     vignette: string | null;
     stem: string;
     lead_in: string | null;
@@ -140,9 +141,10 @@ export type StoredVersion = {
     editable: boolean;
     questionTypeId: number;
     courseId: number;
-    nodeId: number;
+    nodeId: number | null;
     disciplineId: number | null;
     examTypeId: number | null;
+    intakeId: number | null;
     professionalId: number | null;
     termId: number | null;
     vignette: string | null;

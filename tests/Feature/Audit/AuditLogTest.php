@@ -115,13 +115,14 @@ test('kmu-cms reads the audit log with actor names through v_cms_audit_entries',
         ->and($row->reason)->toBe('why');
 });
 
-test('the SQL for the audit reader account grants SELECT on the audit view only', function () {
+test('the SQL for the audit reader account grants SELECT on the audit and course usage views only', function () {
     config(['database.cms_audit_reader_password' => 'short']);
     $this->artisan('cms:audit-reader-sql')->assertFailed();
 
     config(['database.cms_audit_reader_password' => str_repeat('x', 24)]);
     $this->artisan('cms:audit-reader-sql', ['--user' => 'kmu_audit_reader'])
         ->expectsOutputToContain('GRANT SELECT ON `'.config('database.connections.mysql.database').'`.`v_cms_audit_entries` TO')
+        ->expectsOutputToContain('GRANT SELECT ON `'.config('database.connections.mysql.database').'`.`v_cms_course_usage` TO')
         ->doesntExpectOutputToContain('sec_audit_logs')
         ->assertSuccessful();
 

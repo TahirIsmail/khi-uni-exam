@@ -34,6 +34,17 @@ test('a valid ticket signs the staff member in and creates a linked local user',
         ->and($user->last_login_at)->not->toBeNull();
 });
 
+test('the Intake (Academic Session) selected in kmu-cms is kept for filing questions', function () {
+    $staffId = $this->cmsStaff();
+
+    $this->post('/sso/cms', ['ticket' => $this->cmsTicket(['sub' => $staffId, 'intake' => 34])])->assertRedirect('/dashboard');
+    expect(session('cms_intake_id'))->toBe(34);
+
+    // A ticket without one (an older kmu-cms) leaves the newest session of the campus to be used.
+    $this->post('/sso/cms', ['ticket' => $this->cmsTicket(['sub' => $staffId])])->assertRedirect('/dashboard');
+    expect(session()->has('cms_intake_id'))->toBeFalse();
+});
+
 test('a later visit reuses the same user and syncs name and email from the CMS', function () {
     $staffId = $this->cmsStaff(['name' => 'Ayesha', 'email' => 'ayesha@kmu.test']);
     $this->post('/sso/cms', ['ticket' => $this->cmsTicket(['sub' => $staffId])]);

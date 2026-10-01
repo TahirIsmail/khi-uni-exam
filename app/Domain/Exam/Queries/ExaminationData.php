@@ -230,7 +230,11 @@ final class ExaminationData
             $byId[$node['id']] = $node;
         }
 
-        return array_map(function (array $node) use ($byId): array {
+        // A row for the whole course draws on every question of it, whatever subject or topic, and on
+        // the questions filed on the course itself (BDS, DPT).
+        $whole = ['id' => 0, 'parentId' => null, 'label' => 'The whole course', 'name' => 'The whole course', 'level' => 'course', 'depth' => 0];
+
+        return [$whole, ...array_map(function (array $node) use ($byId): array {
             $names = [$node['name']];
             $parent = $node['parent_id'];
             for ($guard = 0; $parent !== null && isset($byId[$parent]) && $guard < 20; $guard++) {
@@ -246,6 +250,6 @@ final class ExaminationData
                 'level' => $node['level'],
                 'depth' => $node['depth'],
             ];
-        }, $nodes);
+        }, $nodes)];
     }
 }

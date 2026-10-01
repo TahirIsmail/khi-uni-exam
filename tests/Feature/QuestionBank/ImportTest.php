@@ -344,12 +344,107 @@ test('a checked file can be discarded, a committed one cannot', function () {
     expect($committed->fresh()->status)->toBe('committed');
 });
 
-test('the template file names the columns and shows an example of each common type', function () {
+test('the template is KMU\'s own format, and the full one shows an example of each common type', function () {
     $csv = $this->actingAs($this->importer)->get('/questions/imports/template')->assertOk()->streamedContent();
     $lines = array_map(str_getcsv(...), array_filter(explode("\n", trim($csv))));
 
+    expect($lines[0])->toBe(['Question No', 'exam_type', 'Academic Year', 'subject', 'discipline', 'stem', 'lead_in', 'options', 'correct option'])
+        ->and(array_column(array_slice($lines, 1), 7))->toBe(['Axillary nerve', 'Radial nerve', 'Musculocutaneous nerve', 'Suprascapular nerve'])
+        ->and($lines[1][8])->toBe('A');
+
+    $full = $this->actingAs($this->importer)->get('/questions/imports/template?full=1')->assertOk()->streamedContent();
+    $lines = array_map(str_getcsv(...), array_filter(explode("\n", trim($full))));
     expect($lines[0])->toContain('stem')->toContain('options')->toContain('correct')
         ->and(array_column(array_slice($lines, 1), 0))->toBe(['sba', 'mtf', 'short_answer', 'numerical']);
+});
+
+/** A file in KMU's format, as KMU sent it: each option on a line of its own under its question. */
+function kmuCsv(string $program, string $subject = 'Anatomy', string $year = '2026'): UploadedFile
+{
+    $lines = [
+        'Question No,exam_type,Academic Year,subject,discipline,stem,lead_in,options,correct option',
+        "1,annual,{$year},{$subject},{$program},\"After a fall on an outstretched hand, a 25-year-old man cannot abduct his arm beyond 15 degrees, and the skin over the lower deltoid is numb.\",Which nerve is most likely injured?,Axillary nerve ,A",
+        ',,,,,,, Radial nerve,',
+        ',,,,,,,Musculocutaneous nerve ,',
+        ',,,,,,,Suprascapular nerve,',
+        "2,supplementary,{$year},{$subject},{$program},Which muscle is the main flexor of the elbow joint?,,Biceps brachii,B",
+        ',,,,,,,Brachialis,',
+        ',,,,,,,Brachioradialis,',
+    ];
+
+    return UploadedFile::fake()->createWithContent('kmu-question-import-template.csv', implode("\n", $lines));
+}
+
+test('KMU\'s format imports as it is: options one per line, the module chosen on the screen', function () {
+    $cms = config('database.cms_source_database');
+    DB::table("{$cms}.acad_programme_profiles")->where('class_id', $this->programme)->update(['structure_type' => 'modular']);
+    $program = DB::table("{$cms}.acad_programme_profiles")->where('class_id', $this->programme)->value('code');
+    $anatomy = $this->cmsCurriculumNode($this->course, $this->programme, 'Anatomy');
+    $intake = (int) DB::table("{$cms}.sessions")->insertGetId(['branch_id' => $this->branch, 'session' => '2026 Intake', 'start_date' => '2026-09-01', 'is_active' => 'no']);
+    $this->cmsExamType('supplementary');
+
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($program), 'course_id' => $this->course])->assertRedirect();
+
+    $import = QuestionImport::query()->firstOrFail();
+    $rows = $import->rows()->orderBy('row_number')->get();
+    expect($import->rows_total)->toBe(2)
+        ->and($rows->pluck('status')->all())->toBe(['valid', 'valid'])
+        ->and($rows[0]->parsed['options'])->toBe(4)
+        ->and($rows[0]->parsed['correct'])->toBe(1)
+        ->and($rows[0]->parsed['node_id'])->toBe($anatomy)
+        ->and($rows[1]->parsed['options'])->toBe(3);
+
+    $this->actingAs($this->importer)->post("/questions/imports/{$import->id}/commit")->assertRedirect();
+
+    $first = QuestionVersion::query()->where('import_row_id', $rows[0]->id)->firstOrFail();
+    expect($first->node_id)->toBe($anatomy)
+        ->and($first->intake_id)->toBe($intake)
+        ->and($first->exam_type_id)->toBe($this->cmsExamType('annual'))
+        ->and($first->options()->orderBy('sort_order')->pluck('body')->map(fn ($body) => strip_tags($body))->all())
+        ->toBe(['Axillary nerve', 'Radial nerve', 'Musculocutaneous nerve', 'Suprascapular nerve'])
+        ->and($first->options()->where('is_correct', true)->value('label'))->toBe('A');
+    expect(QuestionVersion::query()->where('import_row_id', $rows[1]->id)->value('exam_type_id'))->toBe($this->cmsExamType('supplementary'));
+});
+
+test('in KMU\'s format, a BDS subject that is not a topic files the question on the course itself', function () {
+    $program = DB::table(config('database.cms_source_database').'.acad_programme_profiles')->where('class_id', $this->programme)->value('code');
+    DB::table(config('database.cms_source_database').'.sessions')->insert(['branch_id' => $this->branch, 'session' => '2026 Intake', 'start_date' => '2026-09-01', 'is_active' => 'no']);
+
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($program, 'Dental Anatomy'), 'course_id' => $this->course]);
+
+    $row = QuestionImport::query()->firstOrFail()->rows()->orderBy('row_number')->firstOrFail();
+    expect($row->status)->toBe('valid')
+        ->and($row->parsed['node_id'])->toBeNull()
+        ->and($row->parsed['topic'])->toBe('The whole course')
+        ->and($row->warnings[0])->toContain('filed on the course as a whole');
+});
+
+test('in KMU\'s format, the module must be chosen, the program must match it, and MBBS needs a known subject', function () {
+    $cms = config('database.cms_source_database');
+    $program = DB::table("{$cms}.acad_programme_profiles")->where('class_id', $this->programme)->value('code');
+
+    // No module or course chosen: the file does not name one.
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($program)]);
+    expect(collect(QuestionImport::query()->latest('id')->first()->rows()->first()->errors)->flatten()->first())
+        ->toBe('Choose the module or course on the import screen (the file does not name one).');
+
+    // A line for another program than the chosen module's.
+    $other = $this->cmsProgramme($this->branch, 'BDS');
+    $otherCode = DB::table("{$cms}.acad_programme_profiles")->where('class_id', $other)->value('code');
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($otherCode), 'course_id' => $this->course]);
+    expect(collect(QuestionImport::query()->latest('id')->first()->rows()->first()->errors['program'] ?? [])->first())
+        ->toContain('but the module or course chosen belongs to another program');
+
+    // MBBS: the subject must exist under the module.
+    DB::table("{$cms}.acad_programme_profiles")->where('class_id', $this->programme)->update(['structure_type' => 'modular']);
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($program, 'Embryology'), 'course_id' => $this->course]);
+    expect(collect(QuestionImport::query()->latest('id')->first()->rows()->first()->errors['subject'] ?? [])->first())
+        ->toContain('has no subject "Embryology"');
+
+    // An Academic Year the campus has no session for.
+    $this->actingAs($this->importer)->post('/questions/imports', ['file' => kmuCsv($program, 'Acute coronary syndrome', '2031'), 'course_id' => $this->course]);
+    expect(collect(QuestionImport::query()->latest('id')->first()->rows()->first()->errors['session'] ?? [])->first())
+        ->toBe('There is no Academic Session "2031" in this campus.');
 });
 
 test('the preview shows the rows, and can show only the ones with a problem', function () {

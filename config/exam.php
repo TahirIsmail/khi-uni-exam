@@ -70,6 +70,24 @@ return [
         // Discrimination and reliability figures are reported as unavailable, not a meaningless
         // number, below this many candidates.
         'min_candidates' => env('EXAM_ANALYTICS_MIN_CANDIDATES', 10),
+
+        // The plain-word bands on the analysis screen (IQQUIK Phase I, docs/plan-qbank-categories.md
+        // §2.3). These are the usual published figures; KMU may set its own.
+        'difficulty' => [
+            'too_hard_below' => (float) env('EXAM_ANALYTICS_DIFFICULTY_LOW', 0.30),   // fewer right than this: too hard
+            'too_easy_above' => (float) env('EXAM_ANALYTICS_DIFFICULTY_HIGH', 0.80),  // more right than this: too easy
+        ],
+        'discrimination' => [
+            'good_from' => (float) env('EXAM_ANALYTICS_DISCRIMINATION_GOOD', 0.30),
+            'acceptable_from' => (float) env('EXAM_ANALYTICS_DISCRIMINATION_ACCEPTABLE', 0.20),
+            // Below 0 is always a red flag: weaker candidates did better than stronger ones.
+        ],
+        // A wrong option chosen by fewer candidates than this is not doing its job (non-functional).
+        'functional_distractor_share' => (float) env('EXAM_ANALYTICS_NFD_SHARE', 0.05),
+        'reliability' => [
+            'good_from' => (float) env('EXAM_ANALYTICS_RELIABILITY_GOOD', 0.80),
+            'acceptable_from' => (float) env('EXAM_ANALYTICS_RELIABILITY_ACCEPTABLE', 0.70),
+        ],
     ],
 
 ];

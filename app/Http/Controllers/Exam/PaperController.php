@@ -259,7 +259,7 @@ class PaperController extends ExamAreaController
     private function slotRules(): array
     {
         return [
-            'node_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            'node_id' => ['required', 'integer', 'min:0', 'max:4294967295'],
             'question_type_id' => ['required', 'integer', 'min:1', 'max:255'],
             'marks_each' => ['required', 'numeric', 'gt:0', 'max:9999'],
             'section' => ['nullable', 'string', 'max:100'],

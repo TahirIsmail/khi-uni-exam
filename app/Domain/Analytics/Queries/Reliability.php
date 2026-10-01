@@ -2,6 +2,7 @@
 
 namespace App\Domain\Analytics\Queries;
 
+use App\Domain\Analytics\Support\Bands;
 use App\Domain\Delivery\Enums\AttemptStatus;
 use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\CandidatePaperItem;
@@ -12,21 +13,38 @@ use App\Domain\Paper\Models\Paper;
 use App\Domain\Paper\Models\PaperItem;
 
 /**
- * Cronbach's alpha over the whole paper (exam phase, step 22) — the same figure is KR-20 when
- * every item turns out dichotomous (every mark is either zero or full), so it is labelled that way
- * rather than computed twice. Unavailable below the same candidate-count threshold item analysis
- * itself uses; a coefficient from a handful of candidates is not a coefficient.
+ * Cronbach's alpha over the whole paper (exam phase, step 22), and KR-20 beside it as KMU asks for
+ * both. KR-20 is Cronbach's alpha for a paper marked purely right or wrong (every mark either zero or
+ * full), so when every item is like that the two are the same figure; when a part mark was given,
+ * KR-20 does not apply and only alpha is reported. Unavailable below the same candidate-count
+ * threshold item analysis itself uses; a coefficient from a handful of candidates is not a coefficient.
  */
 final class Reliability
 {
     /**
-     * @return array{coefficient: ?float, label: string, candidates: int}
+     * @return array{coefficient: ?float, label: string, candidates: int, alpha: ?float, kr20: ?float, dichotomous: bool, band: array{key: string, label: string}|null}
      */
     public function forExamination(Examination $examination): array
     {
+        $result = $this->compute($examination);
+        $alpha = $result['coefficient'];
+
+        return [
+            ...$result,
+            'alpha' => $alpha,
+            'kr20' => $result['dichotomous'] ? $alpha : null,
+            'band' => Bands::reliability($alpha),
+        ];
+    }
+
+    /**
+     * @return array{coefficient: ?float, label: string, candidates: int, dichotomous: bool}
+     */
+    private function compute(Examination $examination): array
+    {
         $paper = Paper::query()->where('examination_id', $examination->id)->latest('version_no')->first();
         if ($paper === null) {
-            return ['coefficient' => null, 'label' => 'Cronbach\'s alpha', 'candidates' => 0];
+            return ['coefficient' => null, 'label' => 'Cronbach\'s alpha', 'candidates' => 0, 'dichotomous' => false];
         }
 
         $paperItems = PaperItem::query()->where('paper_id', $paper->id)->get();
@@ -64,7 +82,7 @@ final class Reliability
         $minCandidates = (int) config('exam.analytics.min_candidates');
 
         if ($candidates < $minCandidates || $paperItems->count() < 2) {
-            return ['coefficient' => null, 'label' => $label, 'candidates' => $candidates];
+            return ['coefficient' => null, 'label' => $label, 'candidates' => $candidates, 'dichotomous' => $dichotomous];
         }
 
         $itemIds = $paperItems->pluck('id')->all();
@@ -78,13 +96,13 @@ final class Reliability
         $totalVariance = $this->variance($totals);
 
         if ($totalVariance <= 0.0) {
-            return ['coefficient' => null, 'label' => $label, 'candidates' => $candidates];
+            return ['coefficient' => null, 'label' => $label, 'candidates' => $candidates, 'dichotomous' => $dichotomous];
         }
 
         $k = count($itemIds);
         $coefficient = ($k / ($k - 1)) * (1 - $itemVarianceSum / $totalVariance);
 
-        return ['coefficient' => round($coefficient, 4), 'label' => $label, 'candidates' => $candidates];
+        return ['coefficient' => round($coefficient, 4), 'label' => $label, 'candidates' => $candidates, 'dichotomous' => $dichotomous];
     }
 
     /**

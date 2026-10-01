@@ -47,6 +47,7 @@ const draft = computed<QuestionDraft>(() => ({
     node_id: props.version.nodeId,
     discipline_id: props.version.disciplineId,
     exam_type_id: props.version.examTypeId,
+    intake_id: props.version.intakeId,
     vignette: props.version.vignette,
     stem: props.version.stem,
     lead_in: props.version.leadIn,

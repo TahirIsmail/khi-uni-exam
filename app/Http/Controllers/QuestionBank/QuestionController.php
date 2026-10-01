@@ -19,6 +19,7 @@ use App\Domain\QuestionBank\Validation\QuestionValidator;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\QuestionBank\SaveQuestionRequest;
+use App\Support\Cms\CmsAcademic;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -52,6 +53,7 @@ class QuestionController extends Controller
             'programme_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'year' => ['nullable', 'string', 'regex:/^\d{1,10}(-\d{1,10})?$/'],
             'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'intake_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'used' => ['nullable', Rule::in(['used', 'unused'])],
             'used_from' => ['nullable', 'date_format:Y-m-d'],
             'used_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:used_from'],
@@ -93,6 +95,7 @@ class QuestionController extends Controller
                 'programme_id' => $number('programme_id'),
                 'year' => $filters['year'] ?? null,
                 'exam_type_id' => $number('exam_type_id'),
+                'intake_id' => $number('intake_id'),
                 'used' => $filters['used'] ?? '',
                 'used_from' => $filters['used_from'] ?? null,
                 'used_to' => $filters['used_to'] ?? null,
@@ -125,9 +128,20 @@ class QuestionController extends Controller
 
     public function create(Request $request): Response
     {
+        // "Save & new" opens the next question where the last one was filed (ids only;
+        // the editor checks each one against its own lists, and the actions check them again).
+        $prefill = $request->validate([
+            'course_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'node_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'intake_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'question_type_id' => ['nullable', 'integer', 'min:1', 'max:255'],
+        ]);
+
         return Inertia::render('qbank/QuestionEditor', [
             'version' => null,
             'reference' => null,
+            'prefill' => array_map('intval', array_filter($prefill, fn (mixed $value): bool => $value !== null)),
             'can' => ['edit' => true, 'submit' => $request->user('web')->can('qbank.question.submit'), 'newVersion' => false],
             ...$this->editorData->forCreate($request->user('web'), $this->branchId($request)),
         ]);
@@ -138,6 +152,17 @@ class QuestionController extends Controller
         $version = $create($request->user('web'), $this->branchId($request), $request->content());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Draft saved as :ref.', ['ref' => $version->question->public_ref])]);
+
+        // "Save & new": straight on to the next question, filed in the same place.
+        if ($request->input('then') === 'new') {
+            return to_route('questions.create', array_filter([
+                'course_id' => $version->course_id,
+                'node_id' => $version->node_id,
+                'exam_type_id' => $version->exam_type_id,
+                'intake_id' => $version->intake_id,
+                'question_type_id' => $version->question_type_id,
+            ], fn (mixed $value): bool => $value !== null));
+        }
 
         return to_route('questions.edit', [$version->question_id, $version->id]);
     }
@@ -208,9 +233,18 @@ class QuestionController extends Controller
     }
 
     /** Live checks while the author types: the same rules that submission applies. */
-    public function check(SaveQuestionRequest $request, QuestionValidator $validator): JsonResponse
+    public function check(SaveQuestionRequest $request, QuestionValidator $validator, CmsAcademic $academic): JsonResponse
     {
-        return response()->json($validator->check($request->content()));
+        $content = $request->content();
+        $result = $validator->check($content);
+
+        // An MBBS question is filed under a subject of its module; BDS and DPT may use the whole course.
+        $course = $academic->placeOfCourse($content->courseId);
+        if ($content->nodeId === null && $course !== null && $academic->isModular($course['programme_id'])) {
+            $result['errors']['node_id'][] = 'Choose the subject of this module.';
+        }
+
+        return response()->json($result);
     }
 
     /** The topics of a course, for the taxonomy picker. */

@@ -279,6 +279,8 @@ trait InteractsWithCms
             'kmu_assess_review_days' => 7,
             'kmu_assess_auto_activate' => 1,
             'kmu_assess_reviewer_anonymous' => 0,
+            // Off here so tests go through the approving authority; the shortcut has its own tests.
+            'kmu_assess_reviewer_accept_stores' => 0,
         ], $settings));
     }
 

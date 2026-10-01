@@ -9,6 +9,7 @@ use App\Domain\QuestionBank\Enums\VersionStatus;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\PublicRef;
+use App\Domain\QuestionBank\Support\Filing;
 use App\Domain\QuestionBank\Validation\QuestionContent;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
@@ -25,16 +26,14 @@ final class CreateQuestionDraft
     public function __construct(
         private readonly AccessControl $access,
         private readonly CmsAcademic $academic,
+        private readonly Filing $filing,
         private readonly WriteVersionContent $writeContent,
         private readonly AuditLogger $audit,
     ) {}
 
     public function __invoke(User $author, int $branchId, QuestionContent $content, string $source = 'manual', ?int $importRowId = null): QuestionVersion
     {
-        $place = $this->academic->placeOfNode($content->nodeId, $content->courseId);
-        if ($place === null) {
-            throw ValidationException::withMessages(['node_id' => 'Choose a topic of this course that questions can be added to.']);
-        }
+        $place = $this->filing->place($content);
         if ($place['branch_id'] !== $branchId) {
             throw ValidationException::withMessages(['course_id' => 'That course belongs to another campus.']);
         }
@@ -45,7 +44,9 @@ final class CreateQuestionDraft
             throw new AuthorizationException('You cannot write questions for this course.');
         }
 
-        return DB::transaction(function () use ($author, $branchId, $content, $place, $source, $importRowId): QuestionVersion {
+        $intakeId = $this->filing->intake($content->intakeId, $branchId);
+
+        return DB::transaction(function () use ($author, $branchId, $content, $place, $intakeId, $source, $importRowId): QuestionVersion {
             $question = Question::query()->create([
                 'public_ref' => PublicRef::next(),
                 'branch_id' => $branchId,
@@ -75,6 +76,7 @@ final class CreateQuestionDraft
                 'cognitive_level_id' => $content->cognitiveLevelId,
                 'difficulty_level_id' => $content->difficultyLevelId,
                 'exam_type_id' => $content->examTypeId,
+                'intake_id' => $intakeId,
                 'status' => VersionStatus::Draft,
                 'content_hash' => $content->contentHash(),
                 'search_text' => $content->searchText(),

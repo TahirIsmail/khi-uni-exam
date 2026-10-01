@@ -42,15 +42,19 @@ final class BlueprintAvailability
             $parents[$node['id']] = $node['parent_id'];
         }
 
-        // Each question counts for its own topic and for every heading above it.
+        // Each question counts for its own topic, for every heading above it, and for the course as a
+        // whole (0) — which is all a question filed on the course itself (BDS, DPT) counts for.
         $matrix = [];
         foreach ($own as $row) {
             $nodeId = (int) $row->node_id;
             $typeId = (int) $row->question_type_id;
             $total = (int) $row->total;
 
-            for ($guard = 0; $nodeId !== 0 && $guard < 20; $guard++) {
+            for ($guard = 0; $guard < 21; $guard++) {
                 $matrix[$nodeId][$typeId] = ($matrix[$nodeId][$typeId] ?? 0) + $total;
+                if ($nodeId === 0) {
+                    break;
+                }
                 $nodeId = (int) ($parents[$nodeId] ?? 0);
             }
         }

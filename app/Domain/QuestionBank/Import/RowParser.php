@@ -16,8 +16,13 @@ use Illuminate\Support\Str;
  * discipline may be given by its code or by its name — and what cannot be understood is reported
  * as an error against that line instead of being guessed.
  *
+ * KMU's format (the downloadable template) names only the examination type, Academic Year, subject,
+ * program ("discipline" column, e.g. BDS), question, lead-in, options and answer; the module or
+ * course is chosen on the import screen. A subject is matched by name under that module or course:
+ * MBBS needs it, while a BDS or DPT question without a matching topic is filed on the course itself.
+ *
  * Column shapes:
- *   options    A) first | B) second      (or just: first | second)
+ *   options    A) first | B) second      (or just: first | second, or one option per line)
  *   correct    A   ·   A,C   ·   true
  *   answers    aspirin | paracetamol     ·   7.35 ± 0.02 mmol/L
  *   items      statement = true | statement = false   ·   prompt -> B   ·   step one | step two
@@ -35,47 +40,83 @@ final class RowParser
 
     /**
      * @param  array<string, string>  $row
-     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null}  $defaults
-     * @return array{content: QuestionContent|null, errors: array<string, list<string>>}
+     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null, intake_id?: int|null}  $defaults
+     * @return array{content: QuestionContent|null, errors: array<string, list<string>>, warnings: list<string>}
      */
     public function parse(array $row, int $branchId, array $defaults = []): array
     {
         $errors = [];
+        $warnings = [];
         $value = fn (string $key): string => trim($row[$key] ?? '');
 
-        // --- the type ---------------------------------------------------------------------
+        // --- the type: a question with options is a single best answer unless it says otherwise -
         $type = $this->findType($value('type')) ?? (isset($defaults['type_id']) ? QuestionType::query()->find($defaults['type_id']) : null);
+        if ($type === null && $value('type') === '' && $value('options') !== '') {
+            $type = $this->findType('sba');
+        }
         if ($type === null) {
             $errors['type'][] = $value('type') === ''
                 ? 'No type of question given, and no default chosen for the file.'
                 : 'There is no question type called "'.$value('type').'".';
 
-            return ['content' => null, 'errors' => $errors];
+            return ['content' => null, 'errors' => $errors, 'warnings' => []];
         }
 
         // --- where it belongs -------------------------------------------------------------
         $courseId = $this->findCourse($value('course'), $branchId) ?? ($defaults['course_id'] ?? null);
-        if ($courseId === null) {
+        $course = $courseId === null ? null : $this->academic->placeOfCourse((int) $courseId);
+        if ($course === null) {
             $errors['course'][] = $value('course') === ''
-                ? 'No course given, and no default chosen for the file.'
+                ? 'Choose the module or course on the import screen (the file does not name one).'
                 : 'There is no active course "'.$value('course').'" in this campus.';
         }
+        $modular = $course !== null && $this->academic->isModular($course['programme_id']);
 
-        $nodeId = null;
-        if ($courseId !== null) {
-            $nodeId = $this->findTopic($value('topic'), $courseId) ?? (($defaults['node_id'] ?? null));
-            if ($nodeId === null) {
-                $errors['topic'][] = $value('topic') === ''
-                    ? 'No topic given, and no default chosen for the file.'
-                    : 'The course has no topic "'.$value('topic').'" that takes questions.';
-            }
-        }
-
+        // KMU's "discipline" column names the program (MBBS, BDS, DPT); elsewhere it is a discipline.
         $disciplineId = null;
-        if ($value('discipline') !== '') {
+        $programGiven = $value('program');
+        if ($programGiven === '' && $value('discipline') !== '' && $this->findProgramme($value('discipline'), $branchId) !== null) {
+            $programGiven = $value('discipline');
+        } elseif ($value('discipline') !== '') {
             $disciplineId = $this->findDiscipline($value('discipline'));
             if ($disciplineId === null) {
                 $errors['discipline'][] = 'There is no discipline "'.$value('discipline').'".';
+            }
+        }
+        if ($programGiven !== '' && $course !== null) {
+            $programme = $this->findProgramme($programGiven, $branchId);
+            if ($programme === null) {
+                $errors['program'][] = 'There is no program "'.$programGiven.'" in this campus.';
+            } elseif ($programme['id'] !== $course['programme_id']) {
+                $errors['program'][] = 'This line is for '.$programme['name'].', but the module or course chosen belongs to another program.';
+            }
+        }
+
+        // The subject or topic: by name under the course, else the file's default. MBBS needs a
+        // subject; a BDS or DPT question with none is filed on the course as a whole.
+        $nodeId = null;
+        if ($course !== null) {
+            $placeGiven = $value('topic') !== '' ? $value('topic') : $value('subject');
+            $nodeId = $this->findTopic($placeGiven, (int) $courseId) ?? ($placeGiven === '' ? ($defaults['node_id'] ?? null) : null);
+
+            if ($nodeId === null && $modular) {
+                $errors['subject'][] = $placeGiven === ''
+                    ? 'No subject given, and no default chosen for the file.'
+                    : $course['label'].' has no subject "'.$placeGiven.'". Add it in Program Structure, or check the spelling.';
+            } elseif ($nodeId === null && $value('topic') !== '') {
+                $errors['topic'][] = 'The course has no topic "'.$value('topic').'" that takes questions.';
+            } elseif ($nodeId === null && $placeGiven !== '') {
+                $disciplineId ??= $this->findDiscipline($placeGiven);
+                $warnings[] = 'No topic "'.$placeGiven.'" in '.$course['label'].': it is filed on the course as a whole.';
+            }
+        }
+
+        // The Academic Session: "2026" finds the campus's 2026 session; empty means the user's own.
+        $intakeId = $defaults['intake_id'] ?? null;
+        if ($value('session') !== '') {
+            $intakeId = $this->findIntake($value('session'), $branchId);
+            if ($intakeId === null) {
+                $errors['session'][] = 'There is no Academic Session "'.$value('session').'" in this campus.';
             }
         }
 
@@ -117,14 +158,14 @@ final class RowParser
         $answers = $this->answers($value('answers'), $type, $items, $errors);
 
         if ($errors !== []) {
-            return ['content' => null, 'errors' => $errors];
+            return ['content' => null, 'errors' => $errors, 'warnings' => $warnings];
         }
 
         return [
             'content' => new QuestionContent(
                 type: $type,
                 courseId: (int) $courseId,
-                nodeId: (int) $nodeId,
+                nodeId: $nodeId === null ? null : (int) $nodeId,
                 vignette: $this->html($value('vignette')),
                 stem: (string) $this->html($value('stem')),
                 leadIn: $value('lead_in') === '' ? null : $value('lead_in'),
@@ -142,8 +183,10 @@ final class RowParser
                 references: $this->references($value('references')),
                 tagIds: $this->tagIds($value('tags'), $branchId),
                 examTypeId: $examTypeId,
+                intakeId: $intakeId,
             ),
             'errors' => [],
+            'warnings' => $warnings,
         ];
     }
 
@@ -453,6 +496,42 @@ final class RowParser
             }
             if (mb_strtolower((string) $node['code']) === $needle || mb_strtolower($node['name']) === $needle) {
                 return $node['id'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{id: int, name: string}|null
+     */
+    private function findProgramme(string $given, int $branchId): ?array
+    {
+        $needle = mb_strtolower(trim($given));
+        foreach ($this->academic->programmes($branchId) as $programme) {
+            if (mb_strtolower($programme['code']) === $needle || mb_strtolower($programme['name']) === $needle) {
+                return ['id' => $programme['id'], 'name' => $programme['name']];
+            }
+        }
+
+        return null;
+    }
+
+    /** "2026 Intake" by its name, or by its year: "2026". */
+    private function findIntake(string $given, int $branchId): ?int
+    {
+        $needle = mb_strtolower(trim($given));
+        $intakes = $this->academic->intakes($branchId);
+        foreach ($intakes as $intake) {
+            if (mb_strtolower($intake['name']) === $needle) {
+                return $intake['id'];
+            }
+        }
+        if (preg_match('/^\d{4}$/', $needle) === 1) {
+            foreach ($intakes as $intake) {
+                if (preg_match('/\b'.$needle.'\b/', $intake['name']) === 1) {
+                    return $intake['id'];
+                }
             }
         }
 

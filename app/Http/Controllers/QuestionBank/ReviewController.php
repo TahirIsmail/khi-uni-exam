@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\QuestionBank;
 
 use App\Domain\Identity\ActiveBranch;
+use App\Domain\QuestionBank\Enums\VersionStatus;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\ReviewAssignment;
@@ -124,9 +125,12 @@ class ReviewController extends Controller
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
         ));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $review->requestedChanges()
-            ? __('Sent back to the author with your comments.')
-            : __('Your review was recorded.')]);
+        $stored = in_array($version->fresh()?->status, [VersionStatus::Approved, VersionStatus::Active], true);
+        Inertia::flash('toast', ['type' => 'success', 'message' => match (true) {
+            $review->requestedChanges() => __('Sent back to the author with your comments.'),
+            $stored => __('Accepted: the question is stored in the QBank.'),
+            default => __('Your review was recorded.'),
+        }]);
 
         return to_route('reviews.index');
     }

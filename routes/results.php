@@ -29,6 +29,7 @@ Route::middleware('auth')->prefix('results')->group(function () {
         });
 
         Route::get('analysis', [AnalyticsController::class, 'show'])->middleware('can:analytics.view')->name('results.analysis');
+        Route::get('analysis/export', [AnalyticsController::class, 'export'])->middleware('can:analytics.view')->name('results.analysis.export');
         Route::post('analysis/run', [AnalyticsController::class, 'run'])->middleware(['can:analytics.run', 'throttle:10,1'])->name('results.analysis.run');
         Route::post('questions/{version}/decision', [AnalyticsController::class, 'decide'])->whereNumber('version')->middleware(['can:analytics.decision.record', 'throttle:30,1'])->name('results.questions.decide');
     });

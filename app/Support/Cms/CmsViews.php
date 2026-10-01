@@ -47,7 +47,7 @@ final class CmsViews
                 FROM {$db}.class_teacher ct JOIN {$db}.classes c ON c.id = ct.class_id",
 
             'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled, s.kmu_assess_reviews_required, s.kmu_assess_review_days,
-                       s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous
+                       s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous, s.kmu_assess_reviewer_accept_stores
                 FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
 
             // Extra branches a staff member may work in (CMS Settings → Staff); inactive branches excluded.
@@ -58,14 +58,24 @@ final class CmsViews
 
             'v_cms_intakes' => "SELECT s.id, s.branch_id, s.academic_year_id, s.session AS name, s.start_date, s.end_date FROM {$db}.sessions s",
 
-            'v_cms_programmes' => "SELECT c.id, c.branch_id, c.education_type_id, c.class AS name, p.code, p.calendar_type, p.duration_years
+            'v_cms_programmes' => "SELECT c.id, c.branch_id, c.education_type_id, c.class AS name, p.code, p.calendar_type, p.structure_type, p.duration_years
                 FROM {$db}.classes c JOIN {$db}.acad_programme_profiles p ON p.class_id = c.id",
 
             'v_cms_professionals' => "SELECT pr.id, c.branch_id, pr.class_id AS programme_id, pr.code, pr.name, pr.sequence, pr.is_active
                 FROM {$db}.acad_professionals pr JOIN {$db}.classes c ON c.id = pr.class_id",
 
-            'v_cms_professional_terms' => "SELECT t.id, t.professional_id, t.section_id, s.section AS name, t.sequence, t.is_active
-                FROM {$db}.acad_professional_terms t JOIN {$db}.sections s ON s.id = t.section_id",
+            // Semesters are numbered straight through a programme (First Professional: I, II; Second:
+            // III, IV ...) in the order of its years and their terms, as KMU names them. section_name is the
+            // campus semester row the term links to (attendance and the timetable use it).
+            'v_cms_professional_terms' => "SELECT t.id, t.professional_id, t.section_id, s.section AS section_name,
+                    ROW_NUMBER() OVER (PARTITION BY pr.class_id ORDER BY pr.sequence, t.sequence) AS semester_no,
+                    CONCAT('Semester ', ELT(ROW_NUMBER() OVER (PARTITION BY pr.class_id ORDER BY pr.sequence, t.sequence),
+                        'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+                        'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX')) AS name,
+                    t.sequence, t.is_active
+                FROM {$db}.acad_professional_terms t
+                JOIN {$db}.acad_professionals pr ON pr.id = t.professional_id
+                JOIN {$db}.sections s ON s.id = t.section_id",
 
             'v_cms_level_templates' => "SELECT lt.class_id AS programme_id, lt.depth, ty.code AS level_code, ty.name AS level_name, lt.allow_questions
                 FROM {$db}.acad_level_templates lt JOIN {$db}.acad_level_types ty ON ty.id = lt.level_type_id",

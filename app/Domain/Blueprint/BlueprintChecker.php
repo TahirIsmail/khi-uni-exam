@@ -71,7 +71,8 @@ final class BlueprintChecker
         }
 
         // The topics of the course as they are now: the curriculum can change under a saved blueprint.
-        $topics = [];
+        // 0 is a row for the whole course.
+        $topics = [0 => 'The whole course'];
         $parents = [];
         foreach ($this->academic->curriculum($examination->course_id) as $node) {
             $topics[$node['id']] = $node['name'];
@@ -136,6 +137,9 @@ final class BlueprintChecker
      */
     private function isWithin(int $nodeId, int $ancestorId, array $parents): bool
     {
+        if ($ancestorId === 0) {
+            return true;
+        }
         for ($guard = 0; $nodeId !== 0 && $guard < 20; $guard++) {
             if ($nodeId === $ancestorId) {
                 return true;

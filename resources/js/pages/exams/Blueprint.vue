@@ -232,6 +232,10 @@ const parents = computed(
     () => new Map(props.topics.map((topic) => [topic.id, topic.parentId])),
 );
 function isWithin(nodeId: number, ancestor: number): boolean {
+    // 0 is the whole course: everything is within it.
+    if (ancestor === 0) {
+        return true;
+    }
     let id: number | null = nodeId;
     for (let guard = 0; id !== null && guard < 20; guard++) {
         if (id === ancestor) {

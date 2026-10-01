@@ -107,7 +107,8 @@ final class VersionDiff
             ['Marks', (string) $from->marks, (string) $to->marks],
             ['Negative marks', (string) $from->negative_marks, (string) $to->negative_marks],
             ['Course', $this->academic->courseLabel($from->course_id) ?? '—', $this->academic->courseLabel($to->course_id) ?? '—'],
-            ['Topic', $this->nodeName($from->node_id), $this->nodeName($to->node_id)],
+            ['Academic Session', $this->intakeName($from), $this->intakeName($to)],
+            ['Subject / Topic', $this->nodeName($from->node_id), $this->nodeName($to->node_id)],
             ['Parts', (string) $from->items->count(), (string) $to->items->count()],
             ['Accepted answers', (string) $from->answers->count(), (string) $to->answers->count()],
             ['References', (string) $from->references->count(), (string) $to->references->count()],
@@ -132,8 +133,22 @@ final class VersionDiff
         return '—';
     }
 
-    private function nodeName(int $nodeId): string
+    private function nodeName(?int $nodeId): string
     {
         return $this->academic->nodeName($nodeId) ?? ('#'.$nodeId);
+    }
+
+    private function intakeName(QuestionVersion $version): string
+    {
+        if ($version->intake_id === null) {
+            return '—';
+        }
+        foreach ($this->academic->intakes($version->branch_id) as $intake) {
+            if ($intake['id'] === $version->intake_id) {
+                return $intake['name'];
+            }
+        }
+
+        return '#'.$version->intake_id;
     }
 }

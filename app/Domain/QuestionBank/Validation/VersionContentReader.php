@@ -38,6 +38,7 @@ final class VersionContentReader
             cognitiveLevelId: $version->cognitive_level_id,
             difficultyLevelId: $version->difficulty_level_id,
             examTypeId: $version->exam_type_id,
+            intakeId: $version->intake_id,
             options: array_values($version->options->map(fn (QuestionOption $option): array => [
                 'label' => $option->label,
                 'body' => $option->body,

@@ -242,6 +242,9 @@ final class QuestionList
             $query->where('v.professional_id', (int) $professionalId);
             $termId === null ? $query->whereNull('v.term_id') : $query->where('v.term_id', (int) $termId);
         }
+        if (($filters['intake_id'] ?? null) !== null) {
+            $query->where('v.intake_id', (int) $filters['intake_id']);
+        }
         if (($filters['exam_type_id'] ?? null) !== null) {
             $query->where('v.exam_type_id', (int) $filters['exam_type_id']);
         }

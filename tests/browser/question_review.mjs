@@ -175,10 +175,11 @@ const academic = staff(PEOPLE.academic);
 
 // Two reviews, so the reviewer and the approver both have to act, and names stay visible.
 const settingsBefore = cms(
-    'SELECT CONCAT(kmu_assess_reviews_required, ",", kmu_assess_auto_activate, ",", kmu_assess_reviewer_anonymous) FROM sch_settings ORDER BY id LIMIT 1',
+    'SELECT CONCAT(kmu_assess_reviews_required, ",", kmu_assess_auto_activate, ",", kmu_assess_reviewer_anonymous, ",", kmu_assess_reviewer_accept_stores) FROM sch_settings ORDER BY id LIMIT 1',
 );
 cms(
-    'UPDATE sch_settings SET kmu_assess_reviews_required = 1, kmu_assess_auto_activate = 1, kmu_assess_reviewer_anonymous = 0 ORDER BY id LIMIT 1',
+    // The reviewers' Accept does not store it here: this test goes through the approving authority.
+    'UPDATE sch_settings SET kmu_assess_reviews_required = 1, kmu_assess_auto_activate = 1, kmu_assess_reviewer_anonymous = 0, kmu_assess_reviewer_accept_stores = 0 ORDER BY id LIMIT 1',
 );
 
 const professional = cms(
@@ -790,9 +791,9 @@ try {
 } finally {
     ws.close();
     chrome.kill();
-    const [required, auto, anonymous] = (settingsBefore || '1,1,0').split(',');
+    const [required, auto, anonymous, acceptStores] = (settingsBefore || '1,1,0,1').split(',');
     cms(
-        `UPDATE sch_settings SET kmu_assess_reviews_required = ${Number(required) || 1}, kmu_assess_auto_activate = ${Number(auto) || 1}, kmu_assess_reviewer_anonymous = ${Number(anonymous) || 0} ORDER BY id LIMIT 1`,
+        `UPDATE sch_settings SET kmu_assess_reviews_required = ${Number(required) || 1}, kmu_assess_auto_activate = ${Number(auto) || 1}, kmu_assess_reviewer_anonymous = ${Number(anonymous) || 0}, kmu_assess_reviewer_accept_stores = ${acceptStores === '0' ? 0 : 1} ORDER BY id LIMIT 1`,
     );
     cleanup();
 }

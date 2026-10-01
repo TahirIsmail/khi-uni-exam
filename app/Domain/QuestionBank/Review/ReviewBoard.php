@@ -239,6 +239,7 @@ final class ReviewBoard
             'subjectIn' => $this->countReviewed($version, $reviews, ReviewStage::Subject),
             'academicIn' => $this->countReviewed($version, $reviews, ReviewStage::Academic),
             'autoActivate' => $this->settings->autoActivate(),
+            'reviewerAcceptStores' => $this->settings->reviewerAcceptStores(),
         ];
     }
 

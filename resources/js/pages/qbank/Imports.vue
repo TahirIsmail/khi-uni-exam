@@ -16,6 +16,7 @@ import type {
     ImportSummary,
     Paginated,
     QuestionTypeInfo,
+    YearOption,
 } from '@/types';
 
 defineOptions({
@@ -31,8 +32,16 @@ const props = defineProps<{
     imports: Paginated<ImportSummary>;
     canCommit: boolean;
     columns: string[];
-    programmes: { id: number; name: string; code: string }[];
+    programmes: {
+        id: number;
+        name: string;
+        code: string;
+        calendar: string;
+        modular: boolean;
+    }[];
+    years: YearOption[];
     courses: CourseOption[];
+    intakes: { id: number; name: string }[];
     types: QuestionTypeInfo[];
     examTypes: ExamTypeOption[];
 }>();
@@ -43,25 +52,58 @@ const form = useForm<{
     node_id: number | null;
     type_id: number | null;
     exam_type_id: number | null;
+    intake_id: number | null;
 }>({
     file: null,
     course_id: null,
     node_id: null,
     type_id: null,
     exam_type_id: null,
+    intake_id: null,
 });
 
-const programmeId = ref<number | null>(null);
+// KMU's file names the subject but not the module or course: that is chosen here, in KMU's order.
+const programmeId = ref<number | null>(props.programmes[0]?.id ?? null);
+const yearId = ref<string | null>(null);
 const topics = ref<CurriculumNode[]>([]);
 const showColumns = ref(false);
 
-const coursesOfProgramme = computed(() =>
-    programmeId.value === null
-        ? props.courses
-        : props.courses.filter(
-              (course) => course.programme_id === programmeId.value,
-          ),
+const programme = computed(
+    () => props.programmes.find((row) => row.id === programmeId.value) ?? null,
 );
+const courseWord = computed(() =>
+    programme.value?.modular ? 'Module' : 'Course',
+);
+const yearsOfProgramme = computed(() =>
+    props.years.filter((year) => year.programme_id === programmeId.value),
+);
+const selectedYear = computed(
+    () => props.years.find((year) => year.id === yearId.value) ?? null,
+);
+const coursesOfProgramme = computed(() =>
+    props.courses.filter(
+        (course) =>
+            course.programme_id === programmeId.value &&
+            (selectedYear.value === null ||
+                (course.professional_id ===
+                    selectedYear.value.professional_id &&
+                    course.term_id === selectedYear.value.term_id)),
+    ),
+);
+const examTypesOfProgramme = computed(() =>
+    props.examTypes.filter(
+        (row) => row.calendar === (programme.value?.calendar ?? null),
+    ),
+);
+
+watch(programmeId, () => {
+    yearId.value = null;
+    form.course_id = null;
+    form.exam_type_id = null;
+});
+watch(yearId, () => {
+    form.course_id = null;
+});
 
 // Topics belong to a course, so they are only fetched once one is chosen.
 watch(
@@ -109,11 +151,19 @@ const statusStyles: Record<string, string> = {
                 title="Import from a spreadsheet"
                 description="Upload a CSV or Excel file of questions. Every row is checked first and shown to you; nothing reaches the question bank until you commit it."
             />
-            <Button as-child variant="outline">
-                <a :href="template.url()" data-test="download-template"
-                    ><Download /> Download the template</a
+            <div class="flex flex-col items-end gap-1">
+                <Button as-child variant="outline">
+                    <a :href="template.url()" data-test="download-template"
+                        ><Download /> Download the template</a
+                    >
+                </Button>
+                <a
+                    :href="template.url({ query: { full: 1 } })"
+                    class="text-muted-foreground text-xs underline"
+                    data-test="download-full-template"
+                    >Other types of question: template with every column</a
                 >
-            </Button>
+            </div>
         </div>
 
         <form
@@ -143,23 +193,23 @@ const statusStyles: Record<string, string> = {
                 </p>
             </div>
 
-            <div class="grid gap-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div class="grid gap-3 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
                 <p
-                    class="text-muted-foreground text-xs sm:col-span-2 lg:col-span-5"
+                    class="text-muted-foreground text-xs sm:col-span-2 lg:col-span-4"
                 >
-                    If the whole file is for one examination, course, topic or
-                    type, choose them here and you can leave those columns out.
-                    A row that names its own always wins.
+                    Where these questions go. The template names the subject,
+                    Academic Year and examination type of each question; choose
+                    the {{ courseWord.toLowerCase() }} here. Anything chosen
+                    below is used where the file leaves it out.
                 </p>
                 <div class="grid gap-1.5">
-                    <Label for="programme">Programme</Label>
+                    <Label for="programme">Program</Label>
                     <select
                         id="programme"
                         v-model="programmeId"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                        @change="form.course_id = null"
+                        data-test="default-programme"
                     >
-                        <option :value="null">Any</option>
                         <option
                             v-for="row in programmes"
                             :key="row.id"
@@ -170,25 +220,25 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="exam-type">Examination</Label>
+                    <Label for="year">Professional / Semester</Label>
                     <select
-                        id="exam-type"
-                        v-model="form.exam_type_id"
+                        id="year"
+                        v-model="yearId"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
-                        data-test="default-exam-type"
+                        data-test="default-year"
                     >
-                        <option :value="null">Named in the file</option>
+                        <option :value="null">Any</option>
                         <option
-                            v-for="row in examTypes"
-                            :key="row.id"
-                            :value="row.id"
+                            v-for="year in yearsOfProgramme"
+                            :key="year.id"
+                            :value="year.id"
                         >
-                            {{ row.name }}
+                            {{ year.name }}
                         </option>
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="course">Module / Subject (Course ID)</Label>
+                    <Label for="course">{{ courseWord }}</Label>
                     <select
                         id="course"
                         v-model="form.course_id"
@@ -206,7 +256,9 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="topic">Topic</Label>
+                    <Label for="topic">{{
+                        programme?.modular ? 'Subject' : 'Topic'
+                    }}</Label>
                     <select
                         id="topic"
                         v-model="form.node_id"
@@ -226,6 +278,44 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
+                    <Label for="intake">Academic Session</Label>
+                    <select
+                        id="intake"
+                        v-model="form.intake_id"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        data-test="default-intake"
+                    >
+                        <option :value="null">
+                            Named in the file, else the current one
+                        </option>
+                        <option
+                            v-for="row in intakes"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ row.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="exam-type">Examination Type</Label>
+                    <select
+                        id="exam-type"
+                        v-model="form.exam_type_id"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        data-test="default-exam-type"
+                    >
+                        <option :value="null">Named in the file</option>
+                        <option
+                            v-for="row in examTypesOfProgramme"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ row.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
                     <Label for="type">Type of question</Label>
                     <select
                         id="type"
@@ -233,7 +323,9 @@ const statusStyles: Record<string, string> = {
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"
                         data-test="default-type"
                     >
-                        <option :value="null">Named in the file</option>
+                        <option :value="null">
+                            MCQ (single best answer), unless the file says
+                        </option>
                         <option
                             v-for="row in types"
                             :key="row.id"
@@ -284,7 +376,9 @@ const statusStyles: Record<string, string> = {
                     <div>
                         <dt class="text-foreground font-medium">options</dt>
                         <dd>
-                            Separated by <code>|</code>, e.g.
+                            One per line under the question, as in the template,
+                            or on one line separated by
+                            <code>|</code>, e.g.
                             <code
                                 >Axillary nerve | Radial nerve |
                                 Musculocutaneous nerve</code

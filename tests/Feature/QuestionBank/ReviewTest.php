@@ -854,6 +854,76 @@ test('nobody decides about their own question, whatever the decision', function 
     expect($version->fresh()->status)->toBe(VersionStatus::UnderReview);
 });
 
+/**
+ * KMU's shorter path (kmu-cms "A question the reviewer accepts goes straight into the QBank"): when
+ * every reviewer accepts, the QBank / academic review stores the question, with no approval.
+ */
+test('when every reviewer accepts, the QBank / academic review stores the question without an approval', function () {
+    $this->cmsExamSettings(['kmu_assess_reviewer_accept_stores' => 1]);
+    $version = sendForReview();
+
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]))->assertRedirect('/reviews');
+    expect($version->fresh()->status)->toBe(VersionStatus::UnderReview);
+
+    // The academic reviewer is told what Accept does.
+    $this->actingAs($this->academic)->get("/questions/{$version->question_id}/versions/{$version->id}/review")
+        ->assertInertia(fn ($page) => $page->where('reviewerAcceptStores', true)->where('myStage', 'academic'));
+
+    academicReview($version->fresh());
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::Active)
+        ->and($version->decision_code)->toBe('accept')
+        ->and($version->approved_by)->toBe($this->academic->id)
+        // The values the question keeps come from the reviewers (the subject reviewer recorded them).
+        ->and($version->cognitive_level_id)->toBe(3)
+        ->and($version->difficulty_level_id)->toBe(2)
+        ->and(PrehocAssessment::query()->where('version_id', $version->id)->where('is_consolidated', true)->count())->toBe(1)
+        ->and(json_decode((string) DB::table('sec_audit_logs')->where('action', 'qbank.question.approved')->where('entity_id', (string) $version->id)->value('new_values'), true)['by'])->toBe('reviewers');
+
+    // Nothing is left for the approving authority.
+    $this->actingAs($this->approver)->from('/approvals')->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+    ])->assertSessionHasErrors('status');
+});
+
+test('with Retain in QBank, and approved questions held back, the reviewers store it as approved', function () {
+    $this->cmsExamSettings(['kmu_assess_reviewer_accept_stores' => 1, 'kmu_assess_auto_activate' => 0]);
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]));
+    academicReview($version->fresh(), ['decision_id' => (int) PrehocDecision::query()->where('code', 'retain')->value('id')]);
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::Approved)
+        ->and($version->decision_code)->toBe('retain');
+});
+
+test('when a reviewer did not accept, the question still waits for the approving authority', function () {
+    $this->cmsExamSettings(['kmu_assess_reviewer_accept_stores' => 1]);
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'review')->value('id'),
+        'comments' => 'Option B could be argued as correct; look at it again.',
+    ]))->assertRedirect('/reviews');
+    academicReview($version->fresh());
+
+    expect($version->fresh()->status)->toBe(VersionStatus::UnderReview)
+        ->and($version->fresh()->approved_by)->toBeNull();
+});
+
+test('with the setting off, every reviewed question waits for the approving authority', function () {
+    $version = reviewedTwice();
+
+    expect($version->status)->toBe(VersionStatus::UnderReview);
+    $this->actingAs($this->academic)->get("/questions/{$version->question_id}/versions/{$version->id}/review")
+        ->assertInertia(fn ($page) => $page->where('reviewerAcceptStores', false));
+});
+
 function decideUrl(QuestionVersion $version): string
 {
     return "/questions/{$version->question_id}/versions/{$version->id}/decide";

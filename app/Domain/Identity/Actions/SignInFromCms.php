@@ -26,7 +26,7 @@ final class SignInFromCms
     ) {}
 
     /**
-     * @return array{user: User, redirect: string, branch: int|null}
+     * @return array{user: User, redirect: string, branch: int|null, intake: int|null}
      */
     public function __invoke(string $ticket): array
     {
@@ -61,6 +61,6 @@ final class SignInFromCms
             throw new InvalidCmsTicket('local_user_inactive', $claims['sub']);
         }
 
-        return ['user' => $user, 'redirect' => $claims['redirect'], 'branch' => $claims['branch']];
+        return ['user' => $user, 'redirect' => $claims['redirect'], 'branch' => $claims['branch'], 'intake' => $claims['intake']];
     }
 }

@@ -9,6 +9,11 @@ use RuntimeException;
  * Reads an uploaded spreadsheet into rows of plain strings: CSV and TSV directly, Excel files
  * through PhpSpreadsheet. The first row is the header; its names are matched loosely (case, spaces
  * and a few common alternatives), so a file exported from Excel or Google Sheets works as it is.
+ *
+ * KMU's own format puts each option of a question on a line of its own under the question
+ * (Question No, exam_type, Academic Year, subject, discipline, stem, lead_in, options, correct
+ * option). Such a line — nothing in it but an option — is joined to the question above it, so the
+ * rest of the import sees one row per question either way.
  */
 final class SpreadsheetReader
 {
@@ -22,7 +27,17 @@ final class SpreadsheetReader
         'topic_code' => 'topic',
         'topic_name' => 'topic',
         'node' => 'topic',
-        'subject' => 'discipline',
+        'question_no' => 'number',
+        'question_number' => 'number',
+        'q_no' => 'number',
+        'no' => 'number',
+        'sr_no' => 'number',
+        's_no' => 'number',
+        'academic_year' => 'session',
+        'academic_session' => 'session',
+        'intake' => 'session',
+        'programme' => 'program',
+        'academic_program' => 'program',
         'examination' => 'exam_type',
         'examination_type' => 'exam_type',
         'exam' => 'exam_type',
@@ -55,10 +70,19 @@ final class SpreadsheetReader
         'mark' => 'marks',
     ];
 
+    /** The columns of KMU's format, as the downloadable template names them. */
+    public const KMU_COLUMNS = [
+        'Question No', 'exam_type', 'Academic Year', 'subject', 'discipline', 'stem', 'lead_in', 'options', 'correct option',
+    ];
+
+    /**
+     * Every column the import understands, in the order of the all-columns template; KMU's format
+     * uses a few of them under its own names (number, session, subject, discipline = program).
+     */
     public const COLUMNS = [
         'type', 'exam_type', 'course', 'topic', 'discipline', 'vignette', 'stem', 'lead_in', 'explanation',
         'marks', 'negative_marks', 'cognitive', 'difficulty', 'options', 'correct', 'answers',
-        'items', 'references', 'tags',
+        'items', 'references', 'tags', 'number', 'session', 'program', 'subject',
     ];
 
     /**
@@ -93,10 +117,42 @@ final class SpreadsheetReader
                 continue;
             }
 
+            // An option on a line of its own belongs to the question above it.
+            if ($read !== [] && $this->isOptionLine($values)) {
+                $last = &$read[count($read) - 1]['values'];
+                $last['options'] = trim(($last['options'] ?? '') === '' ? $values['options'] : $last['options'].' | '.$values['options']);
+                if (($last['correct'] ?? '') === '' && ($values['correct'] ?? '') !== '') {
+                    $last['correct'] = $values['correct'];
+                }
+                unset($last);
+
+                continue;
+            }
+
             $read[] = ['row_number' => $index + 2, 'values' => $values];
         }
 
         return $read;
+    }
+
+    /**
+     * A line that only carries an option (and perhaps the answer): no number, no question text.
+     *
+     * @param  array<string, string>  $values
+     */
+    private function isOptionLine(array $values): bool
+    {
+        if (($values['options'] ?? '') === '') {
+            return false;
+        }
+
+        foreach ($values as $name => $value) {
+            if ($value !== '' && ! in_array($name, ['options', 'correct'], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function normaliseHeader(mixed $name): string

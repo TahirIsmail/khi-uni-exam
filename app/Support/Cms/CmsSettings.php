@@ -37,6 +37,15 @@ final class CmsSettings
         return $this->int('kmu_assess_auto_activate', 1) === 1;
     }
 
+    /**
+     * Whether a question every reviewer accepted is stored in the QBank when the last (QBank /
+     * academic) review comes in, without waiting for the approving authority. On unless turned off.
+     */
+    public function reviewerAcceptStores(): bool
+    {
+        return $this->int('kmu_assess_reviewer_accept_stores', 1) === 1;
+    }
+
     /** Whether authors see who reviewed their question. The comments are always shown. */
     public function reviewerAnonymous(): bool
     {

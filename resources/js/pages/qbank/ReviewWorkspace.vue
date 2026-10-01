@@ -56,6 +56,7 @@ const props = defineProps<{
     decisions: PrehocDecisionInfo[];
     reviewsNeeded: number;
     autoActivate: boolean;
+    reviewerAcceptStores: boolean;
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
     difficultyLevels: { id: number; name: string }[];
@@ -73,6 +74,7 @@ const draft = computed<QuestionDraft>(() => ({
     node_id: props.version.nodeId,
     discipline_id: props.version.disciplineId,
     exam_type_id: props.version.examTypeId,
+    intake_id: props.version.intakeId,
     vignette: props.version.vignette,
     stem: props.version.stem,
     lead_in: props.version.leadIn,
@@ -389,6 +391,19 @@ function cancelAssignment(id: number): void {
                             class="text-muted-foreground text-xs"
                         >
                             {{ chosenDecision.description }}
+                        </p>
+                        <p
+                            v-if="
+                                reviewerAcceptStores &&
+                                myStage === 'academic' &&
+                                chosenDecision?.isAccept
+                            "
+                            class="rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                            data-test="accept-stores-hint"
+                        >
+                            When every earlier reviewer accepted it too, this
+                            stores the question in the QBank straight away, with
+                            no separate approval.
                         </p>
                         <p
                             v-if="review.errors.decision_id"

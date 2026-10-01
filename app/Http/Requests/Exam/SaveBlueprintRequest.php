@@ -26,7 +26,8 @@ class SaveBlueprintRequest extends FormRequest
 
             'rows' => ['array', 'max:'.$maxRows],
             'rows.*.section' => ['nullable', 'integer', 'min:0', 'max:50'],
-            'rows.*.node_id' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            // 0: the whole course (every question of it, whatever subject or topic, and those filed on the course itself).
+            'rows.*.node_id' => ['required', 'integer', 'min:0', 'max:4294967295'],
             'rows.*.question_type_id' => ['required', 'integer', 'min:1', 'max:255'],
             'rows.*.question_count' => ['required', 'integer', 'min:1', 'max:'.$maxCount],
             'rows.*.marks_each' => ['required', 'numeric', 'gt:0', 'max:'.(float) config('qbank.marks.max')],

@@ -59,7 +59,66 @@ final class ApproveVersion
             throw ValidationException::withMessages(['decision_id' => 'A question is approved with Accept or Retain in QBank. Choose Review, Revise or Remove / Discard to do something else with it.']);
         }
 
-        return DB::transaction(function () use ($approver, $version, $input, $decision): QuestionVersion {
+        return $this->store($approver, $version, $input, $decision, false);
+    }
+
+    /**
+     * KMU's shorter path (kmu-cms setting "A question the reviewer accepts goes straight into the
+     * QBank"): when the QBank / academic review is in and every review of this round chose an accept
+     * decision (Accept, Retain in QBank), the question is stored without waiting for the approving
+     * authority. The same gate applies as for an approver: every review needed is in, none asked for
+     * changes, and no required checklist item failed. Otherwise nothing happens here and the question
+     * waits in the approval queue, as before.
+     *
+     * The values the question keeps are the last reviewer's (the QBank / academic one), falling back
+     * to an earlier reviewer's and then to the author's. The reviewer is recorded as having approved.
+     */
+    public function acceptedByReviewers(User $reviewer, QuestionVersion $version): ?QuestionVersion
+    {
+        if (! $this->settings->reviewerAcceptStores()
+            || $version->status !== VersionStatus::UnderReview
+            || $version->author_id === $reviewer->id) {
+            return null;
+        }
+
+        $reviews = $this->reviews($version);
+        if ($this->gate($version, $reviews) !== null) {
+            return null;
+        }
+
+        $reviewed = array_values(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges()));
+        $decisions = PrehocDecision::query()
+            ->whereIn('id', array_map(fn (Review $review): int => (int) $review->decision_id, $reviewed))
+            ->get()->keyBy('id');
+        foreach ($reviewed as $review) {
+            $decision = $decisions->get((int) $review->decision_id);
+            if (! $decision instanceof PrehocDecision || ! $decision->is_accept) {
+                return null;
+            }
+        }
+
+        // The last review is the QBank / academic one; its decision is the question's.
+        $last = $reviewed[count($reviewed) - 1];
+        $prehoc = PrehocAssessment::query()
+            ->where('version_id', $version->id)
+            ->whereIn('review_id', array_map(fn (Review $review): int => $review->id, $reviewed))
+            ->orderByDesc('id')
+            ->first();
+
+        $input = new ConsolidatedPrehoc(
+            decisionId: (int) $last->decision_id,
+            cognitiveLevelId: $prehoc?->cognitive_level_id ?? $version->cognitive_level_id,
+            difficultyLevelId: $prehoc?->difficulty_level_id ?? $version->difficulty_level_id,
+            estimatedP: $prehoc?->estimated_p === null ? null : (float) $prehoc->estimated_p,
+            reason: 'Every reviewer accepted it, so it was stored in the QBank without a separate approval (kmu-cms setting).',
+        );
+
+        return $this->store($reviewer, $version, $input, $decisions->get((int) $last->decision_id), true);
+    }
+
+    private function store(User $approver, QuestionVersion $version, ConsolidatedPrehoc $input, PrehocDecision $decision, bool $byReviewers): QuestionVersion
+    {
+        return DB::transaction(function () use ($approver, $version, $input, $decision, $byReviewers): QuestionVersion {
             PrehocAssessment::query()->create([
                 'version_id' => $version->id,
                 'question_id' => $version->question_id,
@@ -102,11 +161,16 @@ final class ApproveVersion
                 'cognitive_level_id' => $input->cognitiveLevelId,
                 'difficulty_level_id' => $input->difficultyLevelId,
                 'estimated_p' => $input->estimatedP,
+                'by' => $byReviewers ? 'reviewers' : 'approver',
             ], $input->reason, $approver, $version->branch_id);
 
             $fresh = $version->fresh() ?? $version;
 
-            return $this->settings->autoActivate() ? ($this->activate)($approver, $fresh, 'Approved questions go into use straight away (kmu-cms setting).') : $fresh;
+            // Both callers have already decided this question may be approved, so putting it into
+            // use needs no second permission check.
+            return $this->settings->autoActivate()
+                ? $this->activate->putIntoUse($approver, $fresh, 'Approved questions go into use straight away (kmu-cms setting).')
+                : $fresh;
         });
     }
 

@@ -19,9 +19,13 @@ final class CandidatePool
 {
     public function __construct(private readonly CmsAcademic $academic) {}
 
+    /**
+     * $nodeId 0 is a blueprint row for the whole course: every question of the course counts,
+     * whatever subject or topic it is filed under, and those filed on the course itself (BDS, DPT).
+     */
     public function query(Examination $examination, int $nodeId, int $typeId): Builder
     {
-        $nodes = $this->academic->nodeSubtreeIds($nodeId);
+        $nodes = $nodeId === 0 ? null : $this->academic->nodeSubtreeIds($nodeId);
 
         return DB::table('qb_questions as q')
             ->join('qb_question_versions as v', 'v.id', '=', 'q.active_version_id')
@@ -31,7 +35,7 @@ final class CandidatePool
             ->where('v.status', 'active')
             ->where('v.exam_type_id', $examination->exam_type_id)
             ->where('v.question_type_id', $typeId)
-            ->whereIn('v.node_id', $nodes === [] ? [0] : $nodes)
+            ->when($nodes !== null, fn (Builder $query) => $query->whereIn('v.node_id', $nodes === [] ? [0] : $nodes))
             ->select([
                 'q.id as question_id', 'q.public_ref', 'q.times_used', 'q.last_used_at',
                 'v.id as version_id', 'v.version_no', 'v.node_id', 'v.marks', 'v.content_hash',

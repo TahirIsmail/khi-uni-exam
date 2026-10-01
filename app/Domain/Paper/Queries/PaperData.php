@@ -495,7 +495,7 @@ final class PaperData
     {
         $nodes = $this->academic->curriculum($courseId);
         $byId = array_column($nodes, null, 'id');
-        $labels = [];
+        $labels = [0 => 'The whole course'];
         foreach ($nodes as $node) {
             $names = [$node['name']];
             $parent = $node['parent_id'];

@@ -172,7 +172,6 @@ test('the live checks tell the editor which fields are still missing', function 
 
     $response->assertStatus(422)
         ->assertJsonPath('errors.course_id.0', 'Choose the course.')
-        ->assertJsonPath('errors.node_id.0', 'Choose the topic.')
         ->assertJsonPath('errors.question_type_id.0', 'Choose the type of question.')
         ->assertJsonPath('errors.stem.0', 'Write the question.');
 });

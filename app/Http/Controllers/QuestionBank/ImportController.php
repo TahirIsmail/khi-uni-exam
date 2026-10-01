@@ -68,6 +68,7 @@ class ImportController extends Controller
             'node_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'type_id' => ['nullable', 'integer', 'min:1', 'max:255'],
             'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'intake_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
         ], [
             'file.mimes' => 'Upload a CSV or Excel file (.csv, .tsv, .xlsx).',
             'file.max' => 'The file must be 10 MB or smaller.',
@@ -78,6 +79,7 @@ class ImportController extends Controller
             'node_id' => isset($input['node_id']) ? (int) $input['node_id'] : null,
             'type_id' => isset($input['type_id']) ? (int) $input['type_id'] : null,
             'exam_type_id' => isset($input['exam_type_id']) ? (int) $input['exam_type_id'] : null,
+            'intake_id' => isset($input['intake_id']) ? (int) $input['intake_id'] : null,
         ]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __(':valid of :total rows are ready to import.', ['valid' => $import->rows_valid, 'total' => $import->rows_total])]);
@@ -153,11 +155,28 @@ class ImportController extends Controller
         return to_route('imports.index');
     }
 
-    /** A ready-made file with the column names and one example row per common type. */
-    public function template(): StreamedResponse
+    /**
+     * A ready-made file. By default KMU's own format — the question, its options one per line, and
+     * the letter of the right one — as KMU sent it; with ?full=1 every column, for the other types
+     * of question (true/false statements, short answers, numbers).
+     */
+    public function template(Request $request): StreamedResponse
     {
-        // KMU's own example: an Anatomy MCQ for MBBS First Professional, Annual examination,
-        // Foundation Module → Anatomy → Upper Limb, Application, Moderate.
+        if (! $request->boolean('full')) {
+            // KMU's example: a BDS Anatomy MCQ, Annual examination, Academic Year 2026.
+            return $this->csv('kmu-question-import-template.csv', [
+                SpreadsheetReader::KMU_COLUMNS,
+                ['1', 'annual', '2026', 'Anatomy', 'BDS',
+                    'After a fall on an outstretched hand, a 25-year-old man cannot abduct his arm beyond 15 degrees, and the skin over the lower deltoid is numb.',
+                    'Which nerve is most likely injured?', 'Axillary nerve', 'A'],
+                ['', '', '', '', '', '', '', 'Radial nerve', ''],
+                ['', '', '', '', '', '', '', 'Musculocutaneous nerve', ''],
+                ['', '', '', '', '', '', '', 'Suprascapular nerve', ''],
+            ]);
+        }
+
+        // Every column: an Anatomy question of each common type for MBBS First Professional,
+        // Foundation Module → Anatomy → Upper Limb.
         $rows = [
             SpreadsheetReader::COLUMNS,
             [
@@ -181,6 +200,14 @@ class ImportController extends Controller
             ],
         ];
 
+        return $this->csv('kmu-question-import-template-all-columns.csv', $rows);
+    }
+
+    /**
+     * @param  list<list<string>>  $rows
+     */
+    private function csv(string $name, array $rows): StreamedResponse
+    {
         return response()->streamDownload(function () use ($rows): void {
             $out = fopen('php://output', 'w');
             if ($out === false) {
@@ -190,7 +217,7 @@ class ImportController extends Controller
                 fputcsv($out, $row, escape: '');
             }
             fclose($out);
-        }, 'kmu-question-import-template.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }, $name, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     private function authoriseImport(Request $request, QuestionImport $import): void

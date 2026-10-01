@@ -29,7 +29,7 @@ final readonly class QuestionContent
     public function __construct(
         public QuestionType $type,
         public int $courseId,
-        public int $nodeId,
+        public ?int $nodeId,
         public ?string $vignette,
         public string $stem,
         public ?string $leadIn,
@@ -47,6 +47,7 @@ final readonly class QuestionContent
         public array $references = [],
         public array $tagIds = [],
         public ?int $examTypeId = null,
+        public ?int $intakeId = null,
     ) {}
 
     /**
@@ -139,7 +140,7 @@ final readonly class QuestionContent
         return new self(
             type: $type,
             courseId: (int) $input['course_id'],
-            nodeId: (int) $input['node_id'],
+            nodeId: isset($input['node_id']) ? (int) $input['node_id'] : null,
             vignette: QuestionHtml::sanitize(is_string($input['vignette'] ?? null) ? $input['vignette'] : null),
             stem: (string) QuestionHtml::sanitize((string) ($input['stem'] ?? '')),
             leadIn: $string($input['lead_in'] ?? null),
@@ -151,6 +152,7 @@ final readonly class QuestionContent
             cognitiveLevelId: isset($input['cognitive_level_id']) ? (int) $input['cognitive_level_id'] : null,
             difficultyLevelId: isset($input['difficulty_level_id']) ? (int) $input['difficulty_level_id'] : null,
             examTypeId: isset($input['exam_type_id']) ? (int) $input['exam_type_id'] : null,
+            intakeId: isset($input['intake_id']) ? (int) $input['intake_id'] : null,
             options: $options,
             items: $items,
             answers: $answers,

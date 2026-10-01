@@ -31,6 +31,12 @@ final class CheckImport
 {
     private const MAX_ROWS = 2000;
 
+    /** Checks of the editor that an import leaves to the author, as warnings. */
+    private const JUDGED_LATER = [
+        'cognitive_level_id' => 'cognitive level',
+        'difficulty_level_id' => 'difficulty level',
+    ];
+
     public function __construct(
         private readonly SpreadsheetReader $reader,
         private readonly RowParser $parser,
@@ -41,7 +47,7 @@ final class CheckImport
     ) {}
 
     /**
-     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null}  $defaults
+     * @param  array{course_id?: int|null, node_id?: int|null, type_id?: int|null, exam_type_id?: int|null, intake_id?: int|null}  $defaults
      */
     public function __invoke(User $user, int $branchId, UploadedFile $file, array $defaults = []): QuestionImport
     {
@@ -78,15 +84,24 @@ final class CheckImport
             $hashesInFile = [];
 
             foreach ($rows as $row) {
-                ['content' => $content, 'errors' => $errors] = $this->parser->parse($row['values'], $branchId, $defaults);
-                $warnings = [];
+                ['content' => $content, 'errors' => $errors, 'warnings' => $parserWarnings] = $this->parser->parse($row['values'], $branchId, $defaults);
+                $warnings = $parserWarnings;
                 $hash = null;
                 $status = 'valid';
 
                 if ($content !== null) {
                     $result = $this->validator->check($content);
                     $errors = $result['errors'];
-                    $warnings = $result['warnings'];
+                    $warnings = [...$parserWarnings, ...$result['warnings']];
+
+                    // KMU's format has no cognitive or difficulty level: an imported question is a draft,
+                    // and its author gives them in the editor before sending it for review.
+                    foreach (self::JUDGED_LATER as $field => $what) {
+                        if (isset($errors[$field])) {
+                            unset($errors[$field]);
+                            $warnings[] = 'No '.$what.' yet: choose it before sending the question for review.';
+                        }
+                    }
                     $hash = $content->contentHash();
 
                     $accessProblem = $this->accessProblem($user, $branchId, $content);
@@ -137,9 +152,9 @@ final class CheckImport
 
     private function accessProblem(User $user, int $branchId, QuestionContent $content): ?string
     {
-        $place = $this->academic->placeOfNode($content->nodeId, $content->courseId);
+        $place = $this->academic->placeOf($content->nodeId, $content->courseId);
         if ($place === null || $place['branch_id'] !== $branchId) {
-            return 'That course and topic are not in this campus.';
+            return 'That course and subject or topic are not in this campus, or cannot take questions.';
         }
         if ($content->examTypeId !== null && ! $this->academic->examTypeFits($content->examTypeId, $place['programme_id'])) {
             return 'That examination type is not used by this programme (Annual and Supplementary are for annual programmes, Regular and Retake for semester programmes).';
@@ -167,6 +182,7 @@ final class CheckImport
             'course_id' => $content->courseId,
             'node_id' => $content->nodeId,
             'topic' => $this->academic->nodeName($content->nodeId),
+            'intake_id' => $content->intakeId,
             'stem' => mb_substr(QuestionHtml::toText($content->stem), 0, 200),
             'marks' => $content->marks,
             'options' => count($content->options),

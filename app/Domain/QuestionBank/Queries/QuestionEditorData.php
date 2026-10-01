@@ -2,6 +2,7 @@
 
 namespace App\Domain\QuestionBank\Queries;
 
+use App\Domain\Identity\ActiveIntake;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\QuestionBank\Models\CognitiveLevel;
@@ -25,6 +26,7 @@ final class QuestionEditorData
         private readonly CourseScope $courseScope,
         private readonly CmsAcademic $academic,
         private readonly VersionContentReader $reader,
+        private readonly ActiveIntake $activeIntake,
     ) {}
 
     /**
@@ -45,6 +47,9 @@ final class QuestionEditorData
             'years' => $this->academic->yearsWithCourses($branchId, $courses),
             'programmeCalendars' => $this->academic->calendars($branchId),
             'courses' => $courses,
+            // The Academic Session: the one selected in kmu-cms, unless the author picks another.
+            'intakes' => $this->academic->intakes($branchId),
+            'defaultIntakeId' => $this->activeIntake->id($branchId),
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             'disciplines' => $this->academic->disciplines(),
             ...$this->lookups(),
@@ -69,6 +74,7 @@ final class QuestionEditorData
             'years' => $this->academic->yearsWithCourses($branchId, $courses),
             'programmeCalendars' => $this->academic->calendars($branchId),
             'courses' => $courses,
+            'intakes' => $this->academic->intakes($branchId),
             'disciplines' => $this->academic->disciplines(),
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             ...$this->lookups(),
@@ -163,6 +169,7 @@ final class QuestionEditorData
             'nodeId' => $version->node_id,
             'disciplineId' => $version->discipline_id,
             'examTypeId' => $version->exam_type_id,
+            'intakeId' => $version->intake_id,
             'professionalId' => $version->professional_id,
             'termId' => $version->term_id,
             'vignette' => $content->vignette,

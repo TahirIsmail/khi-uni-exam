@@ -35,6 +35,15 @@ final class ActivateVersion
             throw ValidationException::withMessages(['status' => 'Only an approved question can be put into use.']);
         }
 
+        return $this->putIntoUse($actor, $version, $note);
+    }
+
+    /**
+     * Puts a version into use for a caller that has already decided it may be: the approval itself,
+     * whether by the approving authority or by the reviewers' accepting it (ApproveVersion).
+     */
+    public function putIntoUse(User $actor, QuestionVersion $version, ?string $note = null): QuestionVersion
+    {
         return DB::transaction(function () use ($actor, $version, $note): QuestionVersion {
             $question = $version->question;
 

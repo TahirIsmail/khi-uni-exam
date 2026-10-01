@@ -319,12 +319,14 @@ try {
         "[...document.querySelectorAll('#topic option')].map(o => o.textContent.trim())",
     );
     check(
-        'only topics that take questions are offered, with their discipline above them',
+        // MBBS files a question under a subject of its module (or a topic below it), so the subject
+        // itself is offered too (IQQUIK Phase I).
+        'the subject and its topics are offered, each topic with its subject above it',
         Array.isArray(topics) &&
             topics.some((t) =>
                 t.includes('Cardiology (discipline) → Acute coronary syndrome'),
             ) &&
-            !topics.some((t) => t.trim() === 'Cardiology (discipline)'),
+            topics.some((t) => t.trim() === 'Cardiology (discipline)'),
         JSON.stringify(topics),
     );
     const topicId = cms(

@@ -24,7 +24,7 @@ final class CmsTicketVerifier
     ) {}
 
     /**
-     * @return array{sub: int, jti: string, exp: int, redirect: string, branch: int|null}
+     * @return array{sub: int, jti: string, exp: int, redirect: string, branch: int|null, intake: int|null}
      */
     public function verify(string $ticket, int $now): array
     {
@@ -46,6 +46,7 @@ final class CmsTicketVerifier
         }
 
         $branch = $claims['branch'] ?? null;
+        $intake = $claims['intake'] ?? null;
 
         return [
             'sub' => $sub,
@@ -54,6 +55,8 @@ final class CmsTicketVerifier
             'redirect' => self::safeRedirect($claims['redirect'] ?? null),
             // The campus selected in kmu-cms; null there means "All Branches".
             'branch' => (is_int($branch) && $branch > 0) ? $branch : null,
+            // The Intake (Academic Session) selected in kmu-cms's top bar; questions default to it.
+            'intake' => (is_int($intake) && $intake > 0) ? $intake : null,
         ];
     }
 

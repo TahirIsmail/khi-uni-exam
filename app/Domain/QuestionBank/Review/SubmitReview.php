@@ -24,8 +24,9 @@ use Illuminate\Validation\ValidationException;
  *    changes-requested; the other open reviews are called off, because the question will change.
  *  - a review: a decision, the item-writing checklist and, for whoever may record it, the cognitive
  *    and difficulty level. The question moves to under-review. When every department / subject
- *    reviewer has reviewed it, it goes on to a QBank / academic reviewer, and after that review it
- *    waits for the approving authority.
+ *    reviewer has reviewed it, it goes on to a QBank / academic reviewer. After that review, a
+ *    question every reviewer accepted is stored in the QBank at once when kmu-cms says so
+ *    (ApproveVersion::acceptedByReviewers); otherwise it waits for the approving authority.
  *
  * A submitted review is never edited — the database refuses it. Saying something else means a new
  * review, which is what happens after the author has made changes.
@@ -36,6 +37,7 @@ final class SubmitReview
         private readonly AccessControl $access,
         private readonly ChecklistRules $checklist,
         private readonly AssignReviewers $assignments,
+        private readonly ApproveVersion $approve,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -163,6 +165,11 @@ final class SubmitReview
             // to the QBank / academic review.
             if ($stage === ReviewStage::Subject && $this->subjectReviewsComplete($version)) {
                 $this->assignments->auto($version, $reviewer, ReviewStage::Academic);
+            }
+
+            // The last level is in: when every reviewer accepted it, it goes straight into the QBank.
+            if ($stage === ReviewStage::Academic) {
+                $this->approve->acceptedByReviewers($reviewer, $version->fresh() ?? $version);
             }
 
             return $review;

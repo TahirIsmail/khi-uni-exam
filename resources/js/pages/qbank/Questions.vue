@@ -36,6 +36,7 @@ type Filters = {
     programme_id: number | null;
     year: string | null;
     exam_type_id: number | null;
+    intake_id: number | null;
     used: string;
     used_from: string | null;
     used_to: string | null;
@@ -63,6 +64,7 @@ const props = defineProps<{
     programmes: { id: number; name: string; code: string }[];
     years: YearOption[];
     examTypes: ExamTypeOption[];
+    intakes: { id: number; name: string }[];
     courses: CourseOption[];
     disciplines: { id: number; code: string; name: string }[];
     tags: { id: number; name: string }[];
@@ -81,6 +83,7 @@ const search = ref(props.filters.search);
 const showMore = ref(
     props.filters.year !== null ||
         props.filters.exam_type_id !== null ||
+        props.filters.intake_id !== null ||
         props.filters.used !== '' ||
         props.filters.used_from !== null ||
         props.filters.used_to !== null ||
@@ -390,7 +393,32 @@ const statusStyles: Record<string, string> = {
                     </select>
                 </div>
                 <div class="grid gap-1.5">
-                    <Label for="exam-type">Examination</Label>
+                    <Label for="intake">Academic Session</Label>
+                    <select
+                        id="intake"
+                        class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        :value="filters.intake_id ?? ''"
+                        data-test="filter-intake"
+                        @change="
+                            apply({
+                                intake_id:
+                                    ($event.target as HTMLSelectElement)
+                                        .value || null,
+                            })
+                        "
+                    >
+                        <option value="">Any</option>
+                        <option
+                            v-for="row in intakes"
+                            :key="row.id"
+                            :value="row.id"
+                        >
+                            {{ row.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="grid gap-1.5">
+                    <Label for="exam-type">Examination Type</Label>
                     <select
                         id="exam-type"
                         class="border-input bg-background h-9 rounded-md border px-2 text-sm"

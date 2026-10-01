@@ -14,14 +14,23 @@ use stdClass;
 final class CmsAcademic
 {
     /**
-     * @return list<array{id: int, name: string, code: string}>
+     * The campus's programmes. `modular` (MBBS) means a question is filed under a subject of a
+     * module; otherwise (BDS, DPT) under the course itself, with a topic if the department has any.
+     *
+     * @return list<array{id: int, name: string, code: string, calendar: string, modular: bool}>
      */
     public function programmes(int $branchId): array
     {
         return array_values(DB::connection('cms')->table('v_cms_programmes')
             ->where('branch_id', $branchId)->orderBy('name')
-            ->get(['id', 'name', 'code'])
-            ->map(fn (stdClass $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name, 'code' => (string) $row->code])
+            ->get(['id', 'name', 'code', 'calendar_type', 'structure_type'])
+            ->map(fn (stdClass $row): array => [
+                'id' => (int) $row->id,
+                'name' => (string) $row->name,
+                'code' => (string) $row->code,
+                'calendar' => (string) $row->calendar_type,
+                'modular' => $row->structure_type === 'modular',
+            ])
             ->all());
     }
 
@@ -342,6 +351,47 @@ final class CmsAcademic
     }
 
     /**
+     * Where a question is filed: under a subject or topic ($nodeId), or — for a BDS or DPT course —
+     * on the course as a whole ($nodeId null). A modular programme's question (MBBS) always names a
+     * subject of its module. Null when that place cannot take questions.
+     *
+     * @return array{branch_id: int, programme_id: int, professional_id: int|null, term_id: int|null, course_id: int, node_id: int|null, discipline_id: int|null}|null
+     */
+    public function placeOf(?int $nodeId, int $courseId): ?array
+    {
+        if ($nodeId !== null) {
+            return $this->placeOfNode($nodeId, $courseId);
+        }
+
+        $course = $this->placeOfCourse($courseId);
+        if ($course === null || $course['status'] === 'retired' || $this->isModular($course['programme_id'])) {
+            return null;
+        }
+
+        return [
+            'branch_id' => $course['branch_id'],
+            'programme_id' => $course['programme_id'],
+            'professional_id' => $course['professional_id'],
+            'term_id' => $course['term_id'],
+            'course_id' => $courseId,
+            'node_id' => null,
+            'discipline_id' => null,
+        ];
+    }
+
+    /** Whether a programme is modular (MBBS: module > subject). */
+    public function isModular(int $programmeId): bool
+    {
+        return DB::connection('cms')->table('v_cms_programmes')->where('id', $programmeId)->value('structure_type') === 'modular';
+    }
+
+    /** Whether an academic session (intake) belongs to the campus. */
+    public function intakeBelongs(int $intakeId, int $branchId): bool
+    {
+        return DB::connection('cms')->table('v_cms_intakes')->where('id', $intakeId)->where('branch_id', $branchId)->exists();
+    }
+
+    /**
      * A topic and everything under it, so searching a topic also finds its subtopics.
      *
      * @return list<int>
@@ -361,9 +411,16 @@ final class CmsAcademic
         return array_values(array_unique([$nodeId, ...$ids]));
     }
 
-    /** A topic's name, for headings and comparisons. */
-    public function nodeName(int $nodeId): ?string
+    /**
+     * A subject's or topic's name, for headings and comparisons. No node (null, or 0 in a blueprint
+     * row) is the course as a whole.
+     */
+    public function nodeName(?int $nodeId): ?string
     {
+        if ($nodeId === null || $nodeId === 0) {
+            return 'The whole course';
+        }
+
         $name = DB::connection('cms')->table('v_cms_curriculum_nodes')->where('id', $nodeId)->value('name');
 
         return $name === null ? null : (string) $name;

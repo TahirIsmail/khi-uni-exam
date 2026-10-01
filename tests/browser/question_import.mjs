@@ -293,18 +293,27 @@ try {
         await path(),
     );
 
-    // The template tells the author which columns to fill in.
+    // The template is KMU's own format; the full one tells the author every column.
     const template = await evaluate(
         `fetch('/questions/imports/template', { headers: { Accept: 'text/csv' } }).then(r => r.text())`,
     );
     check(
-        'the template names the columns and gives an example of each common type',
-        /stem/.test(template ?? '') &&
-            /options/.test(template ?? '') &&
-            /\bsba\b/.test(template ?? '') &&
-            /\bmtf\b/.test(template ?? '') &&
-            /numerical/.test(template ?? ''),
+        "the template is KMU's format: each option on its own line under the question",
+        String(template).split('\n')[0]?.trim() ===
+            '"Question No",exam_type,"Academic Year",subject,discipline,stem,lead_in,options,"correct option"' &&
+            /Suprascapular nerve/.test(template ?? ''),
         String(template).split('\n')[0]?.slice(0, 200),
+    );
+    const fullTemplate = await evaluate(
+        `fetch('/questions/imports/template?full=1', { headers: { Accept: 'text/csv' } }).then(r => r.text())`,
+    );
+    check(
+        'the full template names every column and gives an example of each common type',
+        /stem/.test(fullTemplate ?? '') &&
+            /\bsba\b/.test(fullTemplate ?? '') &&
+            /\bmtf\b/.test(fullTemplate ?? '') &&
+            /numerical/.test(fullTemplate ?? ''),
+        String(fullTemplate).split('\n')[0]?.slice(0, 200),
     );
 
     check(

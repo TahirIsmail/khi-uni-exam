@@ -242,3 +242,128 @@ test('run and decide each need their own right, separate from analytics.view', f
         'reason' => 'Attempted without the right.',
     ])->assertForbidden();
 });
+
+/*
+ * KMU's post-hoc categories (IQQUIK Phase I, 2A and 2B): overall statistics, item analysis in plain
+ * words, distractor analysis and reliability, on the analysis screen and in its Excel export.
+ */
+
+/** Marks each candidate's essay as given: candidate number => marks. */
+function markEssays(array $essays): void
+{
+    $t = test();
+    foreach ($essays as $id => $marks) {
+        $t->actingAs($t->examiner1, 'web')->post("/marking/{$t->exam->id}/items/{$id}/mark", ['marks_awarded' => $marks, 'criteria' => []])->assertSessionHasNoErrors();
+    }
+}
+
+test('the overall statistics come from the results: students, mean, median, spread, extremes, pass and fail', function () {
+    config(['exam.analytics.min_candidates' => 2]);
+    $one = analyticsSitAndSubmit('C-001', true)['essayItem']->id;   // 4 + 6 = 10
+    $two = analyticsSitAndSubmit('C-002', false)['essayItem']->id;  // 0 + 1 = 1
+    $three = analyticsSitAndSubmit('C-003', true)['essayItem']->id; // 4 + 6 = 10
+    markEssays([$one => 6, $two => 1, $three => 6]);
+    $this->actingAs($this->analyst, 'web')->post("/results/{$this->exam->id}/analysis/run")->assertSessionHasNoErrors();
+
+    // The pass mark is 50%: 10 and 10 pass, 1 fails.
+    $this->actingAs($this->analyst, 'web')->get("/results/{$this->exam->id}/analysis")->assertInertia(fn ($page) => $page
+        ->where('statistics.students', 3)
+        ->where('statistics.totalMarks', 10)
+        ->where('statistics.mean', 7)
+        ->where('statistics.median', 10)
+        ->where('statistics.sd', 4.24)            // sqrt(((3)^2 + (-6)^2 + 3^2) / 3)
+        ->where('statistics.min', 1)
+        ->where('statistics.max', 10)
+        ->where('statistics.passMark', 50)
+        ->where('statistics.passed', 2)
+        ->where('statistics.failed', 1)
+        ->where('statistics.passPercent', 66.7)
+        ->where('statistics.failPercent', 33.3)
+        ->where('statistics.pending', 0));
+});
+
+test('each question is described in plain words, and its options with the upper and lower groups', function () {
+    config(['exam.analytics.min_candidates' => 2]);
+    $one = analyticsSitAndSubmit('C-001', true)['essayItem']->id;
+    $two = analyticsSitAndSubmit('C-002', false)['essayItem']->id;
+    $three = analyticsSitAndSubmit('C-003', true)['essayItem']->id;
+    markEssays([$one => 6, $two => 6, $three => 6]);
+
+    $this->actingAs($this->analyst, 'web')->post("/results/{$this->exam->id}/analysis/run")->assertSessionHasNoErrors();
+    $this->actingAs($this->analyst, 'web')->get("/results/{$this->exam->id}/analysis")->assertInertia(function ($page) {
+        $sba = collect($page->toArray()['props']['items'])->firstWhere('questionId', $this->sbaQuestionId);
+
+        expect($sba['observedP'])->toEqualWithDelta(2 / 3, 0.001)
+            ->and($sba['difficultyBand']['label'])->toBe('Moderate')
+            ->and($sba['discrimination'])->toEqual(1)
+            ->and($sba['discriminationBand']['label'])->toBe('Good')
+            ->and(collect($sba['options'])->pluck('label')->all())->toBe(['A', 'B', 'C'])
+            ->and(collect($sba['options'])->firstWhere('label', 'B')['correct'])->toBeTrue()
+            ->and(collect($sba['options'])->firstWhere('label', 'B')['upper'])->toEqual(1)
+            ->and(collect($sba['options'])->firstWhere('label', 'A')['lower'])->toEqual(1)
+            // Nobody chose C: a wrong option nobody picks is not doing its job.
+            ->and($sba['distractorAnalysis']['nonFunctional'])->toBe(['C'])
+            ->and($sba['distractorAnalysis']['efficiency'])->toBe(50)
+            ->and($sba['distractorAnalysis']['defective'])->toBe([])
+            ->and($sba['distractorAnalysis']['possibleMiskey'])->toBe([]);
+
+        return $page;
+    });
+});
+
+test('a wrong option the stronger candidates chose is flagged, and so is one chosen more than the key', function () {
+    config(['exam.analytics.min_candidates' => 2]);
+    // The strongest candidate (by total) chose A, which is wrong; two of three chose A overall.
+    $one = analyticsSitAndSubmit('C-001', false)['essayItem']->id;  // 0 + 6 = 6
+    $two = analyticsSitAndSubmit('C-002', false)['essayItem']->id;  // 0 + 5 = 5
+    $three = analyticsSitAndSubmit('C-003', true)['essayItem']->id; // 4 + 0 = 4
+    markEssays([$one => 6, $two => 5, $three => 0]);
+
+    $this->actingAs($this->analyst, 'web')->post("/results/{$this->exam->id}/analysis/run")->assertSessionHasNoErrors();
+    $this->actingAs($this->analyst, 'web')->get("/results/{$this->exam->id}/analysis")->assertInertia(function ($page) {
+        $sba = collect($page->toArray()['props']['items'])->firstWhere('questionId', $this->sbaQuestionId);
+
+        expect($sba['discrimination'])->toEqual(-1)
+            ->and($sba['discriminationBand']['label'])->toBe('Red flag: check the key')
+            ->and($sba['distractorAnalysis']['defective'])->toBe(['A'])
+            ->and($sba['distractorAnalysis']['possibleMiskey'])->toBe(['A']);
+
+        return $page;
+    });
+});
+
+test('reliability is shown as Cronbach\'s alpha, with KR-20 only when every mark was all or nothing', function () {
+    config(['exam.analytics.min_candidates' => 2]);
+    $one = analyticsSitAndSubmit('C-001', true)['essayItem']->id;
+    $two = analyticsSitAndSubmit('C-002', false)['essayItem']->id;
+    $three = analyticsSitAndSubmit('C-003', true)['essayItem']->id;
+
+    // Part marks on the essay: KR-20 does not apply.
+    markEssays([$one => 5, $two => 1, $three => 4]);
+    $this->actingAs($this->analyst, 'web')->post("/results/{$this->exam->id}/analysis/run")->assertSessionHasNoErrors();
+    $this->actingAs($this->analyst, 'web')->get("/results/{$this->exam->id}/analysis")->assertInertia(fn ($page) => $page
+        ->where('reliability.dichotomous', false)
+        ->where('reliability.kr20', null)
+        ->whereNot('reliability.alpha', null)
+        ->has('reliability.band.label'));
+});
+
+test('the item analysis can be taken to Excel in KMU\'s record format', function () {
+    config(['exam.analytics.min_candidates' => 2]);
+    $one = analyticsSitAndSubmit('C-001', true)['essayItem']->id;
+    $two = analyticsSitAndSubmit('C-002', false)['essayItem']->id;
+    $three = analyticsSitAndSubmit('C-003', true)['essayItem']->id;
+    markEssays([$one => 6, $two => 6, $three => 6]);
+    $this->actingAs($this->analyst, 'web')->post("/results/{$this->exam->id}/analysis/run")->assertSessionHasNoErrors();
+
+    $csv = $this->actingAs($this->analyst, 'web')->get("/results/{$this->exam->id}/analysis/export")->assertOk()->streamedContent();
+    $lines = array_map(str_getcsv(...), explode("\n", trim(preg_replace('/^\x{FEFF}/u', '', $csv))));
+    $header = collect($lines)->first(fn (array $line): bool => ($line[0] ?? '') === 'Course ID');
+    $sba = collect($lines)->first(fn (array $line): bool => in_array('67% (correct)', $line, true));
+
+    expect($header)->toContain('Question No.')->toContain('Difficulty Index')->toContain('Discrimination Index')
+        ->toContain('Option A')->toContain('Option B')->toContain('Status/Decision')
+        ->and($sba)->not->toBeNull()
+        ->and($sba[array_search('Option C', $header, true)])->toBe('0%')
+        ->and($sba[array_search('Non-functional distractors', $header, true)])->toBe('C');
+});

@@ -6,6 +6,7 @@ use App\Domain\Audit\AuditLogger;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\QuestionBank\Models\QuestionVersion;
+use App\Domain\QuestionBank\Support\Filing;
 use App\Domain\QuestionBank\Validation\QuestionContent;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
@@ -22,6 +23,7 @@ final class SaveQuestionDraft
     public function __construct(
         private readonly AccessControl $access,
         private readonly CmsAcademic $academic,
+        private readonly Filing $filing,
         private readonly WriteVersionContent $writeContent,
         private readonly AuditLogger $audit,
     ) {}
@@ -32,10 +34,7 @@ final class SaveQuestionDraft
             throw ValidationException::withMessages(['status' => 'This version is no longer a draft. Create a new version to change the question.']);
         }
 
-        $place = $this->academic->placeOfNode($content->nodeId, $content->courseId);
-        if ($place === null) {
-            throw ValidationException::withMessages(['node_id' => 'Choose a topic of this course that questions can be added to.']);
-        }
+        $place = $this->filing->place($content);
         if ($place['branch_id'] !== $version->branch_id) {
             throw ValidationException::withMessages(['course_id' => 'A question cannot be moved to another campus.']);
         }
@@ -48,7 +47,9 @@ final class SaveQuestionDraft
             throw new AuthorizationException('You cannot edit this question.');
         }
 
-        return DB::transaction(function () use ($editor, $version, $content, $place): QuestionVersion {
+        $intakeId = $this->filing->intake($content->intakeId, $version->branch_id, $version->intake_id);
+
+        return DB::transaction(function () use ($editor, $version, $content, $place, $intakeId): QuestionVersion {
             $before = [
                 'stem' => $version->stem,
                 'marks' => $version->marks,
@@ -74,6 +75,7 @@ final class SaveQuestionDraft
                 'cognitive_level_id' => $content->cognitiveLevelId,
                 'difficulty_level_id' => $content->difficultyLevelId,
                 'exam_type_id' => $content->examTypeId,
+                'intake_id' => $intakeId,
                 'content_hash' => $content->contentHash(),
                 'search_text' => $content->searchText(),
                 'updated_by' => $editor->id,

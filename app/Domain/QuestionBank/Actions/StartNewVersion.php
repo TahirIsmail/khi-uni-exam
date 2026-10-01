@@ -67,6 +67,7 @@ final class StartNewVersion
                 'node_id' => $source->node_id,
                 'discipline_id' => $source->discipline_id,
                 'exam_type_id' => $source->exam_type_id,
+                'intake_id' => $source->intake_id,
                 'cognitive_level_id' => $source->cognitive_level_id,
                 'difficulty_level_id' => $source->difficulty_level_id,
                 'status' => VersionStatus::Draft,
