@@ -15,8 +15,8 @@ return [
         'max' => 100,
     ],
 
-    // A question cannot be submitted for review without at least one reference.
-    'require_reference' => env('QBANK_REQUIRE_REFERENCE', false),
+    // References and the explanation are optional (KMU): nothing about them stops a question being
+    // sent for review, and their absence is not flagged either.
 
     // Warnings from the item-writing checklist (blueprint 10.3, based on the NBME guide).
     'checklist' => [
@@ -24,7 +24,7 @@ return [
         'flag_negative_lead_in' => true,
         'flag_longest_option_is_key' => true,
         'flag_absolute_terms' => true,
-        'flag_missing_explanation' => true,
+        'flag_missing_explanation' => false,
     ],
 
     'media' => [

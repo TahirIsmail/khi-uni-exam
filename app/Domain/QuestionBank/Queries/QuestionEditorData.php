@@ -119,7 +119,6 @@ final class QuestionEditorData
                 'stemMin' => (int) config('qbank.stem.min_length'),
                 'stemMax' => (int) config('qbank.stem.max_length'),
                 'marksMax' => (float) config('qbank.marks.max'),
-                'referenceRequired' => config('qbank.require_reference') === true,
             ],
         ];
     }

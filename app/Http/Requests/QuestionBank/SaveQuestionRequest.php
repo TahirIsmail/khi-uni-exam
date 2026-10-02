@@ -89,6 +89,21 @@ class SaveQuestionRequest extends FormRequest
     }
 
     /**
+     * References are optional: a reference line the author added but left empty is dropped rather
+     * than refused, so it never stops a draft being saved or sent for review.
+     */
+    protected function prepareForValidation(): void
+    {
+        $references = $this->input('references');
+        if (is_array($references)) {
+            $this->merge(['references' => array_values(array_filter(
+                $references,
+                fn (mixed $reference): bool => is_array($reference) && trim((string) ($reference['citation'] ?? '')) !== '',
+            ))]);
+        }
+    }
+
+    /**
      * Plain wording, because the editor shows these beside the fields while the author types.
      *
      * @return array<string, string>

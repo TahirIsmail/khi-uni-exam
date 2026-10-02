@@ -24,6 +24,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -147,9 +148,14 @@ class QuestionController extends Controller
         ]);
     }
 
-    public function store(SaveQuestionRequest $request, CreateQuestionDraft $create): RedirectResponse
+    public function store(SaveQuestionRequest $request, CreateQuestionDraft $create, SubmitQuestionVersion $submit): RedirectResponse
     {
         $version = $create($request->user('web'), $this->branchId($request), $request->content());
+
+        // "Send for review" on a question not saved yet: it is saved, then sent.
+        if ($request->input('then') === 'submit') {
+            return $this->sendAfterSaving($request, $version, $submit);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Draft saved as :ref.', ['ref' => $version->question->public_ref])]);
 
@@ -185,10 +191,16 @@ class QuestionController extends Controller
         ]);
     }
 
-    public function update(SaveQuestionRequest $request, Question $question, QuestionVersion $version, SaveQuestionDraft $save): RedirectResponse
+    public function update(SaveQuestionRequest $request, Question $question, QuestionVersion $version, SaveQuestionDraft $save, SubmitQuestionVersion $submit): RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
         $save($request->user('web'), $version, $request->content());
+
+        // "Send for review": what is on the screen is saved first, so what goes for review is what
+        // the author sees (and what the live checks passed), not an older saved draft.
+        if ($request->input('then') === 'submit') {
+            return $this->sendAfterSaving($request, $version->fresh() ?? $version, $submit);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Draft saved.')]);
 
@@ -203,6 +215,25 @@ class QuestionController extends Controller
         $submit($request->user('web'), $version, $input['note'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent for review.')]);
+
+        return to_route('questions.index');
+    }
+
+    /**
+     * Sends a just-saved draft for review. When something still stops it, the draft stays saved and
+     * the editor opens on it with the reasons, so nothing the author wrote is lost.
+     */
+    private function sendAfterSaving(Request $request, QuestionVersion $version, SubmitQuestionVersion $submit): RedirectResponse
+    {
+        try {
+            $submit($request->user('web'), $version);
+        } catch (ValidationException $problem) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => __('Draft saved, but it cannot be sent for review yet.')]);
+
+            return to_route('questions.edit', [$version->question_id, $version->id])->withErrors($problem->errors());
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Saved and sent for review as :ref.', ['ref' => $version->question->public_ref])]);
 
         return to_route('questions.index');
     }

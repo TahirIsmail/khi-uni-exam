@@ -191,9 +191,6 @@ final class QuestionValidator
                 $errors['references.'.$index][] = 'This link is not a valid address.';
             }
         }
-        if (config('qbank.require_reference') === true && $content->references === []) {
-            $errors['references'][] = 'Add at least one reference.';
-        }
 
         return ['errors' => $errors, 'warnings' => $this->warnings($content)];
     }
@@ -254,10 +251,6 @@ final class QuestionValidator
 
         if (($checklist['flag_missing_explanation'] ?? false) === true && $content->explanation === null) {
             $warnings[] = 'There is no explanation. Reviewers and, later, candidates gain from knowing why the answer is right.';
-        }
-
-        if ($content->references === [] && config('qbank.require_reference') !== true) {
-            $warnings[] = 'No reference given. A source makes review much faster.';
         }
 
         return array_values(array_unique($warnings));

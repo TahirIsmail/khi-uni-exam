@@ -31,7 +31,6 @@ const props = defineProps<{
         stemMin: number;
         stemMax: number;
         marksMax: number;
-        referenceRequired: boolean;
     };
 }>();
 

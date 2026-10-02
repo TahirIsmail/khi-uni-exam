@@ -79,7 +79,6 @@ const props = defineProps<{
         stemMin: number;
         stemMax: number;
         marksMax: number;
-        referenceRequired: boolean;
     };
 }>();
 
@@ -256,10 +255,11 @@ const topicOptions = computed(() => {
 const errorCount = computed(
     () => Object.values(checks.value.errors).flat().length,
 );
+// "Send for review" saves what is on the screen first, so a question not saved yet can be sent too.
 const canSubmit = computed(
     () =>
-        props.version !== null &&
-        props.version.editable &&
+        (props.version === null || props.version.editable) &&
+        hasCourses.value &&
         errorCount.value === 0 &&
         !checking.value,
 );
@@ -439,7 +439,7 @@ async function addTag(): Promise<void> {
     newTag.value = '';
 }
 
-function save(then: 'edit' | 'new' = 'edit'): void {
+function save(then: 'edit' | 'new' | 'submit' = 'edit'): void {
     saving.value = true;
     serverErrors.value = {};
     const options = {
@@ -452,7 +452,7 @@ function save(then: 'edit' | 'new' = 'edit'): void {
     if (props.version) {
         router.put(
             `/questions/${props.version.questionId}/versions/${props.version.id}`,
-            draft.value,
+            { ...draft.value, then },
             options,
         );
     } else {
@@ -460,20 +460,9 @@ function save(then: 'edit' | 'new' = 'edit'): void {
     }
 }
 
+// Saves the draft as it is on the screen, then sends it for review, in one step.
 function submit(): void {
-    if (!props.version) {
-        return;
-    }
-    saving.value = true;
-    router.post(
-        `/questions/${props.version.questionId}/versions/${props.version.id}/submit`,
-        {},
-        {
-            onError: (errors: Record<string, string>) =>
-                (serverErrors.value = errors),
-            onFinish: () => (saving.value = false),
-        },
-    );
+    save('submit');
 }
 </script>
 
@@ -1088,7 +1077,7 @@ function submit(): void {
 
                     <ReferencesEditor
                         v-model="draft.references"
-                        :required="limits.referenceRequired"
+                        :required="false"
                         :checks="checks"
                         :disabled="readOnly"
                     />

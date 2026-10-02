@@ -205,8 +205,9 @@ test('the item-writing checklist warns without blocking', function () {
         ->and(implode(' ', $result['warnings']))
         ->toContain('all of the above')
         ->toContain('NOT true')
-        ->toContain('explanation')
-        ->toContain('reference');
+        // References and the explanation are optional for KMU: their absence is not flagged.
+        ->not->toContain('explanation')
+        ->not->toContain('No reference');
 });
 
 test('a question is filed under an examination and judged for its level before it can go for review', function () {
