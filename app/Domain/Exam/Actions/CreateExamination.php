@@ -11,7 +11,9 @@ use App\Domain\Exam\ExaminationTitle;
 use App\Domain\Exam\ExamRef;
 use App\Domain\Exam\Models\Examination;
 use App\Models\User;
+use App\Support\Cms\CmsAcademic;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Creates an examination and, with it, its empty blueprint, in the campus the user is working in
@@ -23,12 +25,16 @@ final class CreateExamination
     public function __construct(
         private readonly ResolveExaminationPlace $place,
         private readonly ExaminationTitle $titles,
+        private readonly CmsAcademic $academic,
         private readonly AuditLogger $audit,
     ) {}
 
     public function __invoke(User $creator, int $branchId, ExaminationInput $input): Examination
     {
         $place = ($this->place)($creator, 'exam.create', $branchId, $input->courseId, $input->examTypeId, $input->intakeId);
+        if (! $this->academic->programmeInUse($place['programme_id'])) {
+            throw ValidationException::withMessages(['course_id' => 'This program is switched off in the CMS, so no new examinations are created for it.']);
+        }
 
         $title = $input->title !== null && trim($input->title) !== ''
             ? trim($input->title)

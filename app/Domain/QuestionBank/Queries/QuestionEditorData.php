@@ -34,7 +34,8 @@ final class QuestionEditorData
      */
     public function forCreate(User $user, int $branchId): array
     {
-        $courses = $this->courses($user, $branchId);
+        // Programs switched off in kmu-cms take no new questions.
+        $courses = $this->courses($user, $branchId, inUseOnly: true);
         $programmeIds = array_values(array_unique(array_map(fn (array $course): int => $course['programme_id'], $courses)));
 
         return [
@@ -128,10 +129,10 @@ final class QuestionEditorData
      *
      * @return list<array{id: int, code: string, title: string, programme_id: int, professional_id: int|null, term_id: int|null}>
      */
-    public function courses(User $user, int $branchId): array
+    public function courses(User $user, int $branchId, bool $inUseOnly = false): array
     {
         $allowed = $this->courseScope->courseIds($user, $branchId);
-        $courses = $this->academic->courses($branchId);
+        $courses = $this->academic->courses($branchId, inUseOnly: $inUseOnly);
 
         return $allowed === null
             ? $courses

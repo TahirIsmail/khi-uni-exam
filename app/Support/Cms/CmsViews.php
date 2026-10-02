@@ -58,7 +58,7 @@ final class CmsViews
 
             'v_cms_intakes' => "SELECT s.id, s.branch_id, s.academic_year_id, s.session AS name, s.start_date, s.end_date FROM {$db}.sessions s",
 
-            'v_cms_programmes' => "SELECT c.id, c.branch_id, c.education_type_id, c.class AS name, p.code, p.calendar_type, p.structure_type, p.duration_years
+            'v_cms_programmes' => "SELECT c.id, c.branch_id, c.education_type_id, c.class AS name, p.code, p.calendar_type, p.structure_type, p.duration_years, p.is_active
                 FROM {$db}.classes c JOIN {$db}.acad_programme_profiles p ON p.class_id = c.id",
 
             'v_cms_professionals' => "SELECT pr.id, c.branch_id, pr.class_id AS programme_id, pr.code, pr.name, pr.sequence, pr.is_active

@@ -191,6 +191,7 @@ CREATE TABLE `acad_programme_profiles` (
   `calendar_type` enum('annual','semester') COLLATE utf8mb4_unicode_ci NOT NULL,
   `structure_type` enum('modular','subject') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'subject' COMMENT 'modular = module > subject (MBBS); subject = courses directly (BDS, DPT)',
   `duration_years` tinyint unsigned NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1' COMMENT '0 = switched off: kept, but nothing new is filed under it',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`class_id`),

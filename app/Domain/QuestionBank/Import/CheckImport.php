@@ -156,6 +156,9 @@ final class CheckImport
         if ($place === null || $place['branch_id'] !== $branchId) {
             return 'That course and subject or topic are not in this campus, or cannot take questions.';
         }
+        if (! $this->academic->programmeInUse($place['programme_id'])) {
+            return 'This program is switched off in the CMS, so no new questions are filed under it.';
+        }
         if ($content->examTypeId !== null && ! $this->academic->examTypeFits($content->examTypeId, $place['programme_id'])) {
             return 'That examination type is not used by this programme (Annual and Supplementary are for annual programmes, Regular and Retake for semester programmes).';
         }

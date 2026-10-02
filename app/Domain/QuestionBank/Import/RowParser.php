@@ -474,7 +474,7 @@ final class RowParser
         }
 
         $needle = mb_strtolower(trim($given));
-        foreach ($this->academic->courses($branchId) as $course) {
+        foreach ($this->academic->courses($branchId, inUseOnly: true) as $course) {
             if (mb_strtolower($course['code']) === $needle || mb_strtolower($course['title']) === $needle) {
                 return $course['id'];
             }

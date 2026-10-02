@@ -151,3 +151,19 @@ test('a blueprint row for the whole course counts the questions filed on the cou
     expect($matrix[0][$type])->toBe(2)
         ->and($matrix[$topic][$type])->toBe(1);
 });
+
+test('a program switched off in kmu-cms is not offered for new questions, and takes none', function () {
+    $this->actingAs($this->author)->post('/questions', filingQuestion())->assertRedirect();
+    $existing = QuestionVersion::query()->latest('id')->firstOrFail();
+
+    DB::table(config('database.cms_source_database').'.acad_programme_profiles')->where('class_id', $this->programme)->update(['is_active' => 0]);
+
+    $this->actingAs($this->author)->get('/questions/create')
+        ->assertInertia(fn ($page) => $page->where('courses', [])->where('programmes', []));
+    $this->actingAs($this->author)->from('/questions/create')->post('/questions', filingQuestion())
+        ->assertSessionHasErrors(['course_id' => 'This program is switched off in the CMS, so no new questions are filed under it.']);
+
+    // What is already there stays: the draft can still be opened and saved.
+    $this->actingAs($this->author)->put("/questions/{$existing->question_id}/versions/{$existing->id}", filingQuestion(['stem' => '<p>A child of 9 has a supernumerary tooth in the midline.</p>']))->assertRedirect();
+    expect($existing->fresh()->stem)->toContain('child of 9');
+});

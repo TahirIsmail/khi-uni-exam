@@ -34,6 +34,9 @@ final class CreateQuestionDraft
     public function __invoke(User $author, int $branchId, QuestionContent $content, string $source = 'manual', ?int $importRowId = null): QuestionVersion
     {
         $place = $this->filing->place($content);
+        if (! $this->academic->programmeInUse($place['programme_id'])) {
+            throw ValidationException::withMessages(['course_id' => 'This program is switched off in the CMS, so no new questions are filed under it.']);
+        }
         if ($place['branch_id'] !== $branchId) {
             throw ValidationException::withMessages(['course_id' => 'That course belongs to another campus.']);
         }

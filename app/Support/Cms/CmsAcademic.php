@@ -17,29 +17,42 @@ final class CmsAcademic
      * The campus's programmes. `modular` (MBBS) means a question is filed under a subject of a
      * module; otherwise (BDS, DPT) under the course itself, with a topic if the department has any.
      *
-     * @return list<array{id: int, name: string, code: string, calendar: string, modular: bool}>
+     * `active` false: switched off in kmu-cms — kept, so existing questions and examinations still
+     * show its name, but nothing new is filed under it.
+     *
+     * @return list<array{id: int, name: string, code: string, calendar: string, modular: bool, active: bool}>
      */
     public function programmes(int $branchId): array
     {
         return array_values(DB::connection('cms')->table('v_cms_programmes')
             ->where('branch_id', $branchId)->orderBy('name')
-            ->get(['id', 'name', 'code', 'calendar_type', 'structure_type'])
+            ->get(['id', 'name', 'code', 'calendar_type', 'structure_type', 'is_active'])
             ->map(fn (stdClass $row): array => [
                 'id' => (int) $row->id,
                 'name' => (string) $row->name,
                 'code' => (string) $row->code,
                 'calendar' => (string) $row->calendar_type,
                 'modular' => $row->structure_type === 'modular',
+                'active' => (int) $row->is_active === 1,
             ])
             ->all());
     }
 
+    /** Whether new questions and examinations may be filed under a program (not switched off). */
+    public function programmeInUse(int $programmeId): bool
+    {
+        return (int) DB::connection('cms')->table('v_cms_programmes')->where('id', $programmeId)->value('is_active') === 1;
+    }
+
     /**
      * Courses of a campus, optionally of one programme, that questions can be written for.
+     * $inUseOnly leaves out the courses of programs switched off in kmu-cms: for the screens that
+     * file something new (a question, an import, an examination), not for those that look after
+     * what already exists.
      *
      * @return list<array{id: int, code: string, title: string, programme_id: int, professional_id: int|null, term_id: int|null}>
      */
-    public function courses(int $branchId, ?int $programmeId = null): array
+    public function courses(int $branchId, ?int $programmeId = null, bool $inUseOnly = false): array
     {
         $query = DB::connection('cms')->table('v_cms_courses')
             ->where('branch_id', $branchId)
@@ -47,6 +60,9 @@ final class CmsAcademic
 
         if ($programmeId !== null) {
             $query->where('programme_id', $programmeId);
+        }
+        if ($inUseOnly) {
+            $query->whereIn('programme_id', DB::connection('cms')->table('v_cms_programmes')->where('is_active', 1)->select('id'));
         }
 
         return array_values($query->orderBy('course_code')

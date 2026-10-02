@@ -41,8 +41,9 @@ final class ExaminationData
     public function choices(User $user, int $branchId): array
     {
         // Only courses that sit in a year: an examination is named after it.
+        // Programs switched off in kmu-cms get no new examinations.
         $courses = array_values(array_filter(
-            $this->courses($user, $branchId),
+            $this->courses($user, $branchId, inUseOnly: true),
             fn (array $course): bool => $course['professional_id'] !== null,
         ));
         $programmeIds = array_values(array_unique(array_column($courses, 'programme_id')));
@@ -75,10 +76,10 @@ final class ExaminationData
      *
      * @return list<array{id: int, code: string, title: string, programme_id: int, professional_id: int|null, term_id: int|null}>
      */
-    public function courses(User $user, int $branchId): array
+    public function courses(User $user, int $branchId, bool $inUseOnly = false): array
     {
         $allowed = $this->courseScope->courseIds($user, $branchId);
-        $courses = $this->academic->courses($branchId);
+        $courses = $this->academic->courses($branchId, inUseOnly: $inUseOnly);
 
         return $allowed === null
             ? $courses
