@@ -97,7 +97,8 @@ final class ApproveVersion
             }
         }
 
-        // The last review is the QBank / academic one; its decision is the question's.
+        // The last review (the QBank / academic one, or the department / subject one when that is the
+        // only level) carries the question's decision.
         $last = $reviewed[count($reviewed) - 1];
         $prehoc = PrehocAssessment::query()
             ->where('version_id', $version->id)
@@ -201,7 +202,7 @@ final class ApproveVersion
             return ['checklist' => 'A reviewer marked a required checklist item as failed: '.implode('; ', array_values($failed)).'. Send it back to the author.'];
         }
 
-        if ($academic < 1) {
+        if ($academic < ($this->settings->academicReview() ? 1 : 0)) {
             return ['reviews' => 'This question is waiting for its QBank / academic review.'];
         }
 

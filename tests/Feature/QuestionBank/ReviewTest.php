@@ -940,3 +940,105 @@ function reviewedTwice(): QuestionVersion
 
     return $version->fresh();
 }
+
+/*
+ * The author asks for the reviewers while writing the question (KMU): any author, at both levels.
+ * Asking nobody leaves it to the least busy, as before.
+ */
+test('the author can ask for a reviewer at each level while writing the question', function () {
+    $second = $this->staffUser([$this->reviewerRole], $this->branch);   // more ids, same load: never the automatic choice
+    $secondAcademic = $this->staffUser([$this->academicRole], $this->branch);
+
+    // The list the editor offers: who may review this course at each level, never the author.
+    $lists = $this->actingAs($this->author)->getJson('/questions/reviewers?course_id='.$this->course)->assertOk()->json();
+    expect(collect($lists['subject'])->pluck('id')->all())->toContain($this->reviewer->id, $second->id)->not->toContain($this->author->id)
+        ->and(collect($lists['academic'])->pluck('id')->all())->toContain($this->academic->id, $secondAcademic->id);
+
+    $version = sendForReview(['subject_reviewer_id' => $second->id, 'academic_reviewer_id' => $secondAcademic->id]);
+
+    $subject = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'subject')->sole();
+    expect($subject->reviewer_id)->toBe($second->id)
+        ->and($subject->assigned_by)->toBe($this->author->id);
+
+    // When the subject review is in, the academic review goes to the one asked for too.
+    $this->actingAs($second)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload(['assignment_id' => $subject->id]))->assertRedirect('/reviews');
+    expect(ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->sole()->reviewer_id)->toBe($secondAcademic->id);
+});
+
+test('only someone who may review the course can be asked, and not the same person twice', function () {
+    $this->actingAs($this->author)->from('/questions/create')->post('/questions', [...questionFields(), 'subject_reviewer_id' => $this->approver->id])
+        ->assertSessionHasErrors(['subject_reviewer_id' => 'That person cannot do the department / subject review of this question.']);
+
+    $both = $this->staffUser([$this->reviewerRole, $this->academicRole], $this->branch);
+    $this->actingAs($this->author)->from('/questions/create')->post('/questions', [...questionFields(), 'subject_reviewer_id' => $both->id, 'academic_reviewer_id' => $both->id])
+        ->assertSessionHasErrors(['academic_reviewer_id' => 'Choose a different person for each level of review.']);
+});
+
+test('a reviewer asked for who can no longer review it is replaced by the least busy', function () {
+    $second = $this->staffUser([$this->reviewerRole], $this->branch);
+    test()->actingAs(test()->author)->post('/questions', [...questionFields(), 'subject_reviewer_id' => $second->id])->assertRedirect();
+    $version = QuestionVersion::query()->latest('id')->firstOrFail();
+
+    // Their review right goes before the question is sent.
+    DB::table(config('database.cms_source_database').'.staff_roles')->where('staff_id', $second->cms_staff_id)->delete();
+    app(AccessControl::class)->forget($second);
+
+    $this->actingAs($this->author)->post("/questions/{$version->question_id}/versions/{$version->id}/submit")->assertRedirect();
+    expect(ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'subject')->value('reviewer_id'))->toBe($this->reviewer->id);
+});
+
+/** The fields sendForReview() posts, for tests that post them themselves. */
+function questionFields(): array
+{
+    return [
+        'question_type_id' => (int) QuestionType::query()->where('code', 'single_best_answer')->value('id'),
+        'course_id' => test()->course,
+        'node_id' => test()->node,
+        'stem' => '<p>A 54-year-old man has crushing chest pain radiating to the jaw for 40 minutes.</p>',
+        'lead_in' => 'Which investigation is most useful first?',
+        'marks' => 1,
+        'negative_marks' => 0,
+        'exam_type_id' => test()->cmsExamType('annual'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
+        'options' => [
+            ['label' => 'A', 'body' => 'ECG', 'is_correct' => true, 'sort_order' => 1],
+            ['label' => 'B', 'body' => 'Chest radiograph', 'is_correct' => false, 'sort_order' => 2],
+        ],
+    ];
+}
+
+/* kmu-cms can turn the QBank / academic review off: the department / subject review is then the only level. */
+test('with one level of review, the subject reviewer\'s Accept stores the question and nobody else is asked', function () {
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviewer_accept_stores' => 1]);
+
+    $this->actingAs($this->author)->get('/questions/create')->assertInertia(fn ($page) => $page->where('academicReview', false));
+
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]))->assertRedirect('/reviews');
+
+    expect($version->fresh()->status)->toBe(VersionStatus::Active)
+        ->and($version->fresh()->approved_by)->toBe($this->reviewer->id)
+        ->and(ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->exists())->toBeFalse();
+});
+
+test('with one level of review and no automatic store, the question goes to the approver without an academic review', function () {
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0]);
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]));
+
+    $this->actingAs($this->approver)->get('/approvals')->assertInertia(fn ($page) => $page
+        ->where('academicReview', false)
+        ->where('versions.data.0.versionId', $version->id));
+
+    $this->actingAs($this->approver)->post(decideUrl($version), [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+        'cognitive_level_id' => 2,
+        'difficulty_level_id' => 2,
+    ])->assertRedirect('/approvals');
+    expect($version->fresh()->status)->toBe(VersionStatus::Active);
+});

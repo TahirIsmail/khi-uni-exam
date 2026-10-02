@@ -163,12 +163,19 @@ final class SubmitReview
 
             // When the department / subject reviews of this round are all in, the question goes on
             // to the QBank / academic review.
+            // When kmu-cms turns the QBank / academic review off, the department / subject review is
+            // the last level.
+            $lastLevel = $stage === ReviewStage::Academic;
             if ($stage === ReviewStage::Subject && $this->subjectReviewsComplete($version)) {
-                $this->assignments->auto($version, $reviewer, ReviewStage::Academic);
+                if ($this->assignments->needed(ReviewStage::Academic) > 0) {
+                    $this->assignments->auto($version, $reviewer, ReviewStage::Academic);
+                } else {
+                    $lastLevel = true;
+                }
             }
 
             // The last level is in: when every reviewer accepted it, it goes straight into the QBank.
-            if ($stage === ReviewStage::Academic) {
+            if ($lastLevel) {
                 $this->approve->acceptedByReviewers($reviewer, $version->fresh() ?? $version);
             }
 

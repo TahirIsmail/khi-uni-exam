@@ -24,6 +24,21 @@ final class ReviewerPool
      */
     public function forVersion(QuestionVersion $version, ReviewStage $stage = ReviewStage::Subject): array
     {
+        return $this->forTarget(
+            new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id),
+            $stage,
+            $version->author_id,
+        );
+    }
+
+    /**
+     * Who may review questions of a course at a level, before any question exists — for the author
+     * choosing reviewers while writing one. The author is left out.
+     *
+     * @return list<array{user: User, openLoad: int}>
+     */
+    public function forTarget(ScopeTarget $target, ReviewStage $stage, ?int $authorId): array
+    {
         $load = ReviewAssignment::query()
             ->where('status', 'open')
             ->groupBy('reviewer_id')
@@ -33,7 +48,7 @@ final class ReviewerPool
 
         $pool = [];
         foreach ($this->candidates() as $user) {
-            if ($this->allows($user, $version, $stage)) {
+            if ($user->id !== $authorId && $this->access->allows($user, $stage->permission(), $target)) {
                 $pool[] = ['user' => $user, 'openLoad' => $load[$user->id] ?? 0];
             }
         }

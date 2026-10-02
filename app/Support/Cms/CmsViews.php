@@ -47,7 +47,7 @@ final class CmsViews
                 FROM {$db}.class_teacher ct JOIN {$db}.classes c ON c.id = ct.class_id",
 
             'v_cms_exam_settings' => "SELECT s.kmu_assess_mfa_enabled, s.kmu_assess_reviews_required, s.kmu_assess_review_days,
-                       s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous, s.kmu_assess_reviewer_accept_stores
+                       s.kmu_assess_auto_activate, s.kmu_assess_reviewer_anonymous, s.kmu_assess_reviewer_accept_stores, s.kmu_assess_academic_review
                 FROM {$db}.sch_settings s ORDER BY s.id LIMIT 1",
 
             // Extra branches a staff member may work in (CMS Settings → Staff); inactive branches excluded.

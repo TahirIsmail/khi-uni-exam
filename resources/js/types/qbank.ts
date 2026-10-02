@@ -115,6 +115,8 @@ export type QuestionDraft = {
     discipline_id: number | null;
     exam_type_id: number | null;
     intake_id: number | null;
+    subject_reviewer_id?: number | null;
+    academic_reviewer_id?: number | null;
     vignette: string | null;
     stem: string;
     lead_in: string | null;
@@ -145,6 +147,8 @@ export type StoredVersion = {
     disciplineId: number | null;
     examTypeId: number | null;
     intakeId: number | null;
+    subjectReviewerId?: number | null;
+    academicReviewerId?: number | null;
     professionalId: number | null;
     termId: number | null;
     vignette: string | null;

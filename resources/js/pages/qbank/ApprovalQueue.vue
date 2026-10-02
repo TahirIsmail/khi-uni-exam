@@ -20,6 +20,7 @@ defineOptions({
 defineProps<{
     versions: Paginated<ApprovalRow>;
     show: string;
+    academicReview: boolean;
 }>();
 
 function filter(show: string): void {
@@ -114,7 +115,10 @@ function filter(show: string): void {
                                 Subject {{ row.subjectIn }} of
                                 {{ row.subjectNeeded }}
                             </div>
-                            <div class="text-muted-foreground">
+                            <div
+                                v-if="academicReview"
+                                class="text-muted-foreground"
+                            >
                                 Academic {{ row.academicIn }} of 1
                             </div>
                         </td>
@@ -153,7 +157,11 @@ function filter(show: string): void {
                             <p class="font-medium">Nothing to decide</p>
                             <p class="text-muted-foreground mt-1 text-sm">
                                 A question appears here once its department /
-                                subject reviews and its QBank / academic review
+                                subject reviews{{
+                                    academicReview
+                                        ? ' and its QBank / academic review'
+                                        : ''
+                                }}
                                 are in.
                             </p>
                         </td>

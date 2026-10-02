@@ -388,6 +388,7 @@ CREATE TABLE `sch_settings` (
   `kmu_assess_review_days` tinyint unsigned NOT NULL DEFAULT '7',
   `kmu_assess_auto_activate` tinyint(1) NOT NULL DEFAULT '1',
   `kmu_assess_reviewer_accept_stores` tinyint(1) NOT NULL DEFAULT '1',
+  `kmu_assess_academic_review` tinyint(1) NOT NULL DEFAULT '1',
   `kmu_assess_reviewer_anonymous` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

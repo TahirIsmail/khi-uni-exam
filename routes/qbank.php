@@ -38,6 +38,7 @@ Route::middleware('auth')->group(function () {
     Route::get('approvals', [ApprovalController::class, 'index'])->middleware('can:qbank.question.approve')->name('approvals.index');
 
     Route::get('questions/curriculum', [QuestionController::class, 'curriculum'])->middleware('can:qbank.question.view')->name('questions.curriculum');
+    Route::get('questions/reviewers', [QuestionController::class, 'reviewers'])->middleware('can:qbank.question.create')->name('questions.reviewers');
     Route::post('questions/check', [QuestionController::class, 'check'])->middleware(['can:qbank.question.view', 'throttle:120,1'])->name('questions.check');
 
     // Pictures are private: uploaded by authors, served only to staff of the same campus.

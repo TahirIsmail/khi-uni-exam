@@ -92,6 +92,8 @@ final class ReviewBoard
 
         // How many reviews this round has is counted in SQL, so that "ready" and "still in review"
         // are real pages: filtering after paging would leave holes and empty pages.
+        // No QBank / academic review is needed when kmu-cms turns that level off.
+        $academicNeeded = $this->settings->academicReview() ? 1 : 0;
         $reviewsIn = fn (ReviewStage $stage) => DB::table('qb_reviews')
             ->selectRaw('COUNT(*)') // raw-sql-reviewed: fixed aggregate, no user input
             ->whereColumn('qb_reviews.version_id', 'qb_question_versions.id')
@@ -112,10 +114,10 @@ final class ReviewBoard
             ->when($show === 'ready', fn ($query) => $query
                 ->where('author_id', '<>', $approver->id)
                 ->where($reviewsIn(ReviewStage::Subject), '>=', $required)
-                ->where($reviewsIn(ReviewStage::Academic), '>=', 1))
+                ->where($reviewsIn(ReviewStage::Academic), '>=', $academicNeeded))
             ->when($show === 'waiting', fn ($query) => $query->where(fn ($group) => $group
                 ->where($reviewsIn(ReviewStage::Subject), '<', $required)
-                ->orWhere($reviewsIn(ReviewStage::Academic), '<', 1)
+                ->orWhere($reviewsIn(ReviewStage::Academic), '<', $academicNeeded)
                 ->orWhere('author_id', '=', $approver->id)))
             ->with(['type:id,name', 'question:id,public_ref', 'reviews'])
             ->orderBy('submitted_at')
@@ -238,6 +240,7 @@ final class ReviewBoard
             'reviewsNeeded' => $this->settings->reviewsRequired(),
             'subjectIn' => $this->countReviewed($version, $reviews, ReviewStage::Subject),
             'academicIn' => $this->countReviewed($version, $reviews, ReviewStage::Academic),
+            'academicNeeded' => $this->settings->academicReview() ? 1 : 0,
             'autoActivate' => $this->settings->autoActivate(),
             'reviewerAcceptStores' => $this->settings->reviewerAcceptStores(),
         ];

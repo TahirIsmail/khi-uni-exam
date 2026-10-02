@@ -64,6 +64,7 @@ const props = defineProps<{
     courses: CourseOption[];
     intakes: { id: number; name: string }[];
     defaultIntakeId: number | null;
+    academicReview: boolean;
     prefill?: {
         course_id?: number;
         node_id?: number;
@@ -91,6 +92,8 @@ const draft = ref<QuestionDraft>(
               discipline_id: props.version.disciplineId,
               exam_type_id: props.version.examTypeId,
               intake_id: props.version.intakeId,
+              subject_reviewer_id: props.version.subjectReviewerId ?? null,
+              academic_reviewer_id: props.version.academicReviewerId ?? null,
               vignette: props.version.vignette,
               stem: props.version.stem,
               lead_in: props.version.leadIn,
@@ -122,6 +125,8 @@ const draft = ref<QuestionDraft>(
                   props.intakes.find(
                       (row) => row.id === props.prefill?.intake_id,
                   )?.id ?? props.defaultIntakeId,
+              subject_reviewer_id: null,
+              academic_reviewer_id: null,
               vignette: null,
               stem: '',
               lead_in: null,
@@ -371,6 +376,7 @@ watch(
             draft.value.node_id = null;
         }
         void loadTopics(courseId);
+        void loadReviewers(courseId);
     },
     { immediate: true },
 );
@@ -437,6 +443,43 @@ async function addTag(): Promise<void> {
         draft.value.tag_ids = [...draft.value.tag_ids, tag.id];
     }
     newTag.value = '';
+}
+
+// Whom the author asks to review the question, at each level: the people who may review this
+// course, least busy first. Nobody chosen means the least busy is asked when it gets there.
+type ReviewerOption = { id: number; name: string; openLoad: number };
+const reviewerOptions = ref<{
+    subject: ReviewerOption[];
+    academic: ReviewerOption[];
+}>({ subject: [], academic: [] });
+
+async function loadReviewers(courseId: number | null): Promise<void> {
+    if (courseId === null) {
+        reviewerOptions.value = { subject: [], academic: [] };
+        return;
+    }
+    const response = await fetch(`/questions/reviewers?course_id=${courseId}`, {
+        headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+        return;
+    }
+    reviewerOptions.value = await response.json();
+    // A choice that does not review this course is dropped rather than sent.
+    if (
+        !reviewerOptions.value.subject.some(
+            (row) => row.id === draft.value.subject_reviewer_id,
+        )
+    ) {
+        draft.value.subject_reviewer_id = null;
+    }
+    if (
+        !reviewerOptions.value.academic.some(
+            (row) => row.id === draft.value.academic_reviewer_id,
+        )
+    ) {
+        draft.value.academic_reviewer_id = null;
+    }
 }
 
 function save(then: 'edit' | 'new' | 'submit' = 'edit'): void {
@@ -1161,6 +1204,83 @@ function submit(): void {
                 <!-- Checks and preview stay beside the question while scrolling. -->
                 <div class="grid content-start gap-4 xl:sticky xl:top-24">
                     <ChecksPanel :checks="checks" :checking="checking" />
+
+                    <!-- Who reviews it: the author may ask for a person at each level. -->
+                    <section
+                        v-if="!readOnly"
+                        class="grid gap-3 rounded-lg border p-4"
+                        data-test="choose-reviewers"
+                    >
+                        <div>
+                            <h3 class="font-medium">Who reviews it</h3>
+                            <p class="text-muted-foreground text-xs">
+                                Asked when you send it for review. Leave a level
+                                on “Least busy” to let the system choose.
+                            </p>
+                        </div>
+                        <div class="grid gap-1.5">
+                            <Label for="subject-reviewer"
+                                >Department / Subject review</Label
+                            >
+                            <select
+                                id="subject-reviewer"
+                                v-model.number="draft.subject_reviewer_id"
+                                class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm"
+                                data-test="subject-reviewer"
+                            >
+                                <option :value="null">Least busy</option>
+                                <option
+                                    v-for="row in reviewerOptions.subject"
+                                    :key="row.id"
+                                    :value="row.id"
+                                    :disabled="
+                                        row.id === draft.academic_reviewer_id
+                                    "
+                                >
+                                    {{ row.name }} ({{ row.openLoad }} open)
+                                </option>
+                            </select>
+                            <InputError
+                                :message="serverErrors.subject_reviewer_id"
+                            />
+                        </div>
+                        <div v-if="academicReview" class="grid gap-1.5">
+                            <Label for="academic-reviewer"
+                                >QBank / Academic review</Label
+                            >
+                            <select
+                                id="academic-reviewer"
+                                v-model.number="draft.academic_reviewer_id"
+                                class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-2 text-sm"
+                                data-test="academic-reviewer"
+                            >
+                                <option :value="null">Least busy</option>
+                                <option
+                                    v-for="row in reviewerOptions.academic"
+                                    :key="row.id"
+                                    :value="row.id"
+                                    :disabled="
+                                        row.id === draft.subject_reviewer_id
+                                    "
+                                >
+                                    {{ row.name }} ({{ row.openLoad }} open)
+                                </option>
+                            </select>
+                            <InputError
+                                :message="serverErrors.academic_reviewer_id"
+                            />
+                        </div>
+                        <p
+                            v-if="
+                                draft.course_id !== null &&
+                                reviewerOptions.subject.length === 0
+                            "
+                            class="text-xs text-amber-700 dark:text-amber-400"
+                        >
+                            Nobody else may review this course yet; ask the CMS
+                            administrator to give someone the review right.
+                        </p>
+                    </section>
 
                     <div class="grid gap-2">
                         <Button

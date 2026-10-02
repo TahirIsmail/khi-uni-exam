@@ -35,6 +35,9 @@ class SaveQuestionRequest extends FormRequest
             'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             // The Academic Session; when it is not sent, the one the user is working in.
             'intake_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            // Whom the author asks to review it, at each level; empty is "the least busy".
+            'subject_reviewer_id' => ['nullable', 'integer', 'min:1'],
+            'academic_reviewer_id' => ['nullable', 'integer', 'min:1'],
             'cognitive_level_id' => ['nullable', 'integer', Rule::exists('qb_cognitive_levels', 'id')],
             'difficulty_level_id' => ['nullable', 'integer', Rule::exists('qb_difficulty_levels', 'id')],
 

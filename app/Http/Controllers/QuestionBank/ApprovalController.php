@@ -12,6 +12,7 @@ use App\Domain\QuestionBank\Review\DecideOnVersion;
 use App\Domain\QuestionBank\Review\RejectVersion;
 use App\Domain\QuestionBank\Review\ReviewBoard;
 use App\Http\Controllers\Controller;
+use App\Support\Cms\CmsSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -29,7 +30,7 @@ class ApprovalController extends Controller
         private readonly ReviewBoard $board,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request, CmsSettings $settings): Response
     {
         $input = $request->validate(['show' => ['nullable', 'in:ready,waiting,approved,all']]);
         $show = $input['show'] ?? 'ready';
@@ -37,6 +38,8 @@ class ApprovalController extends Controller
         return Inertia::render('qbank/ApprovalQueue', [
             'versions' => $this->board->approvalQueue($request->user('web'), $this->branchId($request), $show),
             'show' => $show,
+            // Off in kmu-cms: the department / subject review is the only level.
+            'academicReview' => $settings->academicReview(),
         ]);
     }
 

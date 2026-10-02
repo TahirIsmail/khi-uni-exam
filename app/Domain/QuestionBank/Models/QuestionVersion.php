@@ -56,7 +56,7 @@ use Illuminate\Support\Carbon;
  * @property int $created_by
  * @property int|null $updated_by
  */
-#[Fillable(['question_id', 'version_no', 'question_type_id', 'branch_id', 'vignette', 'stem', 'lead_in', 'explanation', 'settings', 'marks', 'negative_marks', 'programme_id', 'professional_id', 'term_id', 'course_id', 'node_id', 'discipline_id', 'exam_type_id', 'intake_id', 'cognitive_level_id', 'difficulty_level_id', 'status', 'decision_code', 'content_hash', 'search_text', 'source', 'import_row_id', 'author_id', 'submitted_at', 'review_round', 'approved_at', 'approved_by', 'activated_at', 'created_by', 'updated_by'])]
+#[Fillable(['question_id', 'version_no', 'question_type_id', 'branch_id', 'vignette', 'stem', 'lead_in', 'explanation', 'settings', 'marks', 'negative_marks', 'programme_id', 'professional_id', 'term_id', 'course_id', 'node_id', 'discipline_id', 'exam_type_id', 'intake_id', 'cognitive_level_id', 'difficulty_level_id', 'status', 'decision_code', 'content_hash', 'search_text', 'source', 'import_row_id', 'author_id', 'subject_reviewer_id', 'academic_reviewer_id', 'submitted_at', 'review_round', 'approved_at', 'approved_by', 'activated_at', 'created_by', 'updated_by'])]
 final class QuestionVersion extends Model
 {
     /** @use HasFactory<QuestionVersionFactory> */

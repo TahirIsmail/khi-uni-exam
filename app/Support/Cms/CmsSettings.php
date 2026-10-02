@@ -46,6 +46,15 @@ final class CmsSettings
         return $this->int('kmu_assess_reviewer_accept_stores', 1) === 1;
     }
 
+    /**
+     * Whether a question also needs the QBank / academic review after the department / subject one.
+     * On unless turned off; off, the department / subject review is the only level.
+     */
+    public function academicReview(): bool
+    {
+        return $this->int('kmu_assess_academic_review', 1) === 1;
+    }
+
     /** Whether authors see who reviewed their question. The comments are always shown. */
     public function reviewerAnonymous(): bool
     {

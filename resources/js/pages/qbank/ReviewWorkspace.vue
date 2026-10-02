@@ -52,6 +52,7 @@ const props = defineProps<{
     myStageLabel: string | null;
     subjectIn: number;
     academicIn: number;
+    academicNeeded: number;
     checklistItems: ChecklistItemInfo[];
     decisions: PrehocDecisionInfo[];
     reviewsNeeded: number;
@@ -104,7 +105,9 @@ const base = computed(
 
 /** Both levels of review are in, so the approving authority is the next step. */
 const awaitingApproval = computed(
-    () => props.subjectIn >= props.reviewsNeeded && props.academicIn >= 1,
+    () =>
+        props.subjectIn >= props.reviewsNeeded &&
+        props.academicIn >= props.academicNeeded,
 );
 
 // ---- the reviewer's pre-hoc assessment ---------------------------------------------------------
@@ -395,7 +398,8 @@ function cancelAssignment(id: number): void {
                         <p
                             v-if="
                                 reviewerAcceptStores &&
-                                myStage === 'academic' &&
+                                (myStage === 'academic' ||
+                                    academicNeeded === 0) &&
                                 chosenDecision?.isAccept
                             "
                             class="rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"

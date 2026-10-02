@@ -48,6 +48,17 @@ final class AssignReviewers
         $taken = $round->pluck('reviewer_id')->all();
         $assignments = [];
 
+        // The reviewer the author asked for at this level comes first, while they may still review
+        // it; the assignment is recorded as the author's. Anyone else needed is the least busy.
+        $chosenId = $stage === ReviewStage::Subject ? $version->subject_reviewer_id : $version->academic_reviewer_id;
+        if ($chosenId !== null && ! in_array($chosenId, $taken, true)) {
+            $chosen = User::query()->where('is_active', true)->find($chosenId);
+            if ($chosen instanceof User && $this->pool->allows($chosen, $version, $stage)) {
+                $assignments[] = $this->create($version, $chosen, User::query()->find($version->author_id), $stage, automatic: false);
+                $taken[] = $chosen->id;
+            }
+        }
+
         foreach ($this->pool->forVersion($version, $stage) as $candidate) {
             if (count($assignments) >= $wanted) {
                 break;
@@ -62,10 +73,13 @@ final class AssignReviewers
         return $assignments;
     }
 
-    /** How many reviews a level needs: kmu-cms decides for the first, the second is always one. */
+    /**
+     * How many reviews a level needs: kmu-cms decides for the first; the second is one, or none when
+     * kmu-cms turns the QBank / academic review off.
+     */
     public function needed(ReviewStage $stage): int
     {
-        return $stage === ReviewStage::Subject ? $this->settings->reviewsRequired() : 1;
+        return $stage === ReviewStage::Subject ? $this->settings->reviewsRequired() : ($this->settings->academicReview() ? 1 : 0);
     }
 
     /** A named reviewer, chosen by somebody who may assign reviewers. */

@@ -14,6 +14,7 @@ use App\Domain\QuestionBank\Models\Tag;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
+use App\Support\Cms\CmsSettings;
 
 /**
  * Everything the editor screen needs: the question types with their shape and settings, the places
@@ -27,6 +28,7 @@ final class QuestionEditorData
         private readonly CmsAcademic $academic,
         private readonly VersionContentReader $reader,
         private readonly ActiveIntake $activeIntake,
+        private readonly CmsSettings $settings,
     ) {}
 
     /**
@@ -51,6 +53,8 @@ final class QuestionEditorData
             // The Academic Session: the one selected in kmu-cms, unless the author picks another.
             'intakes' => $this->academic->intakes($branchId),
             'defaultIntakeId' => $this->activeIntake->id($branchId),
+            // Off in kmu-cms: one level of review, so only one reviewer is asked for.
+            'academicReview' => $this->settings->academicReview(),
             'tags' => Tag::query()->where('branch_id', $branchId)->orderBy('name')->get(['id', 'name'])->all(),
             'disciplines' => $this->academic->disciplines(),
             ...$this->lookups(),
@@ -170,6 +174,8 @@ final class QuestionEditorData
             'disciplineId' => $version->discipline_id,
             'examTypeId' => $version->exam_type_id,
             'intakeId' => $version->intake_id,
+            'subjectReviewerId' => $version->subject_reviewer_id,
+            'academicReviewerId' => $version->academic_reviewer_id,
             'professionalId' => $version->professional_id,
             'termId' => $version->term_id,
             'vignette' => $content->vignette,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\QuestionBank;
 
 use App\Domain\Identity\ActiveBranch;
+use App\Domain\Identity\Authorization\ScopeTarget;
 use App\Domain\QuestionBank\Actions\CreateQuestionDraft;
 use App\Domain\QuestionBank\Actions\SaveQuestionDraft;
 use App\Domain\QuestionBank\Actions\StartNewVersion;
@@ -15,6 +16,9 @@ use App\Domain\QuestionBank\Queries\QuestionExport;
 use App\Domain\QuestionBank\Queries\QuestionHistory;
 use App\Domain\QuestionBank\Queries\QuestionList;
 use App\Domain\QuestionBank\Queries\VersionDiff;
+use App\Domain\QuestionBank\Review\ChooseReviewers;
+use App\Domain\QuestionBank\Review\ReviewerPool;
+use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Domain\QuestionBank\Validation\QuestionValidator;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
@@ -148,9 +152,10 @@ class QuestionController extends Controller
         ]);
     }
 
-    public function store(SaveQuestionRequest $request, CreateQuestionDraft $create, SubmitQuestionVersion $submit): RedirectResponse
+    public function store(SaveQuestionRequest $request, CreateQuestionDraft $create, SubmitQuestionVersion $submit, ChooseReviewers $choose): RedirectResponse
     {
         $version = $create($request->user('web'), $this->branchId($request), $request->content());
+        $this->chooseReviewers($request, $version, $choose);
 
         // "Send for review" on a question not saved yet: it is saved, then sent.
         if ($request->input('then') === 'submit') {
@@ -191,10 +196,11 @@ class QuestionController extends Controller
         ]);
     }
 
-    public function update(SaveQuestionRequest $request, Question $question, QuestionVersion $version, SaveQuestionDraft $save, SubmitQuestionVersion $submit): RedirectResponse
+    public function update(SaveQuestionRequest $request, Question $question, QuestionVersion $version, SaveQuestionDraft $save, SubmitQuestionVersion $submit, ChooseReviewers $choose): RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
         $save($request->user('web'), $version, $request->content());
+        $this->chooseReviewers($request, $version->fresh() ?? $version, $choose);
 
         // "Send for review": what is on the screen is saved first, so what goes for review is what
         // the author sees (and what the live checks passed), not an older saved draft.
@@ -217,6 +223,44 @@ class QuestionController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sent for review.')]);
 
         return to_route('questions.index');
+    }
+
+    /**
+     * The reviewers the author asked for, kept with the draft (only when the editor sent the
+     * choice, so an older client leaves an earlier choice as it was).
+     */
+    private function chooseReviewers(Request $request, QuestionVersion $version, ChooseReviewers $choose): void
+    {
+        if (! $request->has('subject_reviewer_id') && ! $request->has('academic_reviewer_id')) {
+            return;
+        }
+
+        $id = fn (string $key): ?int => $request->filled($key) ? (int) $request->input($key) : null;
+        $choose($version, $id('subject_reviewer_id'), $id('academic_reviewer_id'));
+    }
+
+    /**
+     * Who may review questions of a course, at each level, for the author choosing while writing.
+     */
+    public function reviewers(Request $request, ReviewerPool $pool, CmsAcademic $academic): JsonResponse
+    {
+        $input = $request->validate(['course_id' => ['required', 'integer', 'min:1', 'max:4294967295']]);
+        $courseId = (int) $input['course_id'];
+
+        $allowed = collect($this->editorData->courses($request->user('web'), $this->branchId($request)))->contains('id', $courseId);
+        abort_unless($allowed, 403, 'That course is not in your campus or exam access.');
+
+        $place = $academic->placeOfCourse($courseId);
+        abort_if($place === null, 404);
+        $target = new ScopeTarget($place['branch_id'], $place['programme_id'], $place['professional_id'], $courseId);
+
+        $list = fn (ReviewStage $stage): array => array_map(fn (array $row): array => [
+            'id' => $row['user']->id,
+            'name' => $row['user']->name,
+            'openLoad' => $row['openLoad'],
+        ], $pool->forTarget($target, $stage, $request->user('web')->id));
+
+        return response()->json(['subject' => $list(ReviewStage::Subject), 'academic' => $list(ReviewStage::Academic)]);
     }
 
     /**
