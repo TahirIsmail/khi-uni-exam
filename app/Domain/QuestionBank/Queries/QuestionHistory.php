@@ -8,6 +8,7 @@ use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\Review;
 use App\Domain\QuestionBank\Models\VersionStatusLog;
+use App\Domain\QuestionBank\Review\ReviewLevels;
 use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Models\User;
 use App\Support\Cms\CmsAcademic;
@@ -25,6 +26,7 @@ final class QuestionHistory
     public function __construct(
         private readonly CmsAcademic $academic,
         private readonly CmsSettings $settings,
+        private readonly ReviewLevels $levels,
     ) {}
 
     /**
@@ -157,7 +159,7 @@ final class QuestionHistory
             $entries[] = [
                 'at' => $review->submitted_at->toIso8601String(),
                 'versionNo' => (int) ($versionNumbers[$review->version_id] ?? 0),
-                'what' => ReviewStage::from($review->stage)->label().': '.($review->requestedChanges()
+                'what' => $this->levels->label(ReviewStage::from($review->stage)).': '.($review->requestedChanges()
                     ? 'changes asked for'
                     : ($review->decision_id === null ? 'no decision recorded' : $review->decision->name)),
                 'by' => $name((int) $review->reviewer_id),

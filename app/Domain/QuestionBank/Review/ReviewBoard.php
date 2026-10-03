@@ -29,6 +29,7 @@ final class ReviewBoard
         private readonly ChecklistRules $checklist,
         private readonly ApproveVersion $approval,
         private readonly CmsAcademic $academic,
+        private readonly ReviewLevels $levels,
         private readonly CmsSettings $settings,
     ) {}
 
@@ -60,7 +61,7 @@ final class ReviewBoard
         return [
             'id' => $assignment->id,
             'stage' => $assignment->stage,
-            'stageLabel' => ReviewStage::from($assignment->stage)->label(),
+            'stageLabel' => $this->levels->label(ReviewStage::from($assignment->stage)),
             'status' => $assignment->status,
             'isOverdue' => $assignment->isOverdue(),
             'dueAt' => $assignment->due_at?->toIso8601String(),
@@ -94,11 +95,13 @@ final class ReviewBoard
         // are real pages: filtering after paging would leave holes and empty pages.
         // No QBank / academic review is needed when kmu-cms turns that level off.
         $academicNeeded = $this->settings->academicReview() ? 1 : 0;
+        // With one level of review, every review of the round counts, whatever level it was asked at.
+        $single = $this->levels->single();
         $reviewsIn = fn (ReviewStage $stage) => DB::table('qb_reviews')
             ->selectRaw('COUNT(*)') // raw-sql-reviewed: fixed aggregate, no user input
             ->whereColumn('qb_reviews.version_id', 'qb_question_versions.id')
             ->where('qb_reviews.outcome', 'reviewed')
-            ->where('qb_reviews.stage', $stage->value)
+            ->when(! $single, fn ($query) => $query->where('qb_reviews.stage', $stage->value))
             ->whereColumn('qb_reviews.round', 'qb_question_versions.review_round');
 
         return QuestionVersion::query()
@@ -151,7 +154,7 @@ final class ReviewBoard
             'marks' => $version->marks,
             'summary' => mb_substr(QuestionHtml::toText($version->stem), 0, 160),
             'submittedAt' => $version->submitted_at?->toIso8601String(),
-            'subjectIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === ReviewStage::Subject->value)),
+            'subjectIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges() && $this->levels->counts($review, ReviewStage::Subject))),
             'subjectNeeded' => $this->settings->reviewsRequired(),
             'academicIn' => count(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === ReviewStage::Academic->value)),
             'isMine' => $isMine,
@@ -189,7 +192,7 @@ final class ReviewBoard
             'reviews' => $reviews->map(fn (Review $review): array => [
                 'id' => $review->id,
                 'stage' => $review->stage,
-                'stageLabel' => ReviewStage::from($review->stage)->label(),
+                'stageLabel' => $this->levels->label(ReviewStage::from($review->stage)),
                 'reviewer' => $namesVisible ? ($names[$review->reviewer_id] ?? 'Unknown') : 'A reviewer',
                 'isMe' => $review->reviewer_id === $viewer->id,
                 'outcome' => $review->outcome,
@@ -203,7 +206,7 @@ final class ReviewBoard
             'assignments' => $assignments->map(fn (ReviewAssignment $assignment): array => [
                 'id' => $assignment->id,
                 'stage' => $assignment->stage,
-                'stageLabel' => ReviewStage::from($assignment->stage)->label(),
+                'stageLabel' => $this->levels->label(ReviewStage::from($assignment->stage)),
                 'reviewer' => $namesVisible ? ($names[$assignment->reviewer_id] ?? 'Unknown') : 'A reviewer',
                 'isMe' => $assignment->reviewer_id === $viewer->id,
                 'status' => $assignment->status,
@@ -221,7 +224,7 @@ final class ReviewBoard
                 ->values()->all(),
             'myAssignmentId' => $mine?->id,
             'myStage' => $mine?->stage,
-            'myStageLabel' => $mine === null ? null : ReviewStage::from($mine->stage)->label(),
+            'myStageLabel' => $mine === null ? null : $this->levels->label(ReviewStage::from($mine->stage)),
             'checklistItems' => array_map(fn ($item): array => [
                 'code' => $item->code,
                 'text' => $item->text,
@@ -241,6 +244,7 @@ final class ReviewBoard
             'subjectIn' => $this->countReviewed($version, $reviews, ReviewStage::Subject),
             'academicIn' => $this->countReviewed($version, $reviews, ReviewStage::Academic),
             'academicNeeded' => $this->settings->academicReview() ? 1 : 0,
+            'singleLevel' => $this->levels->single(),
             'autoActivate' => $this->settings->autoActivate(),
             'reviewerAcceptStores' => $this->settings->reviewerAcceptStores(),
         ];
@@ -255,7 +259,7 @@ final class ReviewBoard
     {
         return count(array_filter(
             $this->approval->reviewsOfRound($version, $reviews),
-            fn (Review $review): bool => ! $review->requestedChanges() && $review->stage === $stage->value,
+            fn (Review $review): bool => ! $review->requestedChanges() && $this->levels->counts($review, $stage),
         ));
     }
 

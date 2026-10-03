@@ -1214,14 +1214,19 @@ function submit(): void {
                         <div>
                             <h3 class="font-medium">Who reviews it</h3>
                             <p class="text-muted-foreground text-xs">
-                                Asked when you send it for review. Leave a level
-                                on “Least busy” to let the system choose.
+                                {{
+                                    academicReview
+                                        ? 'Asked when you send it for review. Leave a level on “Least busy” to let the system choose.'
+                                        : 'Asked when you send it for review. When they accept it, it is stored in the QBank. “Least busy” lets the system choose.'
+                                }}
                             </p>
                         </div>
                         <div class="grid gap-1.5">
-                            <Label for="subject-reviewer"
-                                >Department / Subject review</Label
-                            >
+                            <Label for="subject-reviewer">{{
+                                academicReview
+                                    ? 'Department / Subject review'
+                                    : 'Reviewer'
+                            }}</Label>
                             <select
                                 id="subject-reviewer"
                                 v-model.number="draft.subject_reviewer_id"

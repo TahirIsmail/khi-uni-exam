@@ -13,7 +13,10 @@ use Illuminate\Validation\ValidationException;
  */
 final class ChooseReviewers
 {
-    public function __construct(private readonly ReviewerPool $pool) {}
+    public function __construct(
+        private readonly ReviewerPool $pool,
+        private readonly ReviewLevels $levels,
+    ) {}
 
     public function __invoke(QuestionVersion $version, ?int $subjectReviewerId, ?int $academicReviewerId): void
     {
@@ -30,7 +33,7 @@ final class ChooseReviewers
             }
             $reviewer = User::query()->where('is_active', true)->find($id);
             if (! $reviewer instanceof User || ! $this->pool->allows($reviewer, $version, $stage)) {
-                throw ValidationException::withMessages([$field => 'That person cannot do the '.mb_strtolower($stage->label()).' of this question.']);
+                throw ValidationException::withMessages([$field => 'That person cannot do the '.mb_strtolower($this->levels->label($stage)).' of this question.']);
             }
         }
 

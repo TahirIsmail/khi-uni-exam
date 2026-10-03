@@ -38,6 +38,7 @@ final class SubmitReview
         private readonly ChecklistRules $checklist,
         private readonly AssignReviewers $assignments,
         private readonly ApproveVersion $approve,
+        private readonly ReviewLevels $levels,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -52,8 +53,8 @@ final class SubmitReview
             throw ValidationException::withMessages(['assignment' => 'That review has already been submitted or cancelled.']);
         }
         $stage = ReviewStage::from($assignment->stage);
-        if (! $this->access->allows($reviewer, $stage->permission(), $this->target($version))) {
-            throw new AuthorizationException('You cannot do the '.mb_strtolower($stage->label()).' of questions of this course.');
+        if (! $this->levels->mayReview($reviewer, $this->target($version), $stage)) {
+            throw new AuthorizationException('You cannot do the '.mb_strtolower($this->levels->label($stage)).' of questions of this course.');
         }
         if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)) {
             throw ValidationException::withMessages(['status' => 'This question is not waiting for review.']);
@@ -165,8 +166,8 @@ final class SubmitReview
             // to the QBank / academic review.
             // When kmu-cms turns the QBank / academic review off, the department / subject review is
             // the last level.
-            $lastLevel = $stage === ReviewStage::Academic;
-            if ($stage === ReviewStage::Subject && $this->subjectReviewsComplete($version)) {
+            $lastLevel = $stage === ReviewStage::Academic && ! $this->levels->single();
+            if (($stage === ReviewStage::Subject || $this->levels->single()) && $this->subjectReviewsComplete($version)) {
                 if ($this->assignments->needed(ReviewStage::Academic) > 0) {
                     $this->assignments->auto($version, $reviewer, ReviewStage::Academic);
                 } else {
@@ -185,7 +186,11 @@ final class SubmitReview
 
     private function subjectReviewsComplete(QuestionVersion $version): bool
     {
-        $round = $this->assignments->currentRound($version)->where('stage', ReviewStage::Subject->value);
+        // With one level, every review of the round counts, whatever level it was asked at.
+        $round = $this->assignments->currentRound($version);
+        if (! $this->levels->single()) {
+            $round = $round->where('stage', ReviewStage::Subject->value);
+        }
 
         return $round->where('status', 'open')->isEmpty()
             && $round->where('status', 'submitted')->count() >= $this->assignments->needed(ReviewStage::Subject);

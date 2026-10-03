@@ -17,7 +17,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class ReviewerPool
 {
-    public function __construct(private readonly AccessControl $access) {}
+    public function __construct(
+        private readonly AccessControl $access,
+        private readonly ReviewLevels $levels,
+    ) {}
 
     /**
      * @return list<array{user: User, openLoad: int}>
@@ -48,7 +51,7 @@ final class ReviewerPool
 
         $pool = [];
         foreach ($this->candidates() as $user) {
-            if ($user->id !== $authorId && $this->access->allows($user, $stage->permission(), $target)) {
+            if ($user->id !== $authorId && $this->levels->mayReview($user, $target, $stage)) {
                 $pool[] = ['user' => $user, 'openLoad' => $load[$user->id] ?? 0];
             }
         }
@@ -61,10 +64,10 @@ final class ReviewerPool
     /** Whether this user may review this version at this level. */
     public function allows(User $user, QuestionVersion $version, ReviewStage $stage = ReviewStage::Subject): bool
     {
-        return $user->id !== $version->author_id && $this->access->allows(
+        return $user->id !== $version->author_id && $this->levels->mayReview(
             $user,
-            $stage->permission(),
             new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id),
+            $stage,
         );
     }
 

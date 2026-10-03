@@ -37,6 +37,8 @@ final class ApproveVersion
         private readonly ChecklistRules $checklist,
         private readonly ActivateVersion $activate,
         private readonly CmsSettings $settings,
+        private readonly ReviewLevels $levels,
+        private readonly AssignReviewers $assignments,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -165,6 +167,9 @@ final class ApproveVersion
                 'by' => $byReviewers ? 'reviewers' : 'approver',
             ], $input->reason, $approver, $version->branch_id);
 
+            // Anyone still asked to review it is no longer needed.
+            $this->assignments->cancelOpenFor($version, $approver, 'The question was stored in the QBank.');
+
             $fresh = $version->fresh() ?? $version;
 
             // Both callers have already decided this question may be approved, so putting it into
@@ -185,11 +190,13 @@ final class ApproveVersion
     {
         $reviewed = array_values(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges()));
         $required = $this->settings->reviewsRequired();
-        $subject = count(array_filter($reviewed, fn (Review $review): bool => $review->stage === ReviewStage::Subject->value));
-        $academic = count(array_filter($reviewed, fn (Review $review): bool => $review->stage === ReviewStage::Academic->value));
+        $subject = count(array_filter($reviewed, fn (Review $review): bool => $this->levels->counts($review, ReviewStage::Subject)));
+        $academic = count(array_filter($reviewed, fn (Review $review): bool => $this->levels->counts($review, ReviewStage::Academic)));
 
         if ($subject < $required) {
-            return ['reviews' => 'This question needs '.$required.' department / subject review(s) and has '.$subject.'.'];
+            return ['reviews' => $this->levels->single()
+                ? 'This question needs '.$required.' review(s) and has '.$subject.'.'
+                : 'This question needs '.$required.' department / subject review(s) and has '.$subject.'.'];
         }
 
         $failed = [];
@@ -202,7 +209,7 @@ final class ApproveVersion
             return ['checklist' => 'A reviewer marked a required checklist item as failed: '.implode('; ', array_values($failed)).'. Send it back to the author.'];
         }
 
-        if ($academic < ($this->settings->academicReview() ? 1 : 0)) {
+        if ($academic < ($this->levels->single() ? 0 : 1)) {
             return ['reviews' => 'This question is waiting for its QBank / academic review.'];
         }
 

@@ -53,6 +53,7 @@ const props = defineProps<{
     subjectIn: number;
     academicIn: number;
     academicNeeded: number;
+    singleLevel: boolean;
     checklistItems: ChecklistItemInfo[];
     decisions: PrehocDecisionInfo[];
     reviewsNeeded: number;
@@ -198,7 +199,9 @@ const reasonLabel = computed(() => {
 // ---- who is reviewing it -----------------------------------------------------------------------
 const newReviewer = ref<number | null>(null);
 const newStage = ref<'subject' | 'academic'>(
-    props.subjectIn >= props.reviewsNeeded ? 'academic' : 'subject',
+    !props.singleLevel && props.subjectIn >= props.reviewsNeeded
+        ? 'academic'
+        : 'subject',
 );
 const reviewersForStage = computed(() => props.reviewers[newStage.value] ?? []);
 
@@ -699,10 +702,17 @@ function cancelAssignment(id: number): void {
                     <div class="flex flex-wrap items-center gap-2">
                         <h3 class="font-medium">Reviews</h3>
                         <Badge variant="outline" data-test="subject-count"
-                            >Department / Subject {{ subjectIn }} of
-                            {{ reviewsNeeded }}</Badge
+                            >{{
+                                singleLevel
+                                    ? 'Reviewed'
+                                    : 'Department / Subject'
+                            }}
+                            {{ subjectIn }} of {{ reviewsNeeded }}</Badge
                         >
-                        <Badge variant="outline" data-test="academic-count"
+                        <Badge
+                            v-if="!singleLevel"
+                            variant="outline"
+                            data-test="academic-count"
                             >QBank / Academic {{ academicIn }} of 1</Badge
                         >
                     </div>
@@ -844,7 +854,7 @@ function cancelAssignment(id: number): void {
                         v-if="can.assign"
                         class="mt-3 flex flex-wrap items-end gap-2"
                     >
-                        <div class="grid gap-1.5">
+                        <div v-if="!singleLevel" class="grid gap-1.5">
                             <Label for="stage">Level</Label>
                             <select
                                 id="stage"

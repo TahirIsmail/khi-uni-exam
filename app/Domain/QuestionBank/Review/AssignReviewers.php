@@ -27,6 +27,7 @@ final class AssignReviewers
         private readonly AccessControl $access,
         private readonly ReviewerPool $pool,
         private readonly CmsSettings $settings,
+        private readonly ReviewLevels $levels,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -39,7 +40,9 @@ final class AssignReviewers
     public function auto(QuestionVersion $version, ?User $actor = null, ReviewStage $stage = ReviewStage::Subject): array
     {
         $round = $this->currentRound($version);
-        $wanted = $this->needed($stage) - $round->where('stage', $stage->value)->count();
+        // With one level, anyone already asked this round counts, whatever level they were asked at.
+        $askedAtLevel = $this->levels->single() ? $round->count() : $round->where('stage', $stage->value)->count();
+        $wanted = $this->needed($stage) - $askedAtLevel;
         if ($wanted < 1) {
             return [];
         }
@@ -88,7 +91,7 @@ final class AssignReviewers
         $this->authoriseAssigning($actor, $version);
 
         if (! $this->pool->allows($reviewer, $version, $stage)) {
-            throw ValidationException::withMessages(['reviewer_id' => 'That person cannot do the '.mb_strtolower($stage->label()).' of this question — they wrote it, do not hold that review right, or it is outside their campus or exam access.']);
+            throw ValidationException::withMessages(['reviewer_id' => 'That person cannot do the '.mb_strtolower($this->levels->label($stage)).' of this question — they wrote it, do not hold that review right, or it is outside their campus or exam access.']);
         }
         $open = ReviewAssignment::query()
             ->where('version_id', $version->id)

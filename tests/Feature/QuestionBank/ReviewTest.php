@@ -1042,3 +1042,63 @@ test('with one level of review and no automatic store, the question goes to the 
     ])->assertRedirect('/approvals');
     expect($version->fresh()->status)->toBe(VersionStatus::Active);
 });
+
+/* KMU (2026-10-03): one reviewer / approver per question. */
+test('with one level of review, someone holding only the academic review right can be the one reviewer, and their Accept stores it', function () {
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviewer_accept_stores' => 1]);
+
+    $version = sendForReview(['subject_reviewer_id' => $this->academic->id]);
+    $assignment = ReviewAssignment::query()->where('version_id', $version->id)->sole();
+    expect($assignment->reviewer_id)->toBe($this->academic->id);
+
+    $this->actingAs($this->academic)->get("/questions/{$version->question_id}/versions/{$version->id}/review")->assertInertia(fn ($page) => $page
+        ->where('singleLevel', true)
+        ->where('academicNeeded', 0));
+
+    $this->actingAs($this->academic)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => $assignment->id,
+    ]))->assertRedirect('/reviews');
+
+    expect($version->fresh()->status)->toBe(VersionStatus::Active)
+        ->and($version->fresh()->approved_by)->toBe($this->academic->id);
+});
+
+test('a question accepted at the first of two levels is stored when the academic level is switched off', function () {
+    $version = sendForReview();
+    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+        'assignment_id' => ReviewAssignment::query()->where('stage', 'subject')->value('id'),
+    ]))->assertRedirect('/reviews');
+    $academic = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->sole();
+    expect($academic->status)->toBe('open');
+
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviewer_accept_stores' => 1]);
+    app()->forgetScopedInstances();
+    $this->artisan('qbank:store-accepted')->expectsOutputToContain('Stored 1')->assertSuccessful();
+
+    expect($version->fresh()->status)->toBe(VersionStatus::Active)
+        ->and($version->fresh()->approved_by)->toBe($this->reviewer->id)
+        ->and($academic->fresh()->status)->toBe('cancelled');
+
+    $this->artisan('qbank:store-accepted')->expectsOutputToContain('Stored 0')->assertSuccessful();
+});
+
+test('with one level of review, a question where the reviewers disagree still waits for the approver', function () {
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviewer_accept_stores' => 1, 'kmu_assess_reviews_required' => 2]);
+
+    $version = sendForReview();
+    $assignments = ReviewAssignment::query()->where('version_id', $version->id)->orderBy('id')->get();
+    expect($assignments)->toHaveCount(2);
+
+    foreach ($assignments as $i => $assignment) {
+        $user = $assignment->reviewer_id === $this->reviewer->id ? $this->reviewer : $this->academic;
+        $this->actingAs($user)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
+            'assignment_id' => $assignment->id,
+            'decision_id' => (int) PrehocDecision::query()->where('code', $i === 0 ? 'accept' : 'review')->value('id'),
+        ]))->assertRedirect('/reviews');
+    }
+
+    expect($version->fresh()->status)->toBe(VersionStatus::UnderReview);
+    $this->actingAs($this->approver)->get('/approvals')->assertInertia(fn ($page) => $page
+        ->where('versions.data.0.versionId', $version->id)
+        ->where('versions.data.0.blockedBecause', null));
+});

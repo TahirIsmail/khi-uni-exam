@@ -37,7 +37,11 @@ function filter(show: string): void {
     <div class="flex flex-col gap-6 p-4">
         <Heading
             title="Approvals"
-            description="Questions that have been reviewed and are waiting for a decision. Each has been through its department / subject review and its QBank / academic review. Approving records the cognitive and difficulty level the question keeps."
+            :description="
+                academicReview
+                    ? 'Questions that have been reviewed and are waiting for a decision. Each has been through its department / subject review and its QBank / academic review. Approving records the cognitive and difficulty level the question keeps.'
+                    : 'Questions whose reviewer did not simply accept them, waiting for a decision. A question the reviewer accepts is stored in the QBank without coming here.'
+            "
         />
 
         <div class="flex flex-wrap items-center gap-2">
@@ -112,7 +116,8 @@ function filter(show: string): void {
                         <td class="px-3 py-2">{{ row.course }}</td>
                         <td class="px-3 py-2 tabular-nums">
                             <div>
-                                Subject {{ row.subjectIn }} of
+                                {{ academicReview ? 'Subject' : 'Reviewed' }}
+                                {{ row.subjectIn }} of
                                 {{ row.subjectNeeded }}
                             </div>
                             <div
