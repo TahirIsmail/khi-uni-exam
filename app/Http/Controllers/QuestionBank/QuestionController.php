@@ -9,14 +9,19 @@ use App\Domain\QuestionBank\Actions\SaveQuestionDraft;
 use App\Domain\QuestionBank\Actions\StartNewVersion;
 use App\Domain\QuestionBank\Actions\SubmitQuestionVersion;
 use App\Domain\QuestionBank\Enums\VersionStatus;
+use App\Domain\QuestionBank\Models\PrehocDecision;
 use App\Domain\QuestionBank\Models\Question;
 use App\Domain\QuestionBank\Models\QuestionVersion;
+use App\Domain\QuestionBank\Models\ReviewAssignment;
 use App\Domain\QuestionBank\Queries\QuestionEditorData;
 use App\Domain\QuestionBank\Queries\QuestionExport;
 use App\Domain\QuestionBank\Queries\QuestionHistory;
 use App\Domain\QuestionBank\Queries\QuestionList;
 use App\Domain\QuestionBank\Queries\VersionDiff;
 use App\Domain\QuestionBank\Review\ChooseReviewers;
+use App\Domain\QuestionBank\Review\ConsolidatedPrehoc;
+use App\Domain\QuestionBank\Review\DecideOnVersion;
+use App\Domain\QuestionBank\Review\RejectVersion;
 use App\Domain\QuestionBank\Review\ReviewerPool;
 use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Domain\QuestionBank\Validation\QuestionValidator;
@@ -24,6 +29,7 @@ use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\QuestionBank\SaveQuestionRequest;
 use App\Support\Cms\CmsAcademic;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -128,7 +134,63 @@ class QuestionController extends Controller
             'canExport' => $request->user('web')->can('qbank.question.export'),
             'canEditOwn' => $request->user('web')->can('qbank.question.edit_own'),
             'canEditAny' => $request->user('web')->can('qbank.question.edit_any'),
+            'canApprove' => $request->user('web')->can('qbank.question.approve'),
         ]);
+    }
+
+    /**
+     * One decision for several questions ticked in the list: Accept, Retain in QBank, Revise or
+     * Remove / Discard. Each question is checked on its own — campus, rights, its step — and the
+     * ones that cannot take the decision are skipped and named, the others go ahead.
+     */
+    public function bulk(Request $request, DecideOnVersion $decide, RejectVersion $reject): RedirectResponse
+    {
+        $input = $request->validate([
+            'action' => ['required', 'in:accept,retain,revise,remove'],
+            'version_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'version_ids.*' => ['integer', 'min:1'],
+            'reason' => ['nullable', 'required_if:action,revise,remove', 'string', 'min:10', 'max:500'],
+        ], [
+            'reason.required_if' => 'Say why (at least 10 characters); the author will see it.',
+            'reason.min' => 'Say why (at least 10 characters); the author will see it.',
+        ]);
+
+        $user = $request->user('web');
+        $action = (string) $input['action'];
+        $reason = isset($input['reason']) ? trim((string) $input['reason']) : null;
+        $decisionId = (int) PrehocDecision::query()->where('code', $action)->where('is_active', true)->value('id');
+
+        $versions = QuestionVersion::query()
+            ->where('branch_id', $this->branchId($request))
+            ->whereIn('id', array_map('intval', $input['version_ids']))
+            ->with('question')
+            ->orderBy('id')
+            ->get();
+
+        $done = 0;
+        $skipped = [];
+        foreach ($versions as $version) {
+            try {
+                if ($action === 'remove') {
+                    $reject($user, $version, (string) $reason);
+                } else {
+                    $decide($user, $version, new ConsolidatedPrehoc(decisionId: $decisionId, reason: $reason));
+                }
+                $done++;
+            } catch (ValidationException $e) {
+                $skipped[] = $version->question->public_ref.': '.collect($e->errors())->flatten()->first();
+            } catch (AuthorizationException $e) {
+                $skipped[] = $version->question->public_ref.': '.$e->getMessage();
+            }
+        }
+
+        $message = trans_choice('{0} Nothing was changed.|{1} 1 question done.|[2,*] :count questions done.', $done, ['count' => $done]);
+        if ($skipped !== []) {
+            $message .= ' '.__('Skipped: :list', ['list' => implode(' · ', $skipped)]);
+        }
+        Inertia::flash('toast', ['type' => $done > 0 ? 'success' : 'error', 'message' => $message]);
+
+        return back();
     }
 
     public function create(Request $request): Response
@@ -342,6 +404,7 @@ class QuestionController extends Controller
             'reference' => $question->public_ref,
             'version' => $this->editorData->version($version),
             'can' => $this->editorData->abilities($request->user('web'), $version),
+            'reviewHere' => $this->hasReviewWork($request, $version),
             'checks' => $validator->check($reader->read($version)),
             ...$this->editorData->lookups(),
         ]);
@@ -395,6 +458,21 @@ class QuestionController extends Controller
 
         $permission = $view ? 'qbank.question.view' : ($version->author_id === $request->user('web')->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any');
         abort_unless($this->editorData->allows($request->user('web'), $permission, $version), 403);
+    }
+
+    /**
+     * Whether this person has something to do on the review screen for this version: the approver's
+     * decision on someone else's question, or a review they were asked for.
+     */
+    private function hasReviewWork(Request $request, QuestionVersion $version): bool
+    {
+        if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)) {
+            return false;
+        }
+        $user = $request->user('web');
+
+        return ($user->can('qbank.question.approve') && $version->author_id !== $user->id)
+            || ReviewAssignment::query()->where('version_id', $version->id)->where('reviewer_id', $user->id)->where('status', 'open')->exists();
     }
 
     private function branchId(Request $request): int

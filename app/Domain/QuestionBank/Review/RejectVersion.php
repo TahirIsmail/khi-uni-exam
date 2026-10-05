@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * An approver turns a question down: the version is archived with a reason, and the open reviews
- * are called off. Nothing is deleted — the question, its versions and the reviews stay readable, so
+ * Remove / Discard: the version is archived with a reason, and the open reviews are called off.
+ * An approver may remove a question at any step, even once it is in the QBank; an author may discard
+ * their own draft. Nothing is deleted — the question, its versions and the reviews stay readable, so
  * the reason a question was never used can always be found.
  */
 final class RejectVersion
@@ -29,11 +30,13 @@ final class RejectVersion
     public function __invoke(User $approver, QuestionVersion $version, string $reason): QuestionVersion
     {
         $target = new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id);
-        if (! $this->access->allows($approver, 'qbank.question.approve', $target)) {
-            throw new AuthorizationException('You cannot decide about questions of this course.');
+        $editRight = $version->author_id === $approver->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any';
+        $mayDiscardDraft = $version->isEditable() && $this->access->allows($approver, $editRight, $target);
+        if (! $mayDiscardDraft && ! $this->access->allows($approver, 'qbank.question.approve', $target)) {
+            throw new AuthorizationException('You cannot remove questions of this course.');
         }
-        if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview, VersionStatus::ChangesRequested], true)) {
-            throw ValidationException::withMessages(['status' => 'Only a question that is in review can be turned down.']);
+        if (! $version->status->canMoveTo(VersionStatus::Archived)) {
+            throw ValidationException::withMessages(['status' => 'This question has already been removed or replaced.']);
         }
 
         $reason = trim($reason);
@@ -45,6 +48,10 @@ final class RejectVersion
             $this->assignments->cancelOpenFor($version, $approver, 'The question was turned down.');
 
             $from = $version->status;
+            $question = $version->question;
+            if ($question->active_version_id === $version->id) {
+                $question->update(['active_version_id' => null]);
+            }
             $version->update(['status' => VersionStatus::Archived, 'decision_code' => 'remove', 'updated_by' => $approver->id]);
 
             VersionStatusLog::query()->create([
@@ -57,7 +64,6 @@ final class RejectVersion
             ]);
 
             // A question nobody can use any more is archived as well, so it stays out of searches.
-            $question = $version->question;
             $live = $question->versions()
                 ->whereNotIn('status', [VersionStatus::Archived, VersionStatus::Superseded, VersionStatus::Retired])
                 ->where('id', '!=', $version->id)

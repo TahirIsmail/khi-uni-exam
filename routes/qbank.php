@@ -18,6 +18,9 @@ Route::middleware('auth')->group(function () {
     // Exporting is its own permission: the file, answer keys and all, leaves the system.
     Route::get('questions/export', [QuestionController::class, 'export'])->middleware(['can:qbank.question.export', 'throttle:20,1'])->name('questions.export');
 
+    // One decision for several questions ticked in the list; each action checks its own rights.
+    Route::post('questions/bulk', [QuestionController::class, 'bulk'])->middleware(['can:qbank.question.view', 'throttle:30,1'])->name('questions.bulk');
+
     Route::get('questions/create', [QuestionController::class, 'create'])->middleware('can:qbank.question.create')->name('questions.create');
     Route::post('questions', [QuestionController::class, 'store'])->middleware('can:qbank.question.create')->name('questions.store');
 

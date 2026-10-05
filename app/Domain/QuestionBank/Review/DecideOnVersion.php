@@ -58,11 +58,12 @@ final class DecideOnVersion
         $reason = $this->reasonOrFail($reason, 'Say what the author has to change (at least 10 characters).');
 
         return DB::transaction(function () use ($approver, $version, $reason): QuestionVersion {
+            $from = $version->status;
             $this->assignments->cancelOpenFor($version, $approver, 'The question went back to its author for changes.');
             $this->move($version, VersionStatus::ChangesRequested, $approver, $reason);
             $version->update(['decision_code' => 'revise']);
 
-            $this->audit->record('qbank.question.returned', 'question_version', $version->id, ['status' => VersionStatus::UnderReview->value], [
+            $this->audit->record('qbank.question.returned', 'question_version', $version->id, ['status' => $from->value], [
                 'status' => VersionStatus::ChangesRequested->value,
                 'decision' => 'revise',
             ], $reason, $approver, $version->branch_id);
@@ -106,8 +107,8 @@ final class DecideOnVersion
         if ($version->author_id === $approver->id) {
             throw new AuthorizationException('You cannot decide about your own question.');
         }
-        if ($version->status !== VersionStatus::UnderReview) {
-            throw ValidationException::withMessages(['status' => 'Only a question that has been reviewed can be decided on.']);
+        if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)) {
+            throw ValidationException::withMessages(['status' => 'Only a question that is submitted for review can be decided on.']);
         }
     }
 

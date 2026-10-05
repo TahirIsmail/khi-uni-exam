@@ -437,45 +437,34 @@ try {
         assignedTo,
     );
 
-    // ---- the head of department gives the review to a particular person -----------------------
+    // ---- the review goes to the test reviewer ------------------------------------------------
     // Automatic assignment picks whoever has the least to do, which in this database may be anybody
-    // who can review; the head of department takes it back and asks the test reviewer instead.
+    // who can review. The approving authority decides on questions themselves and is not offered to
+    // hand them to somebody else (KMU), so the test moves the review to its own reviewer directly.
     await signIn(
         approver,
         `/questions/${questionId}/versions/${versionId}/review`,
     );
-    await waitFor("!!document.querySelector('[data-test=reviewer]')");
+    await waitFor('!!document.querySelector("[data-test=approval-form]")');
     await openPanels();
-    await evaluate(
-        "window.prompt = () => 'Away on leave for a month'; window.confirm = () => true;",
+    check(
+        'the approver is not offered to ask somebody else to review it',
+        !(await evaluate("!!document.querySelector('[data-test=reviewer]')")),
     );
     const autoAssignment = assess(
         `SELECT id FROM qb_review_assignments WHERE version_id = ${versionId} AND status = 'open'`,
     );
-    await click(`[data-cancel="${autoAssignment}"]`);
-    await sleep(1200);
-    check(
-        'a review can be taken back with a reason',
-        assess(
-            `SELECT CONCAT(status, ':', cancel_reason) FROM qb_review_assignments WHERE id = ${autoAssignment}`,
-        ) === 'cancelled:Away on leave for a month',
-        assess(
-            `SELECT CONCAT(status, ':', IFNULL(cancel_reason, '-')) FROM qb_review_assignments WHERE id = ${autoAssignment}`,
-        ),
-    );
-
     const reviewerUserId = assess(
         `SELECT id FROM users WHERE email = '${PEOPLE.reviewer.email}'`,
     );
-    await setSelect('[data-test=reviewer]', reviewerUserId);
-    await sleep(300);
-    await click('[data-test=assign]');
-    await sleep(1200);
+    assess(
+        `UPDATE qb_review_assignments SET reviewer_id = ${reviewerUserId} WHERE id = ${autoAssignment}`,
+    );
     check(
-        'the named reviewer is asked, and the record says who asked them',
+        'the test reviewer has the review',
         assess(
-            `SELECT CONCAT(a.status, ':', IF(a.assigned_by IS NULL, 'auto', 'by hand')) FROM qb_review_assignments a WHERE a.version_id = ${versionId} AND a.reviewer_id = ${reviewerUserId}`,
-        ) === 'open:by hand',
+            `SELECT a.status FROM qb_review_assignments a WHERE a.version_id = ${versionId} AND a.reviewer_id = ${reviewerUserId}`,
+        ) === 'open',
         assess(
             `SELECT GROUP_CONCAT(CONCAT(reviewer_id, ':', status)) FROM qb_review_assignments WHERE version_id = ${versionId}`,
         ),
@@ -603,31 +592,17 @@ try {
     );
 
     // ---- the QBank / academic review ----------------------------------------------------------
-    // As before, the head of department gives it to the test's academic reviewer by hand, because
-    // automatic assignment may choose anybody in this database who holds the right.
-    await signIn(
-        approver,
-        `/questions/${questionId}/versions/${versionId}/review`,
-    );
-    await waitFor("!!document.querySelector('[data-test=stage]')");
-    await openPanels();
-    await evaluate(
-        "window.prompt = () => 'Given to the academic reviewer of this test'; window.confirm = () => true;",
-    );
+    // As before, the review is moved to the test's academic reviewer, because automatic assignment
+    // may choose anybody in this database who holds the right.
     const autoAcademic = assess(
         `SELECT id FROM qb_review_assignments WHERE version_id = ${versionId} AND stage = 'academic' AND status = 'open'`,
     );
-    await click(`[data-cancel="${autoAcademic}"]`);
-    await sleep(1200);
-    await setSelect('[data-test=stage]', 'academic');
-    await sleep(300);
     const academicUserId = assess(
         `SELECT id FROM users WHERE email = '${PEOPLE.academic.email}'`,
     );
-    await setSelect('[data-test=reviewer]', academicUserId);
-    await sleep(300);
-    await click('[data-test=assign]');
-    await sleep(1200);
+    assess(
+        `UPDATE qb_review_assignments SET reviewer_id = ${academicUserId} WHERE id = ${autoAcademic}`,
+    );
     check(
         'the academic review is given to the academic reviewer',
         assess(
@@ -717,7 +692,8 @@ try {
     await setSelect('[data-test=approve-cognitive]', 3);
     await setSelect('[data-test=approve-difficulty]', 3);
     await sleep(300);
-    await click('[data-test=approve]');
+    // One press: Accept stores it.
+    await click('[data-decision=accept]');
     check(
         'approving takes the approver back to the queue',
         await waitFor("location.pathname === '/approvals'"),
@@ -792,7 +768,9 @@ try {
 } finally {
     ws.close();
     chrome.kill();
-    const [required, auto, anonymous, acceptStores, academicReview] = (settingsBefore || '1,1,0,1,0').split(',');
+    const [required, auto, anonymous, acceptStores, academicReview] = (
+        settingsBefore || '1,1,0,1,0'
+    ).split(',');
     cms(
         `UPDATE sch_settings SET kmu_assess_reviews_required = ${Number(required) || 1}, kmu_assess_auto_activate = ${Number(auto) || 1}, kmu_assess_reviewer_anonymous = ${Number(anonymous) || 0}, kmu_assess_reviewer_accept_stores = ${acceptStores === '0' ? 0 : 1}, kmu_assess_academic_review = ${academicReview === '1' ? 1 : 0} ORDER BY id LIMIT 1`,
     );

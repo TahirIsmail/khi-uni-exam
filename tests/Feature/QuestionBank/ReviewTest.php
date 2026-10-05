@@ -379,13 +379,10 @@ test('when kmu-cms says so, an approved question waits before it can be used', f
         ->and($version->fresh()->question->active_version_id)->toBe($version->id);
 });
 
-test('the approval gate holds: enough reviews, no failed rule, an accept decision, and not the author', function () {
+test('the approval gate holds: no failed rule, an accept decision, and not the author', function () {
     $version = sendForReview();
     $url = "/questions/{$version->question_id}/versions/{$version->id}/approve";
     $accept = (int) PrehocDecision::query()->where('code', 'accept')->value('id');
-
-    // Nothing reviewed yet.
-    $this->actingAs($this->approver)->from('/approvals')->post($url, ['decision_id' => $accept])->assertSessionHasErrors('status');
 
     $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
         'assignment_id' => ReviewAssignment::query()->value('id'),
@@ -569,29 +566,33 @@ test('the reviewer queue shows what is mine and is due, and nothing from another
     $this->actingAs($this->reviewer)->get('/reviews')->assertInertia(fn ($page) => $page->where('assignments.total', 0));
 });
 
-test('the approval queue separates what is ready from what is still in review', function () {
+test('the approval queue offers every question in review at once, and keeps the approver\'s own apart', function () {
     $version = sendForReview();
 
+    // The approving authority does not wait for the reviewers.
     $this->actingAs($this->approver)->get('/approvals')->assertOk()->assertInertia(fn ($page) => $page
         ->component('qbank/ApprovalQueue')
-        ->where('versions.data', []));
-
-    $this->actingAs($this->approver)->get('/approvals?show=waiting')->assertInertia(fn ($page) => $page
         ->where('versions.data.0.versionId', $version->id)
         ->where('versions.data.0.subjectIn', 0)
         ->where('versions.data.0.subjectNeeded', 1)
-        ->where('versions.data.0.academicIn', 0)
-        ->where('versions.data.0.blockedBecause', fn ($why) => str_contains((string) $why, 'needs 1 department / subject review')));
+        ->where('versions.data.0.blockedBecause', null));
 
-    $this->actingAs($this->reviewer)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
-        'assignment_id' => ReviewAssignment::query()->value('id'),
-    ]));
+    $this->actingAs($this->approver)->get('/approvals?show=waiting')->assertInertia(fn ($page) => $page
+        ->where('versions.data', []));
 
-    academicReview($version->fresh());
+    // Their own question is never theirs to decide.
+    $this->cmsGrant($this->approverRole, 'qbank_questions', 'view', 'add');
+    app(AccessControl::class)->forget($this->approver);
+    $this->actingAs($this->approver)->post('/questions', [...questionFields(), 'stem' => '<p>A 62-year-old smoker has haemoptysis and weight loss over three months.</p>', 'submit' => true])->assertRedirect();
+    $own = QuestionVersion::query()->latest('id')->firstOrFail();
+    $this->actingAs($this->approver)->post("/questions/{$own->question_id}/versions/{$own->id}/submit");
 
     $this->actingAs($this->approver)->get('/approvals')->assertInertia(fn ($page) => $page
-        ->where('versions.data.0.versionId', $version->id)
-        ->where('versions.data.0.blockedBecause', null));
+        ->has('versions.data', 1)
+        ->where('versions.data.0.versionId', $version->id));
+    $this->actingAs($this->approver)->get('/approvals?show=waiting')->assertInertia(fn ($page) => $page
+        ->where('versions.data.0.versionId', $own->id)
+        ->where('versions.data.0.isMine', true));
 
     $this->actingAs($this->reviewer)->get('/approvals')->assertForbidden();
 });
@@ -725,11 +726,6 @@ test('review has two levels: department / subject first, then QBank / academic, 
     $academic = ReviewAssignment::query()->where('version_id', $version->id)->where('stage', 'academic')->firstOrFail();
     expect($academic->reviewer_id)->toBe($this->academic->id)
         ->and($academic->status)->toBe('open');
-
-    // Not approvable yet.
-    $this->actingAs($this->approver)->from('/approvals')->post("/questions/{$version->question_id}/versions/{$version->id}/approve", [
-        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
-    ])->assertSessionHasErrors('reviews');
 
     // The academic reviewer sees it in the same queue, labelled with its level.
     $this->actingAs($this->academic)->get('/reviews')->assertOk()->assertInertia(fn ($page) => $page
@@ -1101,4 +1097,110 @@ test('with one level of review, a question where the reviewers disagree still wa
     $this->actingAs($this->approver)->get('/approvals')->assertInertia(fn ($page) => $page
         ->where('versions.data.0.versionId', $version->id)
         ->where('versions.data.0.blockedBecause', null));
+});
+
+/* KMU: the approver is the authority who reviews the question — they need not wait for reviewers. */
+test('the approving authority accepts a question nobody has reviewed yet, and the open review is called off', function () {
+    $version = sendForReview();
+
+    $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/decide", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+    ])->assertSessionHasNoErrors()->assertRedirect('/approvals');
+
+    $version->refresh();
+    expect($version->status)->toBe(VersionStatus::Active)
+        ->and($version->decision_code)->toBe('accept')
+        ->and(ReviewAssignment::query()->where('version_id', $version->id)->value('status'))->toBe('cancelled')
+        ->and(DB::table('qb_version_status_log')->where('version_id', $version->id)->pluck('to_status')->all())
+        ->toContain('under_review', 'approved', 'active');
+});
+
+test('the approving authority sends an unreviewed question back, or removes it, with a reason', function () {
+    $revise = sendForReview();
+    $this->actingAs($this->approver)->post("/questions/{$revise->question_id}/versions/{$revise->id}/decide", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'revise')->value('id'),
+        'reason' => 'Label the cells in the picture before asking for them.',
+    ])->assertSessionHasNoErrors();
+    expect($revise->fresh()->status)->toBe(VersionStatus::ChangesRequested);
+
+    $remove = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
+    $this->actingAs($this->approver)->post("/questions/{$remove->question_id}/versions/{$remove->id}/decide", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'remove')->value('id'),
+        'reason' => 'Duplicates a question already in the bank.',
+    ])->assertSessionHasNoErrors();
+    expect($remove->fresh()->status)->toBe(VersionStatus::Archived);
+});
+
+test('the approver is not offered to hand the question to a reviewer, and is told when the question is their own', function () {
+    $version = sendForReview();
+
+    $this->actingAs($this->approver)->get("/questions/{$version->question_id}/versions/{$version->id}/review")
+        ->assertOk()->assertInertia(fn ($page) => $page
+            ->where('can.approve', true)
+            ->where('can.assign', false)
+            ->where('can.approveOwn', false));
+
+    // The preview the question list opens points them to the review screen.
+    $this->actingAs($this->approver)->get("/questions/{$version->question_id}/versions/{$version->id}")
+        ->assertInertia(fn ($page) => $page->where('reviewHere', true));
+    $this->actingAs($this->author)->get("/questions/{$version->question_id}/versions/{$version->id}")
+        ->assertInertia(fn ($page) => $page->where('reviewHere', false));
+});
+
+test('several questions ticked in the list take one decision, and those that cannot are skipped', function () {
+    $first = sendForReview();
+    $second = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
+
+    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
+        'action' => 'retain',
+        'version_ids' => [$first->id, $second->id],
+    ])->assertRedirect('/questions');
+
+    expect($first->fresh()->status)->toBe(VersionStatus::Active)
+        ->and($first->fresh()->decision_code)->toBe('retain')
+        ->and($second->fresh()->status)->toBe(VersionStatus::Active);
+
+    // Accepting again is skipped (already in the QBank); removing them needs a reason, then works.
+    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
+        'action' => 'accept',
+        'version_ids' => [$first->id],
+    ])->assertRedirect('/questions');
+    expect($first->fresh()->status)->toBe(VersionStatus::Active);
+
+    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
+        'action' => 'remove',
+        'version_ids' => [$first->id, $second->id],
+    ])->assertSessionHasErrors('reason');
+
+    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
+        'action' => 'remove',
+        'version_ids' => [$first->id, $second->id],
+        'reason' => 'Demo questions written while testing the system.',
+    ])->assertRedirect('/questions');
+
+    expect($first->fresh()->status)->toBe(VersionStatus::Archived)
+        ->and($first->question->fresh()->is_archived)->toBeTrue()
+        ->and($first->question->fresh()->active_version_id)->toBeNull();
+});
+
+test('an author removes their own drafts in bulk, but not somebody else\'s questions', function () {
+    $this->actingAs($this->author)->post('/questions', questionFields())->assertRedirect();
+    $draft = QuestionVersion::query()->latest('id')->firstOrFail();
+    $sent = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
+
+    $this->actingAs($this->author)->from('/questions')->post('/questions/bulk', [
+        'action' => 'remove',
+        'version_ids' => [$draft->id, $sent->id],
+        'reason' => 'Written by mistake, not needed.',
+    ])->assertRedirect('/questions');
+
+    expect($draft->fresh()->status)->toBe(VersionStatus::Archived)
+        ->and($sent->fresh()->status)->toBe(VersionStatus::Submitted);
+
+    // Accepting is for the approving authority only.
+    $this->actingAs($this->reviewer)->from('/questions')->post('/questions/bulk', [
+        'action' => 'accept',
+        'version_ids' => [$sent->id],
+    ])->assertRedirect('/questions');
+    expect($sent->fresh()->status)->toBe(VersionStatus::Submitted);
 });

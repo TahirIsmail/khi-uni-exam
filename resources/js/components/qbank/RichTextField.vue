@@ -3,7 +3,6 @@ import { ImagePlus, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const props = defineProps<{
@@ -23,10 +22,10 @@ const emit = defineEmits<{ 'update:modelValue': [string | null] }>();
 
 const field = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const pending = ref<File | null>(null);
-const altText = ref('');
 const uploading = ref(false);
 const uploadError = ref<string | null>(null);
+// Where the cursor was when "Picture" was pressed: choosing a file takes the focus away.
+const insertAt = ref<number | null>(null);
 
 // A rough count of what a reader sees: tags do not count towards the limit.
 const plainLength = computed(
@@ -41,6 +40,15 @@ const tooLong = computed(
     () => props.counter !== undefined && plainLength.value > props.counter.max,
 );
 
+/** The pictures in the text, so the author sees them rather than their tags. */
+const pictures = computed(() =>
+    [...(props.modelValue ?? '').matchAll(/<img\b[^>]*>/gi)].map((match) => ({
+        tag: match[0],
+        src: /\bsrc="([^"]*)"/i.exec(match[0])?.[1] ?? '',
+        alt: /\balt="([^"]*)"/i.exec(match[0])?.[1] ?? '',
+    })),
+);
+
 function csrf(): string {
     return decodeURIComponent(
         document.cookie
@@ -52,17 +60,24 @@ function csrf(): string {
 
 function choose(): void {
     uploadError.value = null;
+    insertAt.value = field.value?.selectionStart ?? null;
     fileInput.value?.click();
 }
 
-function fileChosen(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
-    pending.value = file;
-    altText.value = '';
+/** "OSPE_demo-1.jpg" becomes "OSPE demo 1": the picture's description for screen readers and print. */
+function describe(file: File): string {
+    const name = file.name
+        .replace(/\.[^.]+$/, '')
+        .replace(/[_-]+/g, ' ')
+        .trim();
+
+    return (name === '' ? 'Picture' : name).slice(0, 255);
 }
 
-async function insertImage(): Promise<void> {
-    if (!pending.value || altText.value.trim() === '') {
+// Choosing a picture is all it takes: it is uploaded and put where the cursor was.
+async function fileChosen(event: Event): Promise<void> {
+    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+    if (!file) {
         return;
     }
     uploading.value = true;
@@ -70,8 +85,8 @@ async function insertImage(): Promise<void> {
 
     try {
         const body = new FormData();
-        body.append('file', pending.value);
-        body.append('alt_text', altText.value.trim());
+        body.append('file', file);
+        body.append('alt_text', describe(file));
 
         const response = await fetch('/questions/media', {
             method: 'POST',
@@ -95,24 +110,25 @@ async function insertImage(): Promise<void> {
         }
 
         const tag = `<img src="${payload.url}" alt="${(payload.alt ?? '').replace(/"/g, '&quot;')}">`;
-        const element = field.value;
         const current = props.modelValue ?? '';
-        const at = element?.selectionStart ?? current.length;
+        const at = Math.min(insertAt.value ?? current.length, current.length);
         emit(
             'update:modelValue',
             current.slice(0, at) + tag + current.slice(at),
         );
-
-        pending.value = null;
-        altText.value = '';
-        if (fileInput.value) {
-            fileInput.value.value = '';
-        }
     } catch {
         uploadError.value = 'The picture could not be uploaded.';
     } finally {
         uploading.value = false;
+        if (fileInput.value) {
+            fileInput.value.value = '';
+        }
     }
+}
+
+function removePicture(tag: string): void {
+    const next = (props.modelValue ?? '').replace(tag, '');
+    emit('update:modelValue', next.trim() === '' ? null : next);
 }
 </script>
 
@@ -132,10 +148,12 @@ async function insertImage(): Promise<void> {
                     size="sm"
                     variant="ghost"
                     class="h-7 px-2"
+                    :disabled="uploading"
                     :data-add-image="id"
                     @click="choose"
                 >
-                    <ImagePlus class="size-3.5" /> Picture
+                    <ImagePlus class="size-3.5" />
+                    {{ uploading ? 'Uploading…' : 'Picture' }}
                 </Button>
                 <span
                     v-if="counter"
@@ -175,44 +193,33 @@ async function insertImage(): Promise<void> {
         />
 
         <div
-            v-if="pending"
-            class="bg-muted/40 grid gap-2 rounded-md border p-3"
+            v-if="pictures.length > 0"
+            class="flex flex-wrap gap-2"
+            :data-pictures="id"
         >
-            <div class="flex items-center justify-between gap-2 text-sm">
-                <span class="truncate">{{ pending.name }}</span>
+            <figure
+                v-for="(picture, index) in pictures"
+                :key="index"
+                class="bg-muted/40 relative rounded-md border p-1"
+            >
+                <img
+                    :src="picture.src"
+                    :alt="picture.alt"
+                    class="h-20 max-w-40 rounded object-contain"
+                />
                 <Button
+                    v-if="!disabled"
                     type="button"
                     size="icon-sm"
-                    variant="ghost"
-                    title="Cancel"
-                    @click="pending = null"
+                    variant="secondary"
+                    class="absolute top-1 right-1 size-6"
+                    title="Remove this picture"
+                    :data-remove-image="index"
+                    @click="removePicture(picture.tag)"
                 >
-                    <X />
+                    <X class="size-3.5" />
                 </Button>
-            </div>
-            <div class="grid gap-1.5">
-                <Label :for="`${id}-alt`">Describe the picture *</Label>
-                <Input
-                    :id="`${id}-alt`"
-                    v-model="altText"
-                    maxlength="255"
-                    placeholder="e.g. ECG showing ST elevation in leads II, III and aVF"
-                />
-                <p class="text-muted-foreground text-xs">
-                    Needed for screen readers and for printed papers.
-                </p>
-            </div>
-            <div>
-                <Button
-                    type="button"
-                    size="sm"
-                    :disabled="uploading || altText.trim() === ''"
-                    :data-insert-image="id"
-                    @click="insertImage"
-                >
-                    {{ uploading ? 'Uploading…' : 'Insert picture' }}
-                </Button>
-            </div>
+            </figure>
         </div>
 
         <p v-if="uploadError" class="text-destructive text-sm">

@@ -37,11 +37,7 @@ function filter(show: string): void {
     <div class="flex flex-col gap-6 p-4">
         <Heading
             title="Approvals"
-            :description="
-                academicReview
-                    ? 'Questions that have been reviewed and are waiting for a decision. Each has been through its department / subject review and its QBank / academic review. Approving records the cognitive and difficulty level the question keeps.'
-                    : 'Questions whose reviewer did not simply accept them, waiting for a decision. A question the reviewer accepts is stored in the QBank without coming here.'
-            "
+            description="Questions submitted for review, waiting for your decision: Accept, Retain in QBank, Review, Revise or Remove / Discard. You need not wait for the reviewers; what they said, if anything, is shown with the question."
         />
 
         <div class="flex flex-wrap items-center gap-2">
@@ -57,7 +53,7 @@ function filter(show: string): void {
                 :variant="show === 'waiting' ? 'default' : 'outline'"
                 data-test="show-waiting"
                 @click="filter('waiting')"
-                >Still in review</Button
+                >Written by you</Button
             >
             <Button
                 size="sm"
@@ -161,13 +157,8 @@ function filter(show: string): void {
                             />
                             <p class="font-medium">Nothing to decide</p>
                             <p class="text-muted-foreground mt-1 text-sm">
-                                A question appears here once its department /
-                                subject reviews{{
-                                    academicReview
-                                        ? ' and its QBank / academic review'
-                                        : ''
-                                }}
-                                are in.
+                                A question appears here as soon as its author
+                                submits it for review.
                             </p>
                         </td>
                     </tr>

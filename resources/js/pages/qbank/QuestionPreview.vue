@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { FilePlus2 } from '@lucide/vue';
+import { FilePlus2, Gavel } from '@lucide/vue';
 import { computed } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import ChecksPanel from '@/components/qbank/ChecksPanel.vue';
@@ -23,6 +23,8 @@ const props = defineProps<{
     reference: string;
     version: StoredVersion;
     can: { edit: boolean; submit: boolean; newVersion: boolean };
+    /** This person reviews or decides on this version: their buttons are on the review screen. */
+    reviewHere: boolean;
     checks: QuestionChecks;
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
@@ -92,6 +94,12 @@ function startNewVersion(): void {
                 :description="`${type?.name ?? ''} · ${version.marks} mark${version.marks === 1 ? '' : 's'}`"
             />
             <div class="flex items-center gap-2">
+                <Button v-if="reviewHere" as-child data-test="review-here">
+                    <Link
+                        :href="`/questions/${version.questionId}/versions/${version.id}/review`"
+                        ><Gavel /> Review and decide</Link
+                    >
+                </Button>
                 <Button v-if="can.edit" as-child variant="outline">
                     <Link
                         :href="`/questions/${version.questionId}/versions/${version.id}/edit`"

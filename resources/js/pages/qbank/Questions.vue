@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     CopyCheck,
     Download,
@@ -77,6 +77,7 @@ const props = defineProps<{
     canExport: boolean;
     canEditOwn: boolean;
     canEditAny: boolean;
+    canApprove: boolean;
 }>();
 
 const search = ref(props.filters.search);
@@ -214,6 +215,88 @@ function mayEdit(row: QuestionListRow): boolean {
         row.status === 'draft' || row.status === 'changes_requested';
 
     return editable && ((row.isMine && props.canEditOwn) || props.canEditAny);
+}
+
+// The approver's own buttons are on the review screen, so "Open" takes them there.
+function mayDecide(row: QuestionListRow): boolean {
+    return (
+        props.canApprove &&
+        !row.isMine &&
+        ['submitted', 'under_review'].includes(row.status)
+    );
+}
+
+// ---- several questions at once -------------------------------------------------------------------
+const canSelect = computed(
+    () => props.canApprove || props.canEditOwn || props.canEditAny,
+);
+const selected = ref<number[]>([]);
+const allSelected = computed(
+    () =>
+        props.questions.data.length > 0 &&
+        props.questions.data.every((row) =>
+            selected.value.includes(row.versionId),
+        ),
+);
+
+function toggleAll(): void {
+    selected.value = allSelected.value
+        ? []
+        : props.questions.data.map((row) => row.versionId);
+}
+
+function toggle(versionId: number): void {
+    selected.value = selected.value.includes(versionId)
+        ? selected.value.filter((id) => id !== versionId)
+        : [...selected.value, versionId];
+}
+
+// A new page of results starts with nothing ticked.
+watch(
+    () => props.questions.data,
+    () => (selected.value = []),
+);
+
+type BulkAction = 'accept' | 'retain' | 'revise' | 'remove';
+const bulkLabels: Record<BulkAction, string> = {
+    accept: 'Accept',
+    retain: 'Retain in QBank',
+    revise: 'Revise',
+    remove: 'Remove / Discard',
+};
+const bulk = useForm<{
+    action: BulkAction | null;
+    version_ids: number[];
+    reason: string;
+}>({ action: null, version_ids: [], reason: '' });
+
+function sendBulk(): void {
+    bulk.version_ids = selected.value;
+    bulk.post('/questions/bulk', {
+        preserveScroll: true,
+        onSuccess: () => {
+            selected.value = [];
+            bulk.reset();
+        },
+    });
+}
+
+/** Accept and Retain in QBank go after a confirmation; Revise and Remove first ask why. */
+function startBulk(action: BulkAction): void {
+    bulk.clearErrors();
+    bulk.action = action;
+    if (action === 'accept' || action === 'retain') {
+        const count = selected.value.length;
+        if (
+            window.confirm(
+                `${bulkLabels[action]}: store ${count} question${count === 1 ? '' : 's'} in the QBank?`,
+            )
+        ) {
+            sendBulk();
+        } else {
+            bulk.action = null;
+        }
+    }
 }
 
 const statusStyles: Record<string, string> = {
@@ -778,10 +861,111 @@ const statusStyles: Record<string, string> = {
             </div>
         </form>
 
+        <div
+            v-if="selected.length > 0"
+            class="bg-muted/40 grid gap-3 rounded-xl border p-3"
+            data-test="bulk-bar"
+        >
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-medium"
+                    >{{ selected.length }} selected</span
+                >
+                <template v-if="canApprove">
+                    <Button
+                        size="sm"
+                        :disabled="bulk.processing"
+                        data-bulk="accept"
+                        @click="startBulk('accept')"
+                        >Accept</Button
+                    >
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        :disabled="bulk.processing"
+                        data-bulk="retain"
+                        @click="startBulk('retain')"
+                        >Retain in QBank</Button
+                    >
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        :disabled="bulk.processing"
+                        data-bulk="revise"
+                        @click="startBulk('revise')"
+                        >Revise</Button
+                    >
+                </template>
+                <Button
+                    size="sm"
+                    variant="destructive"
+                    :disabled="bulk.processing"
+                    data-bulk="remove"
+                    @click="startBulk('remove')"
+                    >Remove / Discard</Button
+                >
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    @click="
+                        selected = [];
+                        bulk.reset();
+                    "
+                    ><X /> Clear</Button
+                >
+            </div>
+
+            <div
+                v-if="bulk.action === 'revise' || bulk.action === 'remove'"
+                class="flex flex-wrap items-end gap-2"
+            >
+                <div class="grid flex-1 gap-1.5" style="min-width: 16rem">
+                    <Label for="bulk-reason">{{
+                        bulk.action === 'remove'
+                            ? 'Why can these questions not be used?'
+                            : 'What do the authors have to change?'
+                    }}</Label>
+                    <Input
+                        id="bulk-reason"
+                        v-model="bulk.reason"
+                        maxlength="500"
+                        data-test="bulk-reason"
+                    />
+                </div>
+                <Button
+                    :variant="
+                        bulk.action === 'remove' ? 'destructive' : 'default'
+                    "
+                    :disabled="bulk.processing"
+                    data-test="bulk-confirm"
+                    @click="sendBulk"
+                    >{{ bulkLabels[bulk.action] }} {{ selected.length }}</Button
+                >
+            </div>
+            <p
+                v-for="(message, field) in bulk.errors"
+                :key="field"
+                class="text-destructive text-sm"
+            >
+                {{ message }}
+            </p>
+        </div>
+
         <div class="overflow-x-auto rounded-xl border shadow-xs">
             <table class="w-full text-sm">
                 <thead class="bg-muted/50 text-left">
                     <tr>
+                        <th v-if="canSelect" class="w-8 px-3 py-2">
+                            <input
+                                type="checkbox"
+                                class="size-4"
+                                :checked="allSelected"
+                                :disabled="questions.data.length === 0"
+                                title="Select all on this page"
+                                aria-label="Select all on this page"
+                                data-test="select-all"
+                                @change="toggleAll"
+                            />
+                        </th>
                         <th class="px-3 py-2 font-medium">Reference</th>
                         <th class="px-3 py-2 font-medium">Question</th>
                         <th class="px-3 py-2 font-medium">Type</th>
@@ -799,7 +983,22 @@ const statusStyles: Record<string, string> = {
                         v-for="row in questions.data"
                         :key="row.id"
                         class="hover:bg-muted/40 border-t align-top"
+                        :class="
+                            selected.includes(row.versionId)
+                                ? 'bg-muted/40'
+                                : ''
+                        "
                     >
+                        <td v-if="canSelect" class="px-3 py-2">
+                            <input
+                                type="checkbox"
+                                class="size-4"
+                                :checked="selected.includes(row.versionId)"
+                                :aria-label="`Select ${row.reference}`"
+                                :data-select="row.versionId"
+                                @change="toggle(row.versionId)"
+                            />
+                        </td>
                         <td
                             class="px-3 py-2 font-mono text-xs whitespace-nowrap"
                         >
@@ -846,7 +1045,18 @@ const statusStyles: Record<string, string> = {
                                     ><History
                                 /></Link>
                             </Button>
-                            <Button as-child size="sm" variant="outline">
+                            <Button
+                                v-if="mayDecide(row)"
+                                as-child
+                                size="sm"
+                                :data-decide="row.versionId"
+                            >
+                                <Link
+                                    :href="`/questions/${row.id}/versions/${row.versionId}/review`"
+                                    >Decide</Link
+                                >
+                            </Button>
+                            <Button v-else as-child size="sm" variant="outline">
                                 <Link
                                     :href="
                                         mayEdit(row)
@@ -859,7 +1069,10 @@ const statusStyles: Record<string, string> = {
                         </td>
                     </tr>
                     <tr v-if="questions.data.length === 0">
-                        <td colspan="8" class="px-3 py-10 text-center">
+                        <td
+                            :colspan="canSelect ? 9 : 8"
+                            class="px-3 py-10 text-center"
+                        >
                             <p class="font-medium">No questions found</p>
                             <p class="text-muted-foreground mt-1 text-sm">
                                 {{

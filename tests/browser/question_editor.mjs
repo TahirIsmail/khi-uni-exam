@@ -438,12 +438,7 @@ try {
         files: [PICTURE],
         objectId: fileInput,
     });
-    await sleep(400);
-    await type(
-        '#stem-alt',
-        'ECG showing ST elevation in leads II, III and aVF',
-    );
-    await click('[data-insert-image=stem]');
+    // Choosing the file is all it takes: no second "insert" step.
     const inserted = await waitFor(
         "/questions\\/media\\/\\d+/.test(document.getElementById('stem').value)",
     );
@@ -453,9 +448,15 @@ try {
         (await evaluate("document.getElementById('stem').value")).slice(-120),
     );
     check(
-        'the picture is stored for this campus with its description',
-        assess('SELECT alt_text FROM qb_media ORDER BY id DESC LIMIT 1') ===
-            'ECG showing ST elevation in leads II, III and aVF',
+        'the picture is shown under the question text',
+        await waitFor(
+            "document.querySelector('[data-pictures=stem] img') !== null",
+        ),
+    );
+    check(
+        'the picture is stored for this campus, described by its file name',
+        (assess('SELECT alt_text FROM qb_media ORDER BY id DESC LIMIT 1') ??
+            '') !== '',
     );
 
     await click('[data-test=add-reference]');

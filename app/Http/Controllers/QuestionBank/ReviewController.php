@@ -59,7 +59,9 @@ class ReviewController extends Controller
 
         $mayReview = $pool->allowsAny($user, $version);
         $mayApprove = $user->can('qbank.question.approve') && $version->author_id !== $user->id;
-        $mayAssign = $user->can('qbank.review.assign');
+        // The approving authority decides on the question themselves (KMU), so they are not offered
+        // to hand it to somebody else.
+        $mayAssign = $user->can('qbank.review.assign') && ! $user->can('qbank.question.approve');
         $isAuthor = $version->author_id === $user->id;
         abort_unless($mayReview || $mayApprove || $mayAssign || $isAuthor, 403, 'You have nothing to do with the review of this question.');
 
@@ -85,6 +87,8 @@ class ReviewController extends Controller
                 'prehoc' => $user->can('qbank.prehoc.record'),
                 'approve' => $mayApprove,
                 'assign' => $mayAssign,
+                // An approver looking at their own question: somebody else has to decide on it.
+                'approveOwn' => $isAuthor && $user->can('qbank.question.approve'),
             ],
             'reviewers' => $reviewers,
             ...$this->board->forVersion($user, $version, $this->board->namesVisibleTo($user, $version)),

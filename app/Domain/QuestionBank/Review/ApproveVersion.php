@@ -18,11 +18,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The approval gate (blueprint 9.2, KMU QBank mechanism). A version is approved only when:
+ * The approval gate (blueprint 9.2, KMU QBank mechanism). The approving authority is the one who
+ * decides (KMU: "the Approver should be the only authority to review the question"), so they need
+ * not wait for reviewers: any reviews that are in are advice. A version is approved only when:
  *
- *  - as many department / subject reviews are in as kmu-cms asks for, and the QBank / academic
- *    review after them, and none of them asked for changes;
- *  - no required item of the item-writing checklist was marked as failed;
+ *  - it is submitted for review (reviewed or not);
+ *  - no required item of the item-writing checklist was marked as failed by a reviewer;
  *  - the approver's consolidated decision is an "accept" one;
  *  - the approver is not the author (separation of duty);
  *  - and when the reviewers disagreed, the approver says why this is the answer.
@@ -46,12 +47,12 @@ final class ApproveVersion
     {
         $this->authorise($approver, $version);
 
-        if ($version->status !== VersionStatus::UnderReview) {
-            throw ValidationException::withMessages(['status' => 'Only a question that has been reviewed can be approved.']);
+        if (! in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)) {
+            throw ValidationException::withMessages(['status' => 'Only a question that is submitted for review can be approved.']);
         }
 
         $reviews = $this->reviews($version);
-        $problem = $this->gate($version, $reviews, $input);
+        $problem = $this->gate($version, $reviews, $input, reviewsNeeded: false);
         if ($problem !== null) {
             throw ValidationException::withMessages($problem);
         }
@@ -138,6 +139,20 @@ final class ApproveVersion
                 'assessed_at' => now(),
             ]);
 
+            // The approver may decide before anybody reviewed it: the workflow still passes through
+            // under-review, which is the only step an approval may follow.
+            if ($version->status === VersionStatus::Submitted) {
+                $version->update(['status' => VersionStatus::UnderReview, 'updated_by' => $approver->id]);
+                VersionStatusLog::query()->create([
+                    'version_id' => $version->id,
+                    'from_status' => VersionStatus::Submitted,
+                    'to_status' => VersionStatus::UnderReview,
+                    'actor_id' => $approver->id,
+                    'reason' => null,
+                    'occurred_at' => now(),
+                ]);
+            }
+
             $from = $version->status;
             $version->update([
                 'status' => VersionStatus::Approved,
@@ -182,18 +197,20 @@ final class ApproveVersion
 
     /**
      * Why this version cannot be approved yet, for the approver's screen. Null means it can.
+     * The approving authority does not wait for the reviews ($reviewsNeeded false); the reviewers'
+     * own shorter path (acceptedByReviewers) does.
      *
      * @param  list<Review>  $reviews
      * @return array<string, string>|null
      */
-    public function gate(QuestionVersion $version, array $reviews, ?ConsolidatedPrehoc $input = null): ?array
+    public function gate(QuestionVersion $version, array $reviews, ?ConsolidatedPrehoc $input = null, bool $reviewsNeeded = true): ?array
     {
         $reviewed = array_values(array_filter($reviews, fn (Review $review): bool => ! $review->requestedChanges()));
         $required = $this->settings->reviewsRequired();
         $subject = count(array_filter($reviewed, fn (Review $review): bool => $this->levels->counts($review, ReviewStage::Subject)));
         $academic = count(array_filter($reviewed, fn (Review $review): bool => $this->levels->counts($review, ReviewStage::Academic)));
 
-        if ($subject < $required) {
+        if ($reviewsNeeded && $subject < $required) {
             return ['reviews' => $this->levels->single()
                 ? 'This question needs '.$required.' review(s) and has '.$subject.'.'
                 : 'This question needs '.$required.' department / subject review(s) and has '.$subject.'.'];
@@ -209,7 +226,7 @@ final class ApproveVersion
             return ['checklist' => 'A reviewer marked a required checklist item as failed: '.implode('; ', array_values($failed)).'. Send it back to the author.'];
         }
 
-        if ($academic < ($this->levels->single() ? 0 : 1)) {
+        if ($reviewsNeeded && $academic < ($this->levels->single() ? 0 : 1)) {
             return ['reviews' => 'This question is waiting for its QBank / academic review.'];
         }
 

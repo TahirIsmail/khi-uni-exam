@@ -89,12 +89,8 @@ final class ReviewBoard
     public function approvalQueue(User $approver, int $branchId, string $show = 'ready'): LengthAwarePaginator
     {
         $courseIds = $this->accessibleCourseIds($approver, $branchId);
-        $required = $this->settings->reviewsRequired();
 
-        // How many reviews this round has is counted in SQL, so that "ready" and "still in review"
-        // are real pages: filtering after paging would leave holes and empty pages.
-        // No QBank / academic review is needed when kmu-cms turns that level off.
-        $academicNeeded = $this->settings->academicReview() ? 1 : 0;
+        // How many reviews this round has, shown beside each question as advice.
         // With one level of review, every review of the round counts, whatever level it was asked at.
         $single = $this->levels->single();
         $reviewsIn = fn (ReviewStage $stage) => DB::table('qb_reviews')
@@ -111,17 +107,10 @@ final class ReviewBoard
             ->select('qb_question_versions.*')
             ->selectSub($reviewsIn(ReviewStage::Subject), 'subject_in')
             ->selectSub($reviewsIn(ReviewStage::Academic), 'academic_in')
-            // The counts are compared in WHERE, not HAVING: HAVING would have to name author_id
-            // alongside them, and under ONLY_FULL_GROUP_BY a plain column there is rejected
-            // (error 1463 on MariaDB, which does not read it as dependent on the key).
-            ->when($show === 'ready', fn ($query) => $query
-                ->where('author_id', '<>', $approver->id)
-                ->where($reviewsIn(ReviewStage::Subject), '>=', $required)
-                ->where($reviewsIn(ReviewStage::Academic), '>=', $academicNeeded))
-            ->when($show === 'waiting', fn ($query) => $query->where(fn ($group) => $group
-                ->where($reviewsIn(ReviewStage::Subject), '<', $required)
-                ->orWhere($reviewsIn(ReviewStage::Academic), '<', $academicNeeded)
-                ->orWhere('author_id', '=', $approver->id)))
+            // The approving authority decides without waiting for the reviewers, so everything in
+            // review is ready for them — except their own questions, which somebody else decides.
+            ->when($show === 'ready', fn ($query) => $query->where('author_id', '<>', $approver->id))
+            ->when($show === 'waiting', fn ($query) => $query->where('author_id', '=', $approver->id))
             ->with(['type:id,name', 'question:id,public_ref', 'reviews'])
             ->orderBy('submitted_at')
             ->orderBy('id')
@@ -140,7 +129,7 @@ final class ReviewBoard
      */
     private function presentForApproval(QuestionVersion $version, array $reviews, bool $isMine): array
     {
-        $problem = $this->approval->gate($version, $reviews);
+        $problem = $this->approval->gate($version, $reviews, reviewsNeeded: false);
 
         return [
             'questionId' => $version->question_id,

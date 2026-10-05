@@ -37,6 +37,7 @@ const props = defineProps<{
         prehoc: boolean;
         approve: boolean;
         assign: boolean;
+        approveOwn: boolean;
     };
     reviewers: Partial<
         Record<
@@ -153,6 +154,15 @@ const failedCount = computed(
     () => review.checklist.filter((row) => !row.pass).length,
 );
 
+// Anything the server refuses that has no place of its own on the form is still shown.
+const otherReviewErrors = computed(() =>
+    Object.fromEntries(
+        Object.entries(review.errors).filter(
+            ([field]) => !['decision_id', 'comments'].includes(field),
+        ),
+    ),
+);
+
 function submitReview(): void {
     review.post(`${base.value}/review`, { preserveScroll: true });
 }
@@ -164,23 +174,29 @@ const approval = useForm<{
     difficulty_level_id: number | null;
     reason: string;
 }>({
-    decision_id:
-        props.decisions.find((row) => row.code === 'accept')?.id ?? null,
+    decision_id: null,
     cognitive_level_id: props.version.cognitiveLevelId,
     difficulty_level_id: props.version.difficultyLevelId,
     reason: '',
 });
+
+const inReview = computed(() =>
+    ['submitted', 'under_review'].includes(props.version.status),
+);
 
 const approverDecision = computed(
     () =>
         props.decisions.find((row) => row.id === approval.decision_id) ?? null,
 );
 
-/** Anything but "store it" has to say why, so the author and the reviewers know. */
-const reasonRequired = computed(
+/**
+ * Anything but "store it" has to say why, so the author and the reviewers know. Storing it needs a
+ * note only when the reviewers disagreed, which the server says.
+ */
+const askReason = computed(
     () =>
         approverDecision.value !== null &&
-        !['accept', 'retain'].includes(approverDecision.value.code),
+        (!approverDecision.value.isAccept || 'reason' in approval.errors),
 );
 
 const reasonLabel = computed(() => {
@@ -192,9 +208,27 @@ const reasonLabel = computed(() => {
         case 'remove':
             return 'Why can this question not be used?';
         default:
-            return 'Note (needed only when the reviewers disagreed)';
+            return 'The reviewers decided differently: why do you settle on this?';
     }
 });
+
+const levelSummary = computed(
+    () =>
+        `${props.cognitiveLevels.find((level) => level.id === approval.cognitive_level_id)?.name ?? '—'} · ${props.difficultyLevels.find((level) => level.id === approval.difficulty_level_id)?.name ?? '—'}`,
+);
+
+function sendDecision(): void {
+    approval.post(`${base.value}/decide`, { preserveScroll: true });
+}
+
+/** Accept and Retain in QBank go at once; the others first ask why. */
+function decide(row: PrehocDecisionInfo): void {
+    approval.clearErrors();
+    approval.decision_id = row.id;
+    if (row.isAccept) {
+        sendDecision();
+    }
+}
 
 // ---- who is reviewing it -----------------------------------------------------------------------
 const newReviewer = ref<number | null>(null);
@@ -530,6 +564,15 @@ function cancelAssignment(id: number): void {
                     </details>
 
                     <p
+                        v-for="(message, field) in otherReviewErrors"
+                        :key="field"
+                        class="text-destructive text-sm"
+                        data-test="review-error"
+                    >
+                        {{ message }}
+                    </p>
+
+                    <p
                         v-if="failedRequired.length > 0"
                         class="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-3 text-xs"
                         data-test="failed-required"
@@ -555,123 +598,138 @@ function cancelAssignment(id: number): void {
                     </div>
                 </form>
 
-                <!-- The approving authority's decision: one choice, one button. -->
-                <form
-                    v-if="can.approve && version.status === 'under_review'"
+                <!-- The approving authority's decision: one button per decision. -->
+                <div
+                    v-if="can.approve && inReview"
                     class="grid gap-4 rounded-xl border p-4 shadow-xs"
                     data-test="approval-form"
-                    @submit.prevent="
-                        approval.post(`${base}/decide`, {
-                            preserveScroll: true,
-                        })
-                    "
                 >
                     <div>
                         <h3 class="font-medium">Your decision</h3>
                         <p class="text-muted-foreground text-xs">
-                            The levels you settle on are the ones the question
-                            keeps in the QBank.
+                            Accept and Retain in QBank store the question
+                            straight away. The others ask you to say why, so the
+                            author knows.
                         </p>
                     </div>
 
-                    <div class="grid gap-3 sm:grid-cols-2">
-                        <div class="grid gap-1.5">
-                            <Label for="c-cognitive">Cognitive level</Label>
-                            <select
-                                id="c-cognitive"
-                                v-model="approval.cognitive_level_id"
-                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
-                                data-test="approve-cognitive"
-                            >
-                                <option :value="null">—</option>
-                                <option
-                                    v-for="level in cognitiveLevels"
-                                    :key="level.id"
-                                    :value="level.id"
-                                >
-                                    {{ level.name }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="grid gap-1.5">
-                            <Label for="c-difficulty">Difficulty level</Label>
-                            <select
-                                id="c-difficulty"
-                                v-model="approval.difficulty_level_id"
-                                class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
-                                data-test="approve-difficulty"
-                            >
-                                <option :value="null">—</option>
-                                <option
-                                    v-for="level in difficultyLevels"
-                                    :key="level.id"
-                                    :value="level.id"
-                                >
-                                    {{ level.name }}
-                                </option>
-                            </select>
-                        </div>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-for="row in decisions"
+                            :key="row.id"
+                            type="button"
+                            :variant="
+                                approval.decision_id === row.id
+                                    ? row.code === 'remove'
+                                        ? 'destructive'
+                                        : 'default'
+                                    : 'outline'
+                            "
+                            :disabled="approval.processing"
+                            :data-decision="row.code"
+                            @click="decide(row)"
+                        >
+                            <Check v-if="row.isAccept" />
+                            {{ row.name }}
+                        </Button>
                     </div>
 
-                    <div class="grid gap-1.5">
-                        <Label for="c-decision">Question quality</Label>
-                        <select
-                            id="c-decision"
-                            v-model="approval.decision_id"
-                            class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
-                            data-test="approve-decision"
-                        >
-                            <option
-                                v-for="row in decisions"
-                                :key="row.id"
-                                :value="row.id"
-                            >
-                                {{ row.name }}
-                            </option>
-                        </select>
-                        <p
-                            v-if="approverDecision?.description"
-                            class="text-muted-foreground text-xs"
-                        >
-                            {{ approverDecision.description }}
-                        </p>
-                    </div>
-
-                    <div class="grid gap-1.5">
+                    <div
+                        v-if="approverDecision !== null && askReason"
+                        class="grid gap-1.5"
+                    >
                         <Label for="c-reason">{{ reasonLabel }}</Label>
-                        <Input
+                        <textarea
                             id="c-reason"
                             v-model="approval.reason"
+                            class="border-input bg-background min-h-20 rounded-md border p-2 text-sm"
                             maxlength="500"
-                            :required="reasonRequired"
                             data-test="approve-reason"
                         />
-                        <p
-                            v-for="(message, field) in approval.errors"
-                            :key="field"
-                            class="text-destructive text-sm"
-                            data-test="approve-error"
+                        <Button
+                            type="button"
+                            class="justify-self-start"
+                            :variant="
+                                approverDecision.code === 'remove'
+                                    ? 'destructive'
+                                    : 'default'
+                            "
+                            :disabled="approval.processing"
+                            data-test="approve"
+                            @click="sendDecision"
                         >
-                            {{ message }}
-                        </p>
+                            {{ approverDecision.name }}
+                        </Button>
                     </div>
 
-                    <Button
-                        type="submit"
-                        class="justify-self-start"
-                        :disabled="approval.processing"
-                        data-test="approve"
+                    <p
+                        v-for="(message, field) in approval.errors"
+                        :key="field"
+                        class="text-destructive text-sm"
+                        data-test="approve-error"
                     >
-                        <Check />
-                        {{
-                            approverDecision !== null && !reasonRequired
-                                ? autoActivate
-                                    ? 'Store in the QBank and put into use'
-                                    : 'Store in the QBank'
-                                : 'Save decision'
-                        }}
-                    </Button>
-                </form>
+                        {{ message }}
+                    </p>
+
+                    <!-- The levels the question keeps: the author's, unless the approver changes them. -->
+                    <details class="rounded-lg border px-3 py-2">
+                        <summary class="cursor-pointer text-sm">
+                            Cognitive and difficulty level
+                            <span class="text-muted-foreground"
+                                >({{ levelSummary }})</span
+                            >
+                        </summary>
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div class="grid gap-1.5">
+                                <Label for="c-cognitive">Cognitive level</Label>
+                                <select
+                                    id="c-cognitive"
+                                    v-model="approval.cognitive_level_id"
+                                    class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
+                                    data-test="approve-cognitive"
+                                >
+                                    <option :value="null">—</option>
+                                    <option
+                                        v-for="level in cognitiveLevels"
+                                        :key="level.id"
+                                        :value="level.id"
+                                    >
+                                        {{ level.name }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="grid gap-1.5">
+                                <Label for="c-difficulty"
+                                    >Difficulty level</Label
+                                >
+                                <select
+                                    id="c-difficulty"
+                                    v-model="approval.difficulty_level_id"
+                                    class="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
+                                    data-test="approve-difficulty"
+                                >
+                                    <option :value="null">—</option>
+                                    <option
+                                        v-for="level in difficultyLevels"
+                                        :key="level.id"
+                                        :value="level.id"
+                                    >
+                                        {{ level.name }}
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <p
+                    v-if="can.approveOwn && inReview"
+                    class="text-muted-foreground rounded-xl border border-dashed p-4 text-sm"
+                    data-test="approve-own"
+                >
+                    You wrote this question, so another approver has to decide
+                    on it.
+                </p>
 
                 <div
                     v-if="can.approve && version.status === 'approved'"
