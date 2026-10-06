@@ -245,7 +245,7 @@ CREATE TABLE `acad_courses` (
   CONSTRAINT `fk_acad_courses_subject` FOREIGN KEY (`subject_id`) REFERENCES `subjects` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_acad_courses_supersedes` FOREIGN KEY (`supersedes_course_id`) REFERENCES `acad_courses` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_acad_courses_term_in_professional` FOREIGN KEY (`term_id`, `professional_id`) REFERENCES `acad_professional_terms` (`id`, `professional_id`) ON DELETE RESTRICT,
-  CONSTRAINT `chk_acad_courses_code_format` CHECK (regexp_like(`course_code`,_utf8mb4'^[A-Za-z0-9][A-Za-z0-9-]{2,19}$')),
+  CONSTRAINT `chk_acad_courses_code_format` CHECK (`course_code` REGEXP '^[A-Za-z0-9][A-Za-z0-9-]{2,19}$'),
   CONSTRAINT `chk_acad_courses_validity` CHECK (((`valid_to` is null) or (`valid_from` is null) or (`valid_to` >= `valid_from`)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `acad_curriculum_nodes` (
