@@ -115,4 +115,5 @@ export type AttemptState = {
     deadlineAt: string | null;
     remainingSeconds: number | null;
     lastItemId: number | null;
+    heartbeatSeconds?: number;
 };

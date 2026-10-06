@@ -46,9 +46,10 @@ return [
         // A previous computer silent for this long is treated as crashed: the next sign-in resumes
         // automatically. Silent for less, and it is treated as still working: the sign-in is blocked
         // until an invigilator ends that session (ADR-0003).
-        'session_stale_after_seconds' => env('EXAM_SESSION_STALE_SECONDS', 60),
-        // How often the candidate's browser is expected to send a heartbeat.
-        'heartbeat_interval_seconds' => 20,
+        'session_stale_after_seconds' => env('EXAM_SESSION_STALE_SECONDS', 90),
+        // How often the candidate's browser sends a heartbeat (each adds a few random seconds, so a
+        // hall of thousands does not knock at the same moment). Keep it well under the stale time.
+        'heartbeat_interval_seconds' => (int) env('EXAM_HEARTBEAT_SECONDS', 30),
         // Sitting past the deadline by this much still autosaves and submits; after it, the attempt
         // is auto-submitted as it stands.
         'grace_seconds' => env('EXAM_GRACE_SECONDS', 120),

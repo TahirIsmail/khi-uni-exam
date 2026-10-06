@@ -8,6 +8,7 @@ use App\Domain\Delivery\Enums\ProctorSeverity;
 use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\DeliverySession;
 use App\Domain\Delivery\Models\ProctorEvent;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A candidate's browser reporting something during lockdown (exam phase, step 19): the event is
@@ -36,7 +37,9 @@ final class RecordProctorEvent
         ]);
 
         if ($severity === ProctorSeverity::High) {
-            $this->audit->record('proctor.event_recorded', 'candidate_exam', $attempt->id, null, ['type' => $type->value, 'severity' => $severity->value], null, null, $attempt->examination->branch_id);
+            // Written once the work is committed: the audit chain's lock is then held for the entry alone,
+            // not for the whole sign-in, so a hall starting together does not queue on it.
+            DB::afterCommit(fn () => $this->audit->record('proctor.event_recorded', 'candidate_exam', $attempt->id, null, ['type' => $type->value, 'severity' => $severity->value], null, null, $attempt->examination->branch_id));
         }
 
         return $event;

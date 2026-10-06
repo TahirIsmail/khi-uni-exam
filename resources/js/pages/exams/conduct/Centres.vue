@@ -113,8 +113,19 @@ async function toggleDevices(centre: CentreRow): Promise<void> {
         credentials: 'same-origin',
     });
     const data = (await response.json()) as { devices: PendingDevice[] };
-    pendingDevices.value = { ...pendingDevices.value, [centre.id]: data.devices };
+    pendingDevices.value = {
+        ...pendingDevices.value,
+        [centre.id]: data.devices,
+    };
 }
+function approveAllDevices(centre: CentreRow): void {
+    router.post(
+        conduct.centres.devices.approveAll(centre.id).url,
+        {},
+        { preserveScroll: true },
+    );
+}
+
 function approveDevice(centre: CentreRow, device: PendingDevice): void {
     router.post(
         conduct.centres.devices.approve([centre.id, device.id]).url,
@@ -285,8 +296,16 @@ function approveDevice(centre: CentreRow, device: PendingDevice): void {
                             @click="toggleDevices(centre)"
                         >
                             <Laptop class="size-3" />
-                            {{ centre.devicesPendingCount }} device(s)
-                            awaiting approval
+                            {{ centre.devicesPendingCount }} device(s) awaiting
+                            approval
+                        </Button>
+                        <Button
+                            v-if="can.manage && centre.devicesPendingCount > 0"
+                            size="sm"
+                            data-test="approve-all-devices"
+                            @click="approveAllDevices(centre)"
+                        >
+                            Approve all
                         </Button>
                         <Button
                             v-if="can.manage"

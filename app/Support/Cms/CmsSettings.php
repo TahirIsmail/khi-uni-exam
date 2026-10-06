@@ -55,6 +55,16 @@ final class CmsSettings
         return $this->int('kmu_assess_academic_review', 1) === 1;
     }
 
+    /**
+     * Whether a computer not seen before at a centre waits for an invigilator to approve it before
+     * the exam starts on it. Off unless turned on under Setup: candidates on a list who sign in with
+     * the exam PIN are trusted on any computer.
+     */
+    public function deviceApproval(): bool
+    {
+        return $this->int('kmu_assess_device_approval', 0) === 1;
+    }
+
     /** Whether authors see who reviewed their question. The comments are always shown. */
     public function reviewerAnonymous(): bool
     {

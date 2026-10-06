@@ -42,6 +42,7 @@ final class AttemptData
                 'deadlineAt' => $attempt->deadline_at?->toIso8601String(),
                 'remainingSeconds' => $this->remainingSeconds($attempt),
                 'lastItemId' => $attempt->last_item_id,
+                'heartbeatSeconds' => (int) config('exam.delivery.heartbeat_interval_seconds'),
             ],
             'items' => $rows,
         ];

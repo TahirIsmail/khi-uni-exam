@@ -48,11 +48,15 @@ final class SubmitAttempt
             DB::table('dlv_sessions')->where('candidate_exam_id', $attempt->id)->whereNull('ended_at')
                 ->update(['ended_at' => now(), 'end_reason' => 'submitted']);
 
-            $this->audit->record('candidate.exam_submitted', 'candidate_exam', $attempt->id, null, ['submitted_by' => $by], null, null, $attempt->examination->branch_id);
+            // Written once the work is committed: the audit chain's lock is then held for the entry alone,
+
+            // not for the whole sign-in, so a hall starting together does not queue on it.
+
+            DB::afterCommit(fn () => $this->audit->record('candidate.exam_submitted', 'candidate_exam', $attempt->id, null, ['submitted_by' => $by], null, null, $attempt->examination->branch_id));
 
             $this->autoMark->__invoke($attempt);
 
             return $attempt;
-        });
+        }, 3); // retried on a deadlock: many candidates starting or finishing at the same moment
     }
 }

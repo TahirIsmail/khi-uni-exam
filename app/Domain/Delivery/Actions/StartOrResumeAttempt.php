@@ -80,7 +80,9 @@ final class StartOrResumeAttempt
                     'started_at' => now(),
                     'deadline_at' => $this->deadline($examination, $attempt->extra_seconds),
                 ]);
-                $this->audit->record('candidate.exam_started', 'candidate_exam', $attempt->id, null, ['candidate_id' => $candidate->id, 'examination_id' => $examination->id], null, null, $examination->branch_id);
+                // Written once the work is committed: the audit chain's lock is then held for the entry alone,
+                // not for the whole sign-in, so a hall starting together does not queue on it.
+                DB::afterCommit(fn () => $this->audit->record('candidate.exam_started', 'candidate_exam', $attempt->id, null, ['candidate_id' => $candidate->id, 'examination_id' => $examination->id], null, null, $examination->branch_id));
             }
 
             $session = DeliverySession::query()->create([
@@ -93,11 +95,13 @@ final class StartOrResumeAttempt
             ]);
 
             if ($deviceChanged) {
-                $this->audit->record('candidate.device_changed', 'candidate_exam', $attempt->id, null, ['ip' => $ip], null, null, $examination->branch_id);
+                // Written once the work is committed: the audit chain's lock is then held for the entry alone,
+                // not for the whole sign-in, so a hall starting together does not queue on it.
+                DB::afterCommit(fn () => $this->audit->record('candidate.device_changed', 'candidate_exam', $attempt->id, null, ['ip' => $ip], null, null, $examination->branch_id));
             }
 
             return ['outcome' => 'ready', 'attempt' => $attempt->fresh(), 'session' => $session];
-        });
+        }, 3); // retried on a deadlock: many candidates starting or finishing at the same moment
     }
 
     /**

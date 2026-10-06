@@ -96,6 +96,22 @@ class CentreController extends Controller
         return to_route('conduct.centres');
     }
 
+    /** Every computer waiting at this centre, in one go (a hall of new computers on the day). */
+    public function approveAllDevices(Request $request, Centre $centre, ApproveDevice $approve): RedirectResponse
+    {
+        $this->guard($request, $centre);
+        $count = 0;
+        CandidateDevice::query()->where('centre_id', $centre->id)->whereNull('approved_at')->orderBy('id')
+            ->each(function (CandidateDevice $device) use ($request, $approve, &$count): void {
+                $approve($request->user('web'), $device);
+                $count++;
+            });
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __(':n devices approved.', ['n' => $count])]);
+
+        return to_route('conduct.centres');
+    }
+
     private function branchId(Request $request): int
     {
         return $this->activeBranch->id($request->user('web')) ?? abort(403, 'You do not work in any campus.');

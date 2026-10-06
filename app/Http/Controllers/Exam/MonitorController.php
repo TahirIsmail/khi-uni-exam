@@ -30,9 +30,15 @@ class MonitorController extends Controller
     {
         $this->guard($request, $exam);
 
+        $search = trim((string) $request->query('search', ''));
+        $data = $monitor->page($exam, max(1, $request->integer('page', 1)), mb_substr($search, 0, 100));
+
         return Inertia::render('exams/conduct/Monitor', [
             'examination' => $examinations->detail($exam),
-            'attempts' => $monitor->list($exam),
+            'attempts' => $data['rows'],
+            'pages' => $data['pages'],
+            'summary' => $data['summary'],
+            'search' => $search,
         ]);
     }
 

@@ -335,7 +335,19 @@ onMounted(() => {
     void flushQueue();
     void heartbeat();
     void checkDevice();
-    heartbeatTimer = window.setInterval(() => void heartbeat(), 20000);
+    // Every heartbeat waits its interval plus a few random seconds: thousands of browsers that
+    // started together drift apart instead of knocking at the server at the same moment.
+    const every = (props.attempt.heartbeatSeconds ?? 20) * 1000;
+    const next = (): void => {
+        heartbeatTimer = window.setTimeout(
+            () => {
+                void heartbeat();
+                next();
+            },
+            every + Math.floor(Math.random() * 5000),
+        );
+    };
+    next();
     tickTimer = window.setInterval(() => {
         if (!paused.value) {
             remainingSeconds.value = Math.max(0, remainingSeconds.value - 1);
@@ -344,7 +356,7 @@ onMounted(() => {
     window.addEventListener('online', flushQueue);
 });
 onBeforeUnmount(() => {
-    window.clearInterval(heartbeatTimer);
+    window.clearTimeout(heartbeatTimer);
     window.clearInterval(tickTimer);
     window.clearTimeout(deviceCheckTimer);
     window.removeEventListener('online', flushQueue);

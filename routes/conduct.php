@@ -26,6 +26,7 @@ Route::middleware('auth')->prefix('exams')->group(function () {
 
         // Centre device approval (step 19): a device not seen before at a centre needs one-time approval.
         Route::get('{centre}/devices', [CentreController::class, 'devices'])->whereNumber('centre')->middleware('can:centre.view')->name('conduct.centres.devices');
+        Route::post('{centre}/devices/approve-all', [CentreController::class, 'approveAllDevices'])->whereNumber('centre')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.centres.devices.approve-all');
         Route::post('{centre}/devices/{device}/approve', [CentreController::class, 'approveDevice'])->whereNumber('centre')->whereNumber('device')->middleware(['can:centre.manage', 'throttle:30,1'])->name('conduct.centres.devices.approve');
     });
 
@@ -42,6 +43,7 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::post('preview/check', [PreviewController::class, 'check'])->middleware(['can:exam.view', 'throttle:30,1'])->name('conduct.preview.check');
         Route::get('preview/check', [PreviewController::class, 'again'])->middleware('can:exam.view');
         Route::get('checkin', [CheckInController::class, 'index'])->middleware('can:candidate.checkin')->name('conduct.checkin');
+        Route::post('checkin-all', [CheckInController::class, 'checkInAll'])->middleware(['can:candidate.checkin', 'throttle:10,1'])->name('conduct.checkin.all');
         Route::post('checkin/{candidate}', [CheckInController::class, 'checkIn'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.do');
         Route::post('checkin/{candidate}/reissue-pin', [CheckInController::class, 'reissuePin'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.reissue-pin');
 

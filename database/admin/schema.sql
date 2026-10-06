@@ -344,6 +344,7 @@ CREATE TABLE `sch_settings` (
   `kmu_assess_reviewer_accept_stores` tinyint(1) NOT NULL DEFAULT '1',
   `kmu_assess_academic_review` tinyint(1) NOT NULL DEFAULT '0',
   `kmu_assess_reviewer_anonymous` tinyint(1) NOT NULL DEFAULT '0',
+  `kmu_assess_device_approval` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 -- The two fixed lookups kmu-cms seeds in migration 20260917_0004, seeded here for the same reason

@@ -1,6 +1,8 @@
 <?php
 
 use App\Domain\Candidate\Models\Candidate;
+use App\Domain\Candidate\Models\Centre;
+use App\Domain\Candidate\Models\Room;
 use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Exam\Models\Examination;
 use App\Domain\Paper\Enums\PaperStatus;
@@ -9,6 +11,7 @@ use App\Domain\Paper\Models\PaperItem;
 use App\Domain\QuestionBank\Models\Question;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
+use Inertia\Support\SessionKey;
 use Tests\Concerns\BuildsExaminations;
 use Tests\Concerns\InteractsWithCms;
 use Tests\Concerns\PassesMfa;
@@ -144,4 +147,100 @@ test('when one drawn question gives away another\'s answer, the paper is drawn a
     // Whichever two the draw took, never both of the pair that clash.
     expect($ids)->toHaveCount(2)
         ->and(in_array($giver->question_id, $ids, true) && in_array($receiver->question_id, $ids, true))->toBeFalse();
+});
+
+/** An entry test (5 questions unless said) with a roster of $n candidates (R-001 …). */
+function entryWithRoster(int $n, array $overrides = [], int $questions = 5): Examination
+{
+    entryTest($questions, $overrides)->assertSessionHasNoErrors();
+    $exam = Examination::query()->latest('id')->firstOrFail();
+    test()->actingAs(test()->admin)->post("/exams/{$exam->id}/candidates/import", [
+        'file' => UploadedFile::fake()->createWithContent('list.csv', "roll_no,name\n".implode("\n", array_map(fn ($i) => sprintf('R-%03d,Student %d', $i, $i), range(1, $n)))),
+    ])->assertSessionHasNoErrors();
+
+    return $exam;
+}
+
+test('with one exam PIN, everyone — or the ticked ones — is checked in at once, seated or not, and no PIN is issued', function () {
+    $exam = entryWithRoster(4, ['shared_pin' => '246810']);
+    $ids = Candidate::query()->where('examination_id', $exam->id)->orderBy('candidate_no')->pluck('id')->all();
+
+    $this->actingAs($this->admin)->get("/exams/{$exam->id}/checkin")->assertOk()
+        ->assertInertia(fn ($page) => $page->has('results', 4)->where('counts.enrolled', 4)->where('pages.total', 4));
+
+    $this->actingAs($this->admin)->post("/exams/{$exam->id}/checkin-all", ['candidate_ids' => [$ids[0], $ids[1]]])->assertSessionMissing(SessionKey::FLASH_DATA.'.pins');
+    expect(Candidate::query()->whereIn('id', [$ids[0], $ids[1]])->where('status', 'checked_in')->count())->toBe(2)
+        ->and(Candidate::query()->whereIn('id', [$ids[2], $ids[3]])->where('status', 'checked_in')->count())->toBe(0)
+        ->and(Candidate::query()->whereNotNull('pin_hash')->count())->toBe(0);
+
+    $this->actingAs($this->admin)->post("/exams/{$exam->id}/checkin-all");
+    expect(Candidate::query()->where('examination_id', $exam->id)->where('status', 'checked_in')->count())->toBe(4);
+
+    // One by one works too.
+    $other = entryWithRoster(1, ['shared_pin' => '135790'], questions: 3);
+    $single = Candidate::query()->where('examination_id', $other->id)->firstOrFail();
+    $this->actingAs($this->admin)->post("/exams/{$other->id}/checkin/{$single->id}")->assertSessionHasNoErrors()->assertSessionMissing(SessionKey::FLASH_DATA.'.pin');
+    expect($single->fresh()->status->value)->toBe('checked_in');
+});
+
+test('with PINs of their own, check-in-all checks in the seated, issues each a PIN once, and leaves the unseated out', function () {
+    $exam = entryWithRoster(3);
+    $this->actingAs($this->admin)->post('/exams/conduct/centres', ['name' => 'Hall', 'code' => 'H-1'])->assertSessionHasNoErrors();
+    $centre = Centre::query()->firstOrFail();
+    $this->actingAs($this->admin)->post("/exams/conduct/centres/{$centre->id}/rooms", ['name' => 'R1', 'capacity' => 2])->assertSessionHasNoErrors();
+    $room = Room::query()->firstOrFail();
+    foreach (Candidate::query()->where('examination_id', $exam->id)->orderBy('candidate_no')->limit(2)->get() as $candidate) {
+        $this->actingAs($this->admin)->post("/exams/{$exam->id}/candidates/{$candidate->id}/allocate", ['room_id' => $room->id])->assertSessionHasNoErrors();
+    }
+
+    $response = $this->actingAs($this->admin)->post("/exams/{$exam->id}/checkin-all");
+    $pins = session(SessionKey::FLASH_DATA)['pins'] ?? null;
+    expect($pins)->toHaveCount(2)
+        ->and($pins[0]['pin'])->toMatch('/^\d{6}$/')
+        ->and(Candidate::query()->where('examination_id', $exam->id)->where('status', 'checked_in')->count())->toBe(2)
+        ->and(Candidate::query()->where('examination_id', $exam->id)->where('status', 'enrolled')->count())->toBe(1);
+    $response->assertRedirect("/exams/{$exam->id}/checkin");
+
+    // The PIN issued works.
+    $this->post("/sit/{$exam->id}", ['candidate_no' => $pins[0]['candidateNo'], 'pin' => $pins[0]['pin']])->assertRedirect("/sit/{$exam->id}/exam");
+});
+
+test('computers wait for approval only when Setup says so, and a centre\'s waiting computers are approved all at once', function () {
+    $exam = entryWithRoster(1, ['shared_pin' => '112233']);
+    $this->actingAs($this->admin)->post('/exams/conduct/centres', ['name' => 'Lab', 'code' => 'LAB-1']);
+    $centre = Centre::query()->firstOrFail();
+    $this->actingAs($this->admin)->post("/exams/conduct/centres/{$centre->id}/rooms", ['name' => 'R1', 'capacity' => 5]);
+    $room = Room::query()->firstOrFail();
+    $candidate = Candidate::query()->where('examination_id', $exam->id)->firstOrFail();
+    $this->actingAs($this->admin)->post("/exams/{$exam->id}/candidates/{$candidate->id}/allocate", ['room_id' => $room->id]);
+
+    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-001', 'pin' => '112233']);
+    $device = fn () => $this->postJson("/sit/{$exam->id}/device", ['fingerprint' => 'Chrome|1920x1080|Asia/Karachi'])->json('status');
+
+    // Off under Setup: no waiting.
+    $this->cmsExamSettings(['kmu_assess_device_approval' => 0]);
+    app()->forgetScopedInstances();
+    expect($device())->toBe('skipped');
+
+    // On: the computer waits until "Approve all".
+    $this->cmsExamSettings(['kmu_assess_device_approval' => 1]);
+    app()->forgetScopedInstances();
+    expect($device())->toBe('pending');
+    app('auth')->shouldUse('web');
+    $this->actingAs($this->admin)->post("/exams/conduct/centres/{$centre->id}/devices/approve-all")->assertRedirect('/exams/conduct/centres');
+    app('auth')->shouldUse('candidate');
+    expect($device())->toBe('approved');
+});
+
+test('the monitor shows a page at a time, with the whole examination counted', function () {
+    $exam = entryWithRoster(3, ['shared_pin' => '999000']);
+    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-001', 'pin' => '999000'])->assertRedirect();
+
+    app('auth')->shouldUse('web');
+    $this->actingAs($this->admin)->get("/exams/{$exam->id}/monitor")->assertOk()
+        ->assertInertia(fn ($page) => $page->has('attempts', 1)
+            ->where('summary.inProgress', 1)
+            ->where('pages.total', 1)
+            ->where('attempts.0.candidateNo', 'R-001')
+            ->where('attempts.0.status', 'in_progress'));
 });

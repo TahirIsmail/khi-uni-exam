@@ -98,6 +98,10 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'strict' => true,
+            // READ COMMITTED: a locking read that finds nothing (is there an attempt? an open
+            // session?) locks no gap, so thousands of candidates signing in or saving at once do
+            // not deadlock on their neighbours' rows.
+            'isolation_level' => env('DB_ISOLATION_LEVEL', 'READ COMMITTED'),
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),

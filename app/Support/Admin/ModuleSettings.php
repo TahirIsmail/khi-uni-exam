@@ -17,6 +17,7 @@ final class ModuleSettings
         'accept_stores' => 'kmu_assess_reviewer_accept_stores',
         'academic_review' => 'kmu_assess_academic_review',
         'anonymous' => 'kmu_assess_reviewer_anonymous',
+        'device_approval' => 'kmu_assess_device_approval',
     ];
 
     /** @return array<string, mixed> */
@@ -35,6 +36,7 @@ final class ModuleSettings
                 'acceptStores' => (bool) ($row->kmu_assess_reviewer_accept_stores ?? true),
                 'academicReview' => (bool) ($row->kmu_assess_academic_review ?? false),
                 'anonymous' => (bool) ($row->kmu_assess_reviewer_anonymous ?? false),
+                'deviceApproval' => (bool) ($row->kmu_assess_device_approval ?? false),
             ],
             'counts' => [
                 'staff' => AdminTables::query('staff')->count(),

@@ -66,7 +66,7 @@ final class AuditLogger
             DB::table('sec_audit_chain_head')->where('id', 1)->update(['last_log_id' => $id, 'last_hash' => $hash]);
 
             return $id;
-        });
+        }, 5); // a deadlock on the chain head under load is retried, not lost
     }
 
     /**

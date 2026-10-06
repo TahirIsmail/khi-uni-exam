@@ -81,7 +81,7 @@ final class RecordAnswer
                     ->where('cand_paper_item_id', $item->id)
                     ->update($row);
             }
-        });
+        }, 3); // retried on a deadlock: a hall saving answers at once
 
         $session->update(['last_heartbeat_at' => now()]);
     }

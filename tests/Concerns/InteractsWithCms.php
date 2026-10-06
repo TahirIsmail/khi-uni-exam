@@ -283,6 +283,8 @@ trait InteractsWithCms
             // Off here so tests go through the approving authority; the shortcut has its own tests.
             'kmu_assess_reviewer_accept_stores' => 0,
             'kmu_assess_academic_review' => 1,
+            // On here so the device-approval tests see it; it is off by default (Setup turns it on).
+            'kmu_assess_device_approval' => 1,
         ], $settings));
     }
 

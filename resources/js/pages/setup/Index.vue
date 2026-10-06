@@ -34,6 +34,7 @@ const props = defineProps<{
         acceptStores: boolean;
         academicReview: boolean;
         anonymous: boolean;
+        deviceApproval: boolean;
     };
     counts: {
         staff: number;
@@ -83,6 +84,7 @@ const settingsForm = useForm({
     accept_stores: props.settings.acceptStores,
     academic_review: props.settings.academicReview,
     anonymous: props.settings.anonymous,
+    device_approval: props.settings.deviceApproval,
 });
 function saveSettings(): void {
     settingsForm.put(setup.settings.update().url, { preserveScroll: true });
@@ -134,6 +136,10 @@ const switches = [
     {
         key: 'anonymous',
         label: 'Authors do not see who reviewed their question',
+    },
+    {
+        key: 'device_approval',
+        label: 'A computer not seen before waits for the invigilator to approve it (Conduct exam → Centres) before the exam starts on it',
     },
 ] as const;
 </script>

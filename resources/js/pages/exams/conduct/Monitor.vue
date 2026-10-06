@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { AlertTriangle, Clock, Pause, Play, Power } from '@lucide/vue';
-import { ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,28 @@ import type {
 const props = defineProps<{
     examination: ExaminationDetail;
     attempts: MonitorRow[];
+    pages: { current: number; last: number; total: number };
+    summary: {
+        notStarted: number;
+        inProgress: number;
+        paused: number;
+        submitted: number;
+        offline: number;
+    };
+    search: string;
 }>();
+
+const query = ref(props.search);
+function show(pageNo: number): void {
+    router.get(
+        conduct.monitor(props.examination.id).url,
+        {
+            ...(query.value === '' ? {} : { search: query.value }),
+            ...(pageNo > 1 ? { page: pageNo } : {}),
+        },
+        { preserveState: true, replace: true },
+    );
+}
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Conduct Exam', href: conduct.index() }] },
@@ -78,11 +99,51 @@ const statusStyle: Record<AttemptStatus, 'secondary' | 'outline' | 'default'> =
         voided: 'secondary',
     };
 
-const severityStyle: Record<ProctorSeverity, 'outline' | 'secondary' | 'destructive'> = {
+const severityStyle: Record<
+    ProctorSeverity,
+    'outline' | 'secondary' | 'destructive'
+> = {
     low: 'outline',
     medium: 'secondary',
     high: 'destructive',
 };
+
+// The clock ticks here every second from the last figures the server gave, and those are fetched
+// again quietly every 20 seconds — never while a form on the page is open.
+const loadedAt = ref(Date.now());
+const now = ref(Date.now());
+watch(
+    () => props.attempts,
+    () => (loadedAt.value = Date.now()),
+);
+function left(attempt: MonitorRow): number | null {
+    if (attempt.remainingSeconds === null) {
+        return null;
+    }
+    if (attempt.status !== 'in_progress') {
+        return attempt.remainingSeconds;
+    }
+
+    return Math.max(
+        0,
+        attempt.remainingSeconds -
+            Math.floor((now.value - loadedAt.value) / 1000),
+    );
+}
+let tick: number | undefined;
+let refresh: number | undefined;
+onMounted(() => {
+    tick = window.setInterval(() => (now.value = Date.now()), 1000);
+    refresh = window.setInterval(() => {
+        if (editingTime.value === null && !document.hidden) {
+            router.reload({ only: ['attempts', 'pages', 'summary'] });
+        }
+    }, 20_000);
+});
+onBeforeUnmount(() => {
+    window.clearInterval(tick);
+    window.clearInterval(refresh);
+});
 
 function minutes(seconds: number | null): string {
     if (seconds === null) {
@@ -103,6 +164,40 @@ function minutes(seconds: number | null): string {
             :title="`Monitor — ${examination.title}`"
             :description="`${examination.reference} · ${examination.course}`"
         />
+
+        <div
+            class="grid grid-cols-2 gap-3 sm:grid-cols-5"
+            data-test="monitor-summary"
+        >
+            <div
+                v-for="[label, value] in [
+                    ['Writing', summary.inProgress],
+                    ['Submitted', summary.submitted],
+                    ['Not started', summary.notStarted],
+                    ['Paused', summary.paused],
+                    ['Writing, computer silent', summary.offline],
+                ] as const"
+                :key="label"
+                class="rounded-xl border p-3 shadow-xs"
+            >
+                <div class="text-2xl font-semibold tabular-nums">
+                    {{ value }}
+                </div>
+                <div class="text-muted-foreground text-xs">{{ label }}</div>
+            </div>
+        </div>
+
+        <form class="flex flex-wrap gap-2" @submit.prevent="show(1)">
+            <Input
+                v-model="query"
+                placeholder="Candidate number or name"
+                class="max-w-xs"
+            />
+            <Button type="submit" variant="outline">Find</Button>
+            <span class="text-muted-foreground self-center text-xs"
+                >Updates by itself every 20 seconds.</span
+            >
+        </form>
 
         <div class="overflow-x-auto rounded-xl border shadow-xs">
             <table class="w-full text-left text-sm">
@@ -163,7 +258,7 @@ function minutes(seconds: number | null): string {
                             }}</Badge>
                         </td>
                         <td class="px-3 py-2 tabular-nums">
-                            {{ minutes(attempt.remainingSeconds) }}
+                            {{ minutes(left(attempt)) }}
                             <template v-if="editingTime === attempt.id">
                                 <div class="mt-1 grid gap-1">
                                     <Input
@@ -274,6 +369,31 @@ function minutes(seconds: number | null): string {
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <div
+            v-if="pages.last > 1"
+            class="flex items-center gap-2 text-sm"
+            data-test="monitor-pages"
+        >
+            <Button
+                size="sm"
+                variant="outline"
+                :disabled="pages.current === 1"
+                @click="show(pages.current - 1)"
+                >Previous</Button
+            >
+            <span class="text-muted-foreground"
+                >Page {{ pages.current }} of {{ pages.last }} ·
+                {{ pages.total }} candidates</span
+            >
+            <Button
+                size="sm"
+                variant="outline"
+                :disabled="pages.current === pages.last"
+                @click="show(pages.current + 1)"
+                >Next</Button
+            >
         </div>
     </div>
 </template>

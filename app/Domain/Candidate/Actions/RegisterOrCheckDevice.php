@@ -5,6 +5,7 @@ namespace App\Domain\Candidate\Actions;
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Candidate\Models\CandidateDevice;
 use App\Domain\Delivery\Models\CandidateExam;
+use App\Support\Cms\CmsSettings;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -15,14 +16,18 @@ use Illuminate\Support\Facades\DB;
  */
 final class RegisterOrCheckDevice
 {
-    public function __construct(private readonly AuditLogger $audit) {}
+    public function __construct(
+        private readonly AuditLogger $audit,
+        private readonly CmsSettings $settings,
+    ) {}
 
     /**
      * @return array{status: 'approved'|'pending'|'skipped', device: ?CandidateDevice}
      */
     public function __invoke(CandidateExam $attempt, string $rawFingerprint): array
     {
-        if (! config('exam.delivery.device_approval_required')) {
+        // Switched on under Setup (and not switched off for the whole server).
+        if (! config('exam.delivery.device_approval_required') || ! $this->settings->deviceApproval()) {
             return ['status' => 'skipped', 'device' => null];
         }
 

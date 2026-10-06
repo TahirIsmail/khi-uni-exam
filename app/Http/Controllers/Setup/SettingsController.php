@@ -33,6 +33,7 @@ final class SettingsController extends Controller
             'accept_stores' => ['boolean'],
             'academic_review' => ['boolean'],
             'anonymous' => ['boolean'],
+            'device_approval' => ['boolean'],
         ]));
 
         return $this->done('Settings saved.');
