@@ -52,7 +52,7 @@ class ReviewController extends Controller
     }
 
     /** One question: read it, see what other reviewers said, and say what you think. */
-    public function show(Request $request, Question $question, QuestionVersion $version, VersionContentReader $reader, ReviewerPool $pool): Response
+    public function show(Request $request, Question $question, QuestionVersion $version, VersionContentReader $reader, ReviewerPool $pool, AssignReviewers $assignments): Response
     {
         $this->authoriseVersion($request, $question, $version);
         $user = $request->user('web');
@@ -83,27 +83,32 @@ class ReviewController extends Controller
             'version' => $this->editorData->version($version),
             'isAuthor' => $isAuthor,
             'can' => [
-                'review' => $mayReview && $this->board->forVersion($user, $version, true)['myAssignmentId'] !== null,
-                'prehoc' => $user->can('qbank.prehoc.record'),
+                // A review they were asked for, or the approver's own review, which they take on.
+                'review' => $mayReview && ($this->board->forVersion($user, $version, true)['myAssignmentId'] !== null
+                    || $assignments->mayTakeOn($user, $version)),
+                'prehoc' => $user->can('qbank.prehoc.record') || $mayApprove,
                 'approve' => $mayApprove,
                 'assign' => $mayAssign,
                 // An approver looking at their own question: somebody else has to decide on it.
                 'approveOwn' => $isAuthor && $user->can('qbank.question.approve'),
             ],
             'reviewers' => $reviewers,
+            // Previous / next in the approver's list, so they need not open the questions one by one.
+            'neighbours' => $mayApprove ? $this->board->approvalNeighbours($user, $this->branchId($request), $version) : null,
             ...$this->board->forVersion($user, $version, $this->board->namesVisibleTo($user, $version)),
             ...$this->editorData->lookups(),
         ]);
     }
 
     /** A reviewer's outcome: request changes, or a review with a decision and the checklist. */
-    public function store(Request $request, Question $question, QuestionVersion $version, SubmitReview $submit): RedirectResponse
+    public function store(Request $request, Question $question, QuestionVersion $version, SubmitReview $submit, AssignReviewers $assignments): RedirectResponse
     {
         $this->authoriseVersion($request, $question, $version);
         $this->authoriseReviewer($request);
 
         $input = $request->validate([
-            'assignment_id' => ['required', 'integer', 'min:1'],
+            // None: the approver reviews it without having been asked.
+            'assignment_id' => ['nullable', 'integer', 'min:1'],
             'outcome' => ['required', 'in:reviewed,changes_requested'],
             'decision_id' => ['nullable', 'integer', 'min:1', 'max:255'],
             'comments' => ['nullable', 'string', 'max:5000'],
@@ -115,10 +120,9 @@ class ReviewController extends Controller
             'difficulty_level_id' => ['nullable', 'integer', 'min:1', 'max:255'],
         ]);
 
-        $assignment = ReviewAssignment::query()
-            ->where('version_id', $version->id)
-            ->whereKey((int) $input['assignment_id'])
-            ->firstOrFail();
+        $assignment = isset($input['assignment_id'])
+            ? ReviewAssignment::query()->where('version_id', $version->id)->whereKey((int) $input['assignment_id'])->firstOrFail()
+            : $assignments->takeOn($request->user('web'), $version);
 
         $review = $submit($request->user('web'), $assignment, new ReviewInput(
             outcome: (string) $input['outcome'],
@@ -136,7 +140,16 @@ class ReviewController extends Controller
             default => __('Your review was recorded.'),
         }]);
 
-        return to_route('reviews.index');
+        if (isset($input['assignment_id'])) {
+            return to_route('reviews.index');
+        }
+
+        // The approver's own review: on to the next question in their list, if any is left.
+        $next = $this->board->nextToDecide($request->user('web'), $this->branchId($request), $version);
+
+        return $next === null
+            ? to_route('approvals.index')
+            : to_route('reviews.show', [$next['questionId'], $next['versionId']]);
     }
 
     /** Give this question to a particular reviewer. */
@@ -171,11 +184,12 @@ class ReviewController extends Controller
         return back();
     }
 
-    /** Reviewers of either level use the same queue and workspace. */
+    /** Reviewers of either level, and approvers (who review too), use the same queue and workspace. */
     private function authoriseReviewer(Request $request): void
     {
         abort_unless(
-            $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic'),
+            $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic')
+                || $request->user('web')->can('qbank.question.approve'),
             403,
             'You do not review questions.',
         );

@@ -458,7 +458,7 @@ test('criterion 11: a user limited to one programme cannot see, search, open or 
     app(AccessControl::class)->forget($dptUser);
 
     // The search shows only their own programme's questions.
-    $this->actingAs($dptUser)->get('/questions')->assertOk()->assertInertia(fn ($page) => $page
+    $this->actingAs($dptUser)->get('/questions?status=all')->assertOk()->assertInertia(fn ($page) => $page
         ->where('questions.total', 1)
         ->where('questions.data.0.id', $dptVersion->question_id));
 

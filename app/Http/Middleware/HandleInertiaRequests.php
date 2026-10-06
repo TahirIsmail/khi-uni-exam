@@ -49,7 +49,7 @@ class HandleInertiaRequests extends Middleware
                     'viewQuestions' => $request->user('web')->can('qbank.question.view'),
                     'createQuestions' => $request->user('web')->can('qbank.question.create'),
                     'importQuestions' => $request->user('web')->can('qbank.import.run'),
-                    'reviewQuestions' => $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic'),
+                    'reviewQuestions' => $request->user('web')->can('qbank.review.perform') || $request->user('web')->can('qbank.review.academic') || $request->user('web')->can('qbank.question.approve'),
                     'approveQuestions' => $request->user('web')->can('qbank.question.approve'),
                     'viewExams' => $request->user('web')->can('exam.access'),
                     'createExams' => $request->user('web')->can('exam.create'),

@@ -40,11 +40,23 @@ final class ReviewLevels
         return $this->single() ? 'Review' : $stage->label();
     }
 
-    /** Whether this user holds the right to review at this level, for this course. */
+    /**
+     * Whether this user holds the right to review at this level, for this course.
+     *
+     * KMU (2026-10-06): the approving authority reviews, an author never does. Somebody who writes
+     * questions but cannot approve them is no reviewer, whatever review right their role holds; with
+     * one level, an approver may review without holding a review right of their own.
+     */
     public function mayReview(User $user, ScopeTarget $target, ReviewStage $stage): bool
     {
+        $approver = $this->access->allows($user, 'qbank.question.approve', $target);
+        if (! $approver && $this->access->allows($user, 'qbank.question.create', $target)) {
+            return false;
+        }
+
         if ($this->single()) {
-            return $this->access->allows($user, ReviewStage::Subject->permission(), $target)
+            return $approver
+                || $this->access->allows($user, ReviewStage::Subject->permission(), $target)
                 || $this->access->allows($user, ReviewStage::Academic->permission(), $target);
         }
 

@@ -34,7 +34,7 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             // What is waiting for this person: their own reviews, and questions to decide about.
             'work' => [
-                'myReviews' => $branchId !== null && ($user->can('qbank.review.perform') || $user->can('qbank.review.academic'))
+                'myReviews' => $branchId !== null && ($user->can('qbank.review.perform') || $user->can('qbank.review.academic') || $user->can('qbank.question.approve'))
                     ? ReviewAssignment::query()->where('reviewer_id', $user->id)->where('branch_id', $branchId)->where('status', 'open')->count()
                     : null,
                 'toApprove' => $branchId !== null && $user->can('qbank.question.approve')

@@ -33,7 +33,6 @@ final class Filing
         $message = match (true) {
             $course === null => 'Choose the course.',
             $course['status'] === 'retired' => 'That course is retired, so no new questions can be filed under it.',
-            $content->nodeId === null => 'Choose the subject of this module.',
             default => 'Choose a subject or topic of this course that questions can be added to.',
         };
 

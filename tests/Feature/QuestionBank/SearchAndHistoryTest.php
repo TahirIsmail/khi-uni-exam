@@ -159,7 +159,7 @@ test('questions with the same text can be found, and archived ones stay out of t
 
     Question::query()->latest('id')->first()->update(['is_archived' => true, 'archived_at' => now()]);
 
-    $this->actingAs($this->author)->get('/questions')
+    $this->actingAs($this->author)->get('/questions?status=all')
         ->assertInertia(fn ($page) => $page->where('questions.total', 2));
     $this->actingAs($this->author)->get('/questions?archived=1')
         ->assertInertia(fn ($page) => $page->where('questions.total', 1));

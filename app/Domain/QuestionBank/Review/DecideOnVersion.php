@@ -21,7 +21,7 @@ use Illuminate\Validation\ValidationException;
  *   Accept, Retain in QBank .. approved and stored in the QBank (ApproveVersion)
  *   Review ................... reviewed again: a new round, the reviewers asked afresh
  *   Revise ................... back to its author to change it
- *   Remove / Discard ......... archived with the reason (RejectVersion)
+ *   Remove / Discard ......... archived, with the reason if one is given (RejectVersion)
  *
  * The approver's cognitive and difficulty level are the ones the question keeps when it is stored.
  */
@@ -44,7 +44,7 @@ final class DecideOnVersion
 
         return match ($decision->code) {
             'accept', 'retain' => ($this->approve)($approver, $version, $input),
-            'remove' => ($this->reject)($approver, $version, (string) $input->reason),
+            'remove' => ($this->reject)($approver, $version, $input->reason),
             'revise' => $this->backToAuthor($approver, $version, (string) $input->reason),
             'review' => $this->reviewAgain($approver, $version, (string) $input->reason),
             default => throw ValidationException::withMessages(['decision_id' => 'That decision cannot be taken here.']),

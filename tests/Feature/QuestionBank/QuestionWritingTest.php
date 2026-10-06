@@ -371,13 +371,18 @@ test('the question list shows the newest version of each question, with filters'
     $mine = QuestionVersion::query()->orderBy('id')->first();
     $this->actingAs($author)->post("/questions/{$mine->question_id}/versions/{$mine->id}/submit");
 
+    // KMU: the list opens on what is stored in the QBank; All shows every status.
     $this->actingAs($author)->get('/questions')->assertInertia(fn ($page) => $page
+        ->where('filters.status', 'accept')
+        ->where('questions.total', 0));
+    $this->actingAs($author)->get('/questions?status=all')->assertInertia(fn ($page) => $page
         ->component('qbank/Questions')
+        ->where('filters.status', '')
         ->where('questions.total', 2)
         // KMU's statuses, in its order: "Submitted for Review" covers submitted and under review.
         ->where('statuses', fn ($statuses) => collect($statuses)->pluck('count', 'label')->all() === [
             'Draft' => 1, 'Submitted for Review' => 1, 'Review' => 0, 'Revise' => 0,
-            'Accept' => 0, 'Retain in QBank' => 0, 'Remove / Discard' => 0,
+            'Accept / QBank' => 0, 'Retain in QBank' => 0, 'Remove / Discard' => 0,
         ])
         ->where('questions.data.0.reference', fn ($ref) => str_starts_with((string) $ref, 'Q-')));
 

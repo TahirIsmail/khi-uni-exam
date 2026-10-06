@@ -204,7 +204,9 @@ final class SubmitReview
         if (! $input->hasPrehocValues()) {
             return null;
         }
-        if (! $this->access->allows($reviewer, 'qbank.prehoc.record', $this->target($version))) {
+        // The approving authority settles these levels when they decide, so they may record them here too.
+        if (! $this->access->allows($reviewer, 'qbank.prehoc.record', $this->target($version))
+            && ! $this->access->allows($reviewer, 'qbank.question.approve', $this->target($version))) {
             throw new AuthorizationException('You cannot record a pre-hoc assessment.');
         }
         if ($input->estimatedP !== null && ($input->estimatedP < 0 || $input->estimatedP > 1)) {

@@ -92,17 +92,15 @@ final class RowParser
             }
         }
 
-        // The subject or topic: by name under the course, else the file's default. MBBS needs a
-        // subject; a BDS or DPT question with none is filed on the course as a whole.
+        // The subject or topic: by name under the course, else the file's default. A question with
+        // none is filed on the module or course as a whole; an MBBS subject that is named must exist.
         $nodeId = null;
         if ($course !== null) {
             $placeGiven = $value('topic') !== '' ? $value('topic') : $value('subject');
             $nodeId = $this->findTopic($placeGiven, (int) $courseId) ?? ($placeGiven === '' ? ($defaults['node_id'] ?? null) : null);
 
-            if ($nodeId === null && $modular) {
-                $errors['subject'][] = $placeGiven === ''
-                    ? 'No subject given, and no default chosen for the file.'
-                    : $course['label'].' has no subject "'.$placeGiven.'". Add it in Program Structure, or check the spelling.';
+            if ($nodeId === null && $modular && $placeGiven !== '') {
+                $errors['subject'][] = $course['label'].' has no subject "'.$placeGiven.'". Add it in Program Structure, or check the spelling.';
             } elseif ($nodeId === null && $value('topic') !== '') {
                 $errors['topic'][] = 'The course has no topic "'.$value('topic').'" that takes questions.';
             } elseif ($nodeId === null && $placeGiven !== '') {

@@ -44,6 +44,7 @@ beforeEach(function () {
 
     $authorRole = $this->cmsRole('Faculty');
     $this->cmsGrant($authorRole, 'qbank_questions', 'view', 'add');
+    $this->authorRole = $authorRole;
     $this->author = $this->staffUser([$authorRole], $this->branch);
 
     $reviewerRole = $this->cmsRole('Reviewer');
@@ -476,8 +477,6 @@ test('turning a question down archives it with the reason', function () {
     ]));
 
     $url = "/questions/{$version->question_id}/versions/{$version->id}/reject";
-    $this->actingAs($this->approver)->from('/approvals')->post($url, ['reason' => 'too short'])->assertSessionHasErrors('reason');
-
     $this->actingAs($this->approver)->post($url, ['reason' => 'The key is not defensible and the topic is already covered twice.'])
         ->assertRedirect('/approvals');
 
@@ -1086,7 +1085,7 @@ test('with one level of review, a question where the reviewers disagree still wa
     expect($assignments)->toHaveCount(2);
 
     foreach ($assignments as $i => $assignment) {
-        $user = $assignment->reviewer_id === $this->reviewer->id ? $this->reviewer : $this->academic;
+        $user = collect([$this->reviewer, $this->academic, $this->approver])->firstWhere('id', $assignment->reviewer_id);
         $this->actingAs($user)->post("/questions/{$version->question_id}/versions/{$version->id}/review", reviewPayload([
             'assignment_id' => $assignment->id,
             'decision_id' => (int) PrehocDecision::query()->where('code', $i === 0 ? 'accept' : 'review')->value('id'),
@@ -1136,9 +1135,9 @@ test('the approver is not offered to hand the question to a reviewer, and is tol
 
     $this->actingAs($this->approver)->get("/questions/{$version->question_id}/versions/{$version->id}/review")
         ->assertOk()->assertInertia(fn ($page) => $page
-            ->where('can.approve', true)
-            ->where('can.assign', false)
-            ->where('can.approveOwn', false));
+        ->where('can.approve', true)
+        ->where('can.assign', false)
+        ->where('can.approveOwn', false));
 
     // The preview the question list opens points them to the review screen.
     $this->actingAs($this->approver)->get("/questions/{$version->question_id}/versions/{$version->id}")
@@ -1160,17 +1159,12 @@ test('several questions ticked in the list take one decision, and those that can
         ->and($first->fresh()->decision_code)->toBe('retain')
         ->and($second->fresh()->status)->toBe(VersionStatus::Active);
 
-    // Accepting again is skipped (already in the QBank); removing them needs a reason, then works.
+    // Accepting again is skipped (already in the QBank); removing them works, with or without a reason.
     $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
         'action' => 'accept',
         'version_ids' => [$first->id],
     ])->assertRedirect('/questions');
     expect($first->fresh()->status)->toBe(VersionStatus::Active);
-
-    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
-        'action' => 'remove',
-        'version_ids' => [$first->id, $second->id],
-    ])->assertSessionHasErrors('reason');
 
     $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
         'action' => 'remove',
@@ -1188,11 +1182,22 @@ test('an author removes their own drafts in bulk, but not somebody else\'s quest
     $draft = QuestionVersion::query()->latest('id')->firstOrFail();
     $sent = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
 
+    // Deleting needs the kmu-cms "Delete" right of Question Bank → Questions.
+    $this->actingAs($this->author)->from('/questions')->post('/questions/bulk', [
+        'action' => 'remove',
+        'version_ids' => [$draft->id],
+    ])->assertRedirect('/questions');
+    expect($draft->fresh()->status)->toBe(VersionStatus::Draft);
+    $this->actingAs($this->author)->get('/questions')->assertInertia(fn ($page) => $page->where('canDelete', false));
+
+    $this->cmsGrant($this->authorRole, 'qbank_questions', 'delete');
+    app(AccessControl::class)->forget($this->author);
+    $this->actingAs($this->author)->get('/questions')->assertInertia(fn ($page) => $page->where('canDelete', true));
+
     $this->actingAs($this->author)->from('/questions')->post('/questions/bulk', [
         'action' => 'remove',
         'version_ids' => [$draft->id, $sent->id],
-        'reason' => 'Written by mistake, not needed.',
-    ])->assertRedirect('/questions');
+    ])->assertSessionHasNoErrors()->assertRedirect('/questions');
 
     expect($draft->fresh()->status)->toBe(VersionStatus::Archived)
         ->and($sent->fresh()->status)->toBe(VersionStatus::Submitted);
@@ -1203,4 +1208,101 @@ test('an author removes their own drafts in bulk, but not somebody else\'s quest
         'version_ids' => [$sent->id],
     ])->assertRedirect('/questions');
     expect($sent->fresh()->status)->toBe(VersionStatus::Submitted);
+});
+
+/* KMU (2026-10-06): only the approving authority reviews; an author never does. */
+test('an author holding a review right is no reviewer, and the approver is asked instead', function () {
+    $this->cmsGrant($this->authorRole, 'qbank_review', 'view');
+    $otherAuthor = $this->staffUser([$this->authorRole], $this->branch);
+    $this->cmsGrant($this->reviewerRole, 'qbank_approve', 'view');
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviews_required' => 3]);
+
+    $version = sendForReview();
+
+    $asked = ReviewAssignment::query()->where('version_id', $version->id)->pluck('reviewer_id')->all();
+    expect($asked)->not->toContain($otherAuthor->id)
+        ->and($asked)->toContain($this->approver->id);
+
+    $this->actingAs($otherAuthor)->get("/questions/{$version->question_id}/versions/{$version->id}/review")->assertForbidden();
+});
+
+test('the approver reviews a question they were not asked to review', function () {
+    $this->cmsExamSettings(['kmu_assess_academic_review' => 0, 'kmu_assess_reviewer_accept_stores' => 0]);
+    $version = sendForReview();
+    ReviewAssignment::query()->where('version_id', $version->id)->where('reviewer_id', $this->approver->id)->delete();
+
+    $page = "/questions/{$version->question_id}/versions/{$version->id}/review";
+    $this->actingAs($this->approver)->get($page)->assertInertia(fn ($page) => $page
+        ->where('can.review', true)
+        ->where('can.approve', true)
+        ->where('myAssignmentId', null));
+
+    $this->actingAs($this->approver)->post($page, reviewPayload(['assignment_id' => null]))
+        ->assertSessionHasNoErrors()->assertRedirect('/approvals');
+
+    $review = Review::query()->where('version_id', $version->id)->where('reviewer_id', $this->approver->id)->sole();
+    expect($review->outcome)->toBe('reviewed');
+
+    // Once is enough: the review is done, so it is not offered again.
+    $this->actingAs($this->approver)->get($page)->assertInertia(fn ($page) => $page->where('can.review', false));
+    $this->actingAs($this->approver)->post($page, reviewPayload(['assignment_id' => null]))->assertForbidden();
+});
+
+test('the approver goes from one question to the next in their list', function () {
+    $first = sendForReview();
+    $second = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
+    $third = sendForReview(['stem' => '<p>A 30-year-old man has pleuritic chest pain after a long flight.</p>']);
+    $url = fn (QuestionVersion $version): string => "/questions/{$version->question_id}/versions/{$version->id}/review";
+
+    $this->actingAs($this->approver)->get($url($second))->assertInertia(fn ($page) => $page
+        ->where('neighbours.previous.versionId', $first->id)
+        ->where('neighbours.next.versionId', $third->id)
+        ->where('neighbours.position', 2)
+        ->where('neighbours.total', 3));
+
+    $this->actingAs($this->approver)->get($url($first))->assertInertia(fn ($page) => $page
+        ->where('neighbours.previous', null)
+        ->where('neighbours.next.versionId', $second->id));
+
+    // Deciding goes straight on to the next question, and the decided one leaves the list.
+    $accept = (int) PrehocDecision::query()->where('code', 'accept')->value('id');
+    $this->actingAs($this->approver)->post("/questions/{$first->question_id}/versions/{$first->id}/decide", ['decision_id' => $accept])
+        ->assertRedirect($url($second));
+    $this->actingAs($this->approver)->get($url($second))->assertInertia(fn ($page) => $page
+        ->where('neighbours.previous', null)
+        ->where('neighbours.position', 1)
+        ->where('neighbours.total', 2));
+
+    // After the last one in the list, the first still waiting; when none is left, the list itself.
+    $this->actingAs($this->approver)->post("/questions/{$third->question_id}/versions/{$third->id}/reject", [])
+        ->assertRedirect($url($second));
+    $this->actingAs($this->approver)->post("/questions/{$second->question_id}/versions/{$second->id}/decide", ['decision_id' => $accept])
+        ->assertRedirect('/approvals');
+
+    // The author sees no list to go through.
+    $this->actingAs($this->author)->get($url($second))->assertInertia(fn ($page) => $page->where('neighbours', null));
+});
+
+/* KMU (2026-10-06): the Controller has the whole QBank, so they delete any question, at any step. */
+test('somebody who may edit and delete any question deletes one already in the QBank', function () {
+    $version = sendForReview();
+    $this->actingAs($this->approver)->post("/questions/{$version->question_id}/versions/{$version->id}/decide", [
+        'decision_id' => (int) PrehocDecision::query()->where('code', 'accept')->value('id'),
+    ])->assertRedirect();
+    expect($version->fresh()->status)->toBe(VersionStatus::Active);
+
+    $controllerRole = $this->cmsRole('Controller');
+    $this->cmsGrant($controllerRole, 'qbank_questions', 'view', 'edit');
+    $controller = $this->staffUser([$controllerRole], $this->branch);
+
+    // Editing any question is not enough: the Delete right is asked for as well.
+    $this->actingAs($controller)->from('/questions')->post('/questions/bulk', ['action' => 'remove', 'version_ids' => [$version->id]]);
+    expect($version->fresh()->status)->toBe(VersionStatus::Active);
+
+    $this->cmsGrant($controllerRole, 'qbank_questions', 'delete');
+    app(AccessControl::class)->forget($controller);
+    $this->actingAs($controller)->from('/questions')->post('/questions/bulk', ['action' => 'remove', 'version_ids' => [$version->id]])
+        ->assertSessionHasNoErrors()->assertRedirect('/questions');
+    expect($version->fresh()->status)->toBe(VersionStatus::Archived)
+        ->and(Question::query()->findOrFail($version->question_id)->is_archived)->toBeTrue();
 });

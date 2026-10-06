@@ -15,6 +15,7 @@ use App\Support\Cms\CmsAcademic;
 use App\Support\Cms\CmsSettings;
 use App\Support\Html\QuestionHtml;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -100,20 +101,11 @@ final class ReviewBoard
             ->when(! $single, fn ($query) => $query->where('qb_reviews.stage', $stage->value))
             ->whereColumn('qb_reviews.round', 'qb_question_versions.review_round');
 
-        return QuestionVersion::query()
-            ->where('branch_id', $branchId)
-            ->whereIn('status', $show === 'approved' ? [VersionStatus::Approved] : [VersionStatus::Submitted, VersionStatus::UnderReview])
-            ->when($courseIds !== null, fn ($query) => $query->whereIn('course_id', $courseIds ?? []))
+        return $this->approvalQuery($approver, $branchId, $show, $courseIds)
             ->select('qb_question_versions.*')
             ->selectSub($reviewsIn(ReviewStage::Subject), 'subject_in')
             ->selectSub($reviewsIn(ReviewStage::Academic), 'academic_in')
-            // The approving authority decides without waiting for the reviewers, so everything in
-            // review is ready for them — except their own questions, which somebody else decides.
-            ->when($show === 'ready', fn ($query) => $query->where('author_id', '<>', $approver->id))
-            ->when($show === 'waiting', fn ($query) => $query->where('author_id', '=', $approver->id))
             ->with(['type:id,name', 'question:id,public_ref', 'reviews'])
-            ->orderBy('submitted_at')
-            ->orderBy('id')
             ->paginate(20)
             ->withQueryString()
             ->through(fn (QuestionVersion $version): array => $this->presentForApproval(
@@ -121,6 +113,81 @@ final class ReviewBoard
                 $this->approval->reviewsOfRound($version, $version->reviews),
                 $version->author_id === $approver->id,
             ));
+    }
+
+    /**
+     * The questions before and after this one in the approver's "Ready to decide" list, so they go
+     * from one question to the next without going back to the list. A question that is not in the
+     * list (decided already, or their own) is followed by the first one still waiting.
+     *
+     * @return array{previous: array{questionId: int, versionId: int, reference: string}|null, next: array{questionId: int, versionId: int, reference: string}|null, position: int|null, total: int}
+     */
+    public function approvalNeighbours(User $approver, int $branchId, QuestionVersion $version): array
+    {
+        $queue = $this->approvalQuery($approver, $branchId, 'ready', $this->accessibleCourseIds($approver, $branchId))
+            ->with('question:id,public_ref')
+            ->get(['id', 'question_id', 'version_no'])
+            ->map(fn (QuestionVersion $row): array => [
+                'questionId' => $row->question_id,
+                'versionId' => $row->id,
+                'reference' => $row->question->public_ref.' v'.$row->version_no,
+            ])
+            ->values()
+            ->all();
+
+        $at = array_search($version->id, array_column($queue, 'versionId'), true);
+
+        return [
+            'previous' => $at === false || $at === 0 ? null : $queue[$at - 1],
+            'next' => $at === false ? ($queue[0] ?? null) : ($queue[$at + 1] ?? null),
+            'position' => $at === false ? null : $at + 1,
+            'total' => count($queue),
+        ];
+    }
+
+    /**
+     * Where the approver goes once they have decided about a question: the one after it in their
+     * list, else the first still waiting; null when nothing is left.
+     *
+     * @return array{questionId: int, versionId: int, reference: string}|null
+     */
+    public function nextToDecide(User $approver, int $branchId, QuestionVersion $decided): ?array
+    {
+        $queue = fn (): Builder => $this->approvalQuery($approver, $branchId, 'ready', $this->accessibleCourseIds($approver, $branchId))
+            ->where('qb_question_versions.id', '<>', $decided->id)
+            ->with('question:id,public_ref');
+
+        $after = $decided->submitted_at === null ? null : $queue()
+            ->where(fn ($query) => $query->where('submitted_at', '>', $decided->submitted_at)
+                ->orWhere(fn ($query) => $query->where('submitted_at', $decided->submitted_at)->where('qb_question_versions.id', '>', $decided->id)))
+            ->first();
+        $next = $after ?? $queue()->first();
+
+        return $next instanceof QuestionVersion ? [
+            'questionId' => $next->question_id,
+            'versionId' => $next->id,
+            'reference' => $next->question->public_ref.' v'.$next->version_no,
+        ] : null;
+    }
+
+    /**
+     * The approver's list, in the order it is shown.
+     *
+     * @param  list<int>|null  $courseIds
+     * @return Builder<QuestionVersion>
+     */
+    private function approvalQuery(User $approver, int $branchId, string $show, ?array $courseIds): Builder
+    {
+        return QuestionVersion::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('status', $show === 'approved' ? [VersionStatus::Approved] : [VersionStatus::Submitted, VersionStatus::UnderReview])
+            ->when($courseIds !== null, fn ($query) => $query->whereIn('course_id', $courseIds ?? []))
+            // The approving authority decides without waiting for the reviewers, so everything in
+            // review is ready for them — except their own questions, which somebody else decides.
+            ->when($show === 'ready', fn ($query) => $query->where('author_id', '<>', $approver->id))
+            ->when($show === 'waiting', fn ($query) => $query->where('author_id', '=', $approver->id))
+            ->orderBy('submitted_at')
+            ->orderBy('id');
     }
 
     /**

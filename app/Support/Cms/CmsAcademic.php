@@ -367,9 +367,9 @@ final class CmsAcademic
     }
 
     /**
-     * Where a question is filed: under a subject or topic ($nodeId), or — for a BDS or DPT course —
-     * on the course as a whole ($nodeId null). A modular programme's question (MBBS) always names a
-     * subject of its module. Null when that place cannot take questions.
+     * Where a question is filed: under a subject or topic ($nodeId), or on the module or course as a
+     * whole ($nodeId null — KMU: Islamiyat and other non-modular subjects of MBBS have no subject).
+     * Null when that place cannot take questions.
      *
      * @return array{branch_id: int, programme_id: int, professional_id: int|null, term_id: int|null, course_id: int, node_id: int|null, discipline_id: int|null}|null
      */
@@ -380,7 +380,7 @@ final class CmsAcademic
         }
 
         $course = $this->placeOfCourse($courseId);
-        if ($course === null || $course['status'] === 'retired' || $this->isModular($course['programme_id'])) {
+        if ($course === null || $course['status'] === 'retired') {
             return null;
         }
 

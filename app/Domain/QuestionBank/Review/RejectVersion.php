@@ -14,10 +14,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Remove / Discard: the version is archived with a reason, and the open reviews are called off.
- * An approver may remove a question at any step, even once it is in the QBank; an author may discard
- * their own draft. Nothing is deleted — the question, its versions and the reviews stay readable, so
- * the reason a question was never used can always be found.
+ * Remove / Discard: the version is archived, with a reason when one is given (KMU, 2026-10-06: it is
+ * optional), and the open reviews are called off. An approver may remove a question at any step, even
+ * once it is in the QBank, as their decision on it. Otherwise it is a delete, which needs the kmu-cms
+ * "Delete" right of Question Bank → Questions (KMU, 2026-10-06: Author and Controller): an author
+ * deletes their own drafts, somebody who may edit any question (the Controller) any question.
+ *
+ * Even a delete keeps the rows: the question leaves the QBank and every search, but it, its versions
+ * and the reviews stay readable under Remove / Discard, so the reason it went can always be found.
  */
 final class RejectVersion
 {
@@ -27,22 +31,20 @@ final class RejectVersion
         private readonly AuditLogger $audit,
     ) {}
 
-    public function __invoke(User $approver, QuestionVersion $version, string $reason): QuestionVersion
+    public function __invoke(User $approver, QuestionVersion $version, ?string $reason = null): QuestionVersion
     {
         $target = new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id);
-        $editRight = $version->author_id === $approver->id ? 'qbank.question.edit_own' : 'qbank.question.edit_any';
-        $mayDiscardDraft = $version->isEditable() && $this->access->allows($approver, $editRight, $target);
-        if (! $mayDiscardDraft && ! $this->access->allows($approver, 'qbank.question.approve', $target)) {
-            throw new AuthorizationException('You cannot remove questions of this course.');
+        $mayDelete = $this->access->allows($approver, 'qbank.question.archive', $target)
+            && ($this->access->allows($approver, 'qbank.question.edit_any', $target)
+                || ($version->author_id === $approver->id && $version->isEditable() && $this->access->allows($approver, 'qbank.question.edit_own', $target)));
+        if (! $mayDelete && ! $this->access->allows($approver, 'qbank.question.approve', $target)) {
+            throw new AuthorizationException('You cannot delete this question.');
         }
         if (! $version->status->canMoveTo(VersionStatus::Archived)) {
             throw ValidationException::withMessages(['status' => 'This question has already been removed or replaced.']);
         }
 
-        $reason = trim($reason);
-        if (mb_strlen($reason) < 10) {
-            throw ValidationException::withMessages(['reason' => 'Say why this question cannot be used (at least 10 characters).']);
-        }
+        $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
         return DB::transaction(function () use ($approver, $version, $reason): QuestionVersion {
             $this->assignments->cancelOpenFor($version, $approver, 'The question was turned down.');

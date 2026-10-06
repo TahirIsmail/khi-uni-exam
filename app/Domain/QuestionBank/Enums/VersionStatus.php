@@ -66,7 +66,8 @@ enum VersionStatus: string
             'submitted' => 'Submitted for Review',
             'review' => 'Review',
             'revise' => 'Revise',
-            'accept' => 'Accept',
+            // Accepted is stored in the question bank; the label says so (KMU, 2026-10-06).
+            'accept' => 'Accept / QBank',
             'retain' => 'Retain in QBank',
             'removed' => 'Remove / Discard',
         ];
@@ -77,7 +78,7 @@ enum VersionStatus: string
     {
         return match ($status) {
             self::Submitted, self::UnderReview => $decision === 'review' ? 'Review' : 'Submitted for Review',
-            self::Approved, self::Active => $decision === 'retain' ? 'Retain in QBank' : 'Accept',
+            self::Approved, self::Active => $decision === 'retain' ? 'Retain in QBank' : 'Accept / QBank',
             default => $status->label(),
         };
     }
@@ -92,7 +93,7 @@ enum VersionStatus: string
             self::Draft => 'Draft',
             self::Submitted, self::UnderReview => 'Submitted for Review',
             self::ChangesRequested => 'Revise',
-            self::Approved, self::Active => 'Accept',
+            self::Approved, self::Active => 'Accept / QBank',
             self::OnHold => 'Review',
             self::Superseded => 'Replaced by a newer version',
             self::Retired, self::Archived => 'Remove / Discard',

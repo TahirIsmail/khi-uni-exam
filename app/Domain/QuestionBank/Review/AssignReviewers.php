@@ -5,6 +5,7 @@ namespace App\Domain\QuestionBank\Review;
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Identity\Authorization\AccessControl;
 use App\Domain\Identity\Authorization\ScopeTarget;
+use App\Domain\QuestionBank\Enums\VersionStatus;
 use App\Domain\QuestionBank\Models\QuestionVersion;
 use App\Domain\QuestionBank\Models\ReviewAssignment;
 use App\Models\User;
@@ -105,6 +106,29 @@ final class AssignReviewers
         return $this->create($version, $reviewer, $actor, $stage, automatic: false);
     }
 
+    /**
+     * KMU: the approving authority reviews the question themselves, without being asked first. With
+     * one level of review, an approver who has not reviewed this round takes the review on.
+     */
+    public function mayTakeOn(User $approver, QuestionVersion $version): bool
+    {
+        return $this->levels->single()
+            && in_array($version->status, [VersionStatus::Submitted, VersionStatus::UnderReview], true)
+            && $this->access->allows($approver, 'qbank.question.approve', $this->target($version))
+            && $this->pool->allows($approver, $version)
+            && ! $this->currentRound($version)->contains('reviewer_id', $approver->id);
+    }
+
+    /** The approver's own review of the question, assigned by themselves (see mayTakeOn). */
+    public function takeOn(User $approver, QuestionVersion $version): ReviewAssignment
+    {
+        if (! $this->mayTakeOn($approver, $version)) {
+            throw new AuthorizationException('You cannot review this question.');
+        }
+
+        return $this->create($version, $approver, $approver, ReviewStage::Subject, automatic: false);
+    }
+
     /** Takes the job back, so it can be given to somebody else. */
     public function cancel(User $actor, ReviewAssignment $assignment, string $reason): ReviewAssignment
     {
@@ -189,15 +213,15 @@ final class AssignReviewers
 
     private function authoriseAssigning(User $actor, QuestionVersion $version): void
     {
-        $allowed = $this->access->allows($actor, 'qbank.review.assign', new ScopeTarget(
-            $version->branch_id,
-            $version->programme_id,
-            $version->professional_id,
-            $version->course_id,
-        ));
+        $allowed = $this->access->allows($actor, 'qbank.review.assign', $this->target($version));
 
         if (! $allowed) {
             throw new AuthorizationException('You cannot assign reviewers for this question.');
         }
+    }
+
+    private function target(QuestionVersion $version): ScopeTarget
+    {
+        return new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id);
     }
 }

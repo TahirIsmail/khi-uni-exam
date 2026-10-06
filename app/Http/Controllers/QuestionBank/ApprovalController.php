@@ -21,7 +21,7 @@ use Inertia\Response;
 /**
  * Approving questions: the queue of questions that have been reviewed, and the three decisions an
  * approver can make — approve (with the consolidated pre-hoc values), put an approved question into
- * use, or turn it down with a reason. An approver never approves their own question.
+ * use, or turn it down (with a reason, if they give one). An approver never approves their own question.
  */
 class ApprovalController extends Controller
 {
@@ -65,7 +65,7 @@ class ApprovalController extends Controller
             ? __('Approved and in use.')
             : __('Approved. Put it into use when you are ready.')]);
 
-        return to_route('approvals.index');
+        return $this->onToNext($request, $version);
     }
 
     /**
@@ -91,13 +91,14 @@ class ApprovalController extends Controller
         ));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => match ($decided->kmuStatus()) {
-            'Accept', 'Retain in QBank' => __('Stored in the QBank as :status.', ['status' => $decided->kmuStatus()]),
+            'Accept / QBank' => __('Accepted and stored in the QBank.'),
+            'Retain in QBank' => __('Stored in the QBank as :status.', ['status' => $decided->kmuStatus()]),
             'Revise' => __('Sent back to the author to revise.'),
             'Review' => __('Sent for another round of review.'),
             default => __('Removed / discarded.'),
         }]);
 
-        return to_route('approvals.index');
+        return $this->onToNext($request, $version);
     }
 
     public function activate(Request $request, Question $question, QuestionVersion $version, ActivateVersion $activate): RedirectResponse
@@ -116,12 +117,22 @@ class ApprovalController extends Controller
     {
         $this->authoriseVersion($request, $question, $version);
 
-        $input = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:500']]);
-        $reject($request->user('web'), $version, (string) $input['reason']);
+        $input = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        $reject($request->user('web'), $version, $input['reason'] ?? null);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The question was turned down and archived.')]);
 
-        return to_route('approvals.index');
+        return $this->onToNext($request, $version);
+    }
+
+    /** Once decided, straight on to the next question waiting, so they need not open each one. */
+    private function onToNext(Request $request, QuestionVersion $decided): RedirectResponse
+    {
+        $next = $this->board->nextToDecide($request->user('web'), $this->branchId($request), $decided);
+
+        return $next === null
+            ? to_route('approvals.index')
+            : to_route('reviews.show', [$next['questionId'], $next['versionId']]);
     }
 
     private function authoriseVersion(Request $request, Question $question, QuestionVersion $version): void

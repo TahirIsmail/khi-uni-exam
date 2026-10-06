@@ -60,7 +60,8 @@ class QuestionController extends Controller
     {
         return [
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', 'string', Rule::in(array_keys(VersionStatus::groups()))],
+            // "all" is the All button; with no status at all the list shows every status as well.
+            'status' => ['nullable', 'string', Rule::in(['all', ...array_keys(VersionStatus::groups())])],
             'programme_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             'year' => ['nullable', 'string', 'regex:/^\d{1,10}(-\d{1,10})?$/'],
             'exam_type_id' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
@@ -92,6 +93,13 @@ class QuestionController extends Controller
     {
         $filters = $request->validate(self::filterRules());
 
+        // KMU: the question bank opens on what is stored in it (Accept); All shows everything.
+        if ($request->query() === []) {
+            $filters['status'] = 'accept';
+        }
+        if (($filters['status'] ?? null) === 'all') {
+            unset($filters['status']);
+        }
         $filters['mine'] = $request->boolean('mine');
         $filters['duplicates'] = $request->boolean('duplicates');
         $filters['archived'] = $request->boolean('archived');
@@ -135,6 +143,8 @@ class QuestionController extends Controller
             'canEditOwn' => $request->user('web')->can('qbank.question.edit_own'),
             'canEditAny' => $request->user('web')->can('qbank.question.edit_any'),
             'canApprove' => $request->user('web')->can('qbank.question.approve'),
+            // kmu-cms: Question Bank → Questions → Delete.
+            'canDelete' => $request->user('web')->can('qbank.question.archive'),
         ]);
     }
 
@@ -149,7 +159,8 @@ class QuestionController extends Controller
             'action' => ['required', 'in:accept,retain,revise,remove'],
             'version_ids' => ['required', 'array', 'min:1', 'max:100'],
             'version_ids.*' => ['integer', 'min:1'],
-            'reason' => ['nullable', 'required_if:action,revise,remove', 'string', 'min:10', 'max:500'],
+            // Remove / Discard needs no reason (KMU); Revise has to tell the authors what to change.
+            'reason' => ['nullable', 'required_if:action,revise', 'string', Rule::when($request->input('action') === 'revise', 'min:10'), 'max:500'],
         ], [
             'reason.required_if' => 'Say why (at least 10 characters); the author will see it.',
             'reason.min' => 'Say why (at least 10 characters); the author will see it.',
@@ -172,7 +183,7 @@ class QuestionController extends Controller
         foreach ($versions as $version) {
             try {
                 if ($action === 'remove') {
-                    $reject($user, $version, (string) $reason);
+                    $reject($user, $version, $reason === '' ? null : $reason);
                 } else {
                     $decide($user, $version, new ConsolidatedPrehoc(decisionId: $decisionId, reason: $reason));
                 }
@@ -362,6 +373,9 @@ class QuestionController extends Controller
     public function export(Request $request, QuestionExport $export): StreamedResponse
     {
         $filters = $request->validate(self::filterRules());
+        if (($filters['status'] ?? null) === 'all') {
+            unset($filters['status']);
+        }
         $filters['mine'] = $request->boolean('mine');
         $filters['duplicates'] = $request->boolean('duplicates');
         $filters['archived'] = $request->boolean('archived');
@@ -370,18 +384,9 @@ class QuestionController extends Controller
     }
 
     /** Live checks while the author types: the same rules that submission applies. */
-    public function check(SaveQuestionRequest $request, QuestionValidator $validator, CmsAcademic $academic): JsonResponse
+    public function check(SaveQuestionRequest $request, QuestionValidator $validator): JsonResponse
     {
-        $content = $request->content();
-        $result = $validator->check($content);
-
-        // An MBBS question is filed under a subject of its module; BDS and DPT may use the whole course.
-        $course = $academic->placeOfCourse($content->courseId);
-        if ($content->nodeId === null && $course !== null && $academic->isModular($course['programme_id'])) {
-            $result['errors']['node_id'][] = 'Choose the subject of this module.';
-        }
-
-        return response()->json($result);
+        return response()->json($validator->check($request->content()));
     }
 
     /** The topics of a course, for the taxonomy picker. */

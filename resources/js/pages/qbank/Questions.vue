@@ -7,6 +7,7 @@ import {
     History,
     Plus,
     Search,
+    Trash2,
     X,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
@@ -78,6 +79,7 @@ const props = defineProps<{
     canEditOwn: boolean;
     canEditAny: boolean;
     canApprove: boolean;
+    canDelete: boolean;
 }>();
 
 const search = ref(props.filters.search);
@@ -217,6 +219,34 @@ function mayEdit(row: QuestionListRow): boolean {
     return editable && ((row.isMine && props.canEditOwn) || props.canEditAny);
 }
 
+// kmu-cms "Delete": an author deletes their own drafts, whoever may edit any question any question.
+function mayDelete(row: QuestionListRow): boolean {
+    const gone = ['archived', 'retired', 'superseded'].includes(row.status);
+    const editable =
+        row.status === 'draft' || row.status === 'changes_requested';
+
+    return (
+        props.canDelete &&
+        !gone &&
+        (props.canEditAny || (row.isMine && editable && props.canEditOwn))
+    );
+}
+
+function deleteOne(row: QuestionListRow): void {
+    if (
+        !window.confirm(
+            `Delete ${row.reference}? It leaves the QBank; it can still be found under Remove / Discard.`,
+        )
+    ) {
+        return;
+    }
+    router.post(
+        '/questions/bulk',
+        { action: 'remove', version_ids: [row.versionId] },
+        { preserveScroll: true },
+    );
+}
+
 // The approver's own buttons are on the review screen, so "Open" takes them there.
 function mayDecide(row: QuestionListRow): boolean {
     return (
@@ -227,9 +257,7 @@ function mayDecide(row: QuestionListRow): boolean {
 }
 
 // ---- several questions at once -------------------------------------------------------------------
-const canSelect = computed(
-    () => props.canApprove || props.canEditOwn || props.canEditAny,
-);
+const canSelect = computed(() => props.canApprove || props.canDelete);
 const selected = ref<number[]>([]);
 const allSelected = computed(
     () =>
@@ -281,7 +309,7 @@ function sendBulk(): void {
     });
 }
 
-/** Accept and Retain in QBank go after a confirmation; Revise and Remove first ask why. */
+/** Accept and Retain in QBank go after a confirmation; Revise asks why, Remove lets you say why. */
 function startBulk(action: BulkAction): void {
     bulk.clearErrors();
     bulk.action = action;
@@ -380,7 +408,8 @@ const statusStyles: Record<string, string> = {
                     type="button"
                     size="sm"
                     :variant="filters.status === '' ? 'default' : 'outline'"
-                    @click="apply({ status: '' })"
+                    data-status="all"
+                    @click="apply({ status: 'all' })"
                     >All</Button
                 >
                 <Button
@@ -921,7 +950,7 @@ const statusStyles: Record<string, string> = {
                 <div class="grid flex-1 gap-1.5" style="min-width: 16rem">
                     <Label for="bulk-reason">{{
                         bulk.action === 'remove'
-                            ? 'Why can these questions not be used?'
+                            ? 'Why can these questions not be used? (optional)'
                             : 'What do the authors have to change?'
                     }}</Label>
                     <Input
@@ -1066,6 +1095,16 @@ const statusStyles: Record<string, string> = {
                                     >{{ mayEdit(row) ? 'Edit' : 'Open' }}</Link
                                 >
                             </Button>
+                            <Button
+                                v-if="mayDelete(row)"
+                                size="sm"
+                                variant="ghost"
+                                class="text-destructive"
+                                title="Delete"
+                                :data-delete="row.versionId"
+                                @click="deleteOne(row)"
+                                ><Trash2
+                            /></Button>
                         </td>
                     </tr>
                     <tr v-if="questions.data.length === 0">

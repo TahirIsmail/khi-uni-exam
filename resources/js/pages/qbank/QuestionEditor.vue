@@ -220,8 +220,8 @@ const examTypesOfProgramme = computed(() => {
     return props.examTypes.filter((row) => row.calendar === calendar);
 });
 
-// MBBS files a question under a subject of its module; BDS and DPT under the course itself, with a
-// topic when the department has added topics.
+// MBBS files a question under a module, BDS and DPT under a course; a subject or topic under it is
+// optional everywhere (KMU: Islamiyat and other non-modular subjects have none).
 const isModular = computed(
     () =>
         props.programmes.find((row) => row.id === programmeId.value)?.modular ??
@@ -486,7 +486,9 @@ function save(then: 'edit' | 'new' | 'submit' = 'edit'): void {
     saving.value = true;
     serverErrors.value = {};
     const options = {
-        preserveScroll: true,
+        // "Save & new" opens the same editor again, so it must start afresh — unless the save failed.
+        preserveState: then === 'new' ? ('errors' as const) : true,
+        preserveScroll: then === 'new' ? ('errors' as const) : true,
         onError: (errors: Record<string, string>) =>
             (serverErrors.value = errors),
         onFinish: () => (saving.value = false),
@@ -812,7 +814,7 @@ function submit(): void {
                             >
                                 <Label for="topic">{{
                                     isModular
-                                        ? 'Subject (→ Topic) *'
+                                        ? 'Subject (→ Topic) (optional)'
                                         : 'Topic (optional)'
                                 }}</Label>
                                 <select
@@ -825,7 +827,7 @@ function submit(): void {
                                     <option :value="null">
                                         {{
                                             isModular
-                                                ? 'Choose…'
+                                                ? '— The whole module —'
                                                 : '— The whole course —'
                                         }}
                                     </option>
@@ -837,18 +839,6 @@ function submit(): void {
                                         {{ topic.label }}
                                     </option>
                                 </select>
-                                <p
-                                    v-if="
-                                        isModular &&
-                                        hasCourses &&
-                                        draft.course_id !== null &&
-                                        topics.length === 0
-                                    "
-                                    class="text-muted-foreground text-xs"
-                                >
-                                    This module has no subject yet. Add one in
-                                    the CMS: Academics → Program Structure.
-                                </p>
                                 <InputError
                                     v-for="(message, i) in checks.errors[
                                         'node_id'

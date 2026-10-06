@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { Check, History, Play, UserPlus, X } from '@lucide/vue';
+import {
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    History,
+    Play,
+    UserPlus,
+    X,
+} from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
@@ -63,7 +71,22 @@ const props = defineProps<{
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
     difficultyLevels: { id: number; name: string }[];
+    neighbours: {
+        previous: NeighbourQuestion | null;
+        next: NeighbourQuestion | null;
+        position: number | null;
+        total: number;
+    } | null;
 }>();
+
+type NeighbourQuestion = {
+    questionId: number;
+    versionId: number;
+    reference: string;
+};
+
+const reviewUrl = (row: NeighbourQuestion): string =>
+    `/questions/${row.questionId}/versions/${row.versionId}/review`;
 
 const type = computed(
     () =>
@@ -206,7 +229,7 @@ const reasonLabel = computed(() => {
         case 'review':
             return 'What should the reviewers look at again?';
         case 'remove':
-            return 'Why can this question not be used?';
+            return 'Why can this question not be used? (optional)';
         default:
             return 'The reviewers decided differently: why do you settle on this?';
     }
@@ -608,8 +631,8 @@ function cancelAssignment(id: number): void {
                         <h3 class="font-medium">Your decision</h3>
                         <p class="text-muted-foreground text-xs">
                             Accept and Retain in QBank store the question
-                            straight away. The others ask you to say why, so the
-                            author knows.
+                            straight away. Review and Revise ask you to say why,
+                            so the author knows.
                         </p>
                     </div>
 
@@ -965,5 +988,41 @@ function cancelAssignment(id: number): void {
                 </details>
             </div>
         </div>
+
+        <!-- The approver goes through the "Ready to decide" list one question after another. -->
+        <nav
+            v-if="neighbours && neighbours.total > 0"
+            class="flex flex-wrap items-center justify-between gap-2 border-t pt-4"
+            data-test="neighbours"
+        >
+            <Button
+                v-if="neighbours.previous"
+                as-child
+                variant="outline"
+                data-test="previous"
+            >
+                <Link :href="reviewUrl(neighbours.previous)"
+                    ><ChevronLeft /> Previous ·
+                    {{ neighbours.previous.reference }}</Link
+                >
+            </Button>
+            <span v-else />
+            <span class="text-muted-foreground text-sm">{{
+                neighbours.position
+                    ? `${neighbours.position} of ${neighbours.total} ready to decide`
+                    : `${neighbours.total} ready to decide`
+            }}</span>
+            <Button
+                v-if="neighbours.next"
+                as-child
+                variant="outline"
+                data-test="next"
+            >
+                <Link :href="reviewUrl(neighbours.next)"
+                    >Next · {{ neighbours.next.reference }} <ChevronRight
+                /></Link>
+            </Button>
+            <span v-else />
+        </nav>
     </div>
 </template>

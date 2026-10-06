@@ -70,13 +70,17 @@ test('a BDS question can be filed on the course as a whole, with no topic', func
     expect($version->fresh()->status)->toBe(VersionStatus::Submitted);
 });
 
-test('an MBBS question names a subject of its module', function () {
+/* KMU (2026-10-06): Islamiyat and other non-modular subjects of MBBS have no subject to choose. */
+test('an MBBS question may name a subject of its module, or be filed on the module as a whole', function () {
     DB::table(config('database.cms_source_database').'.acad_programme_profiles')->where('class_id', $this->programme)->update(['structure_type' => 'modular']);
 
-    $this->actingAs($this->author)->from('/questions/create')->post('/questions', filingQuestion())
-        ->assertSessionHasErrors(['node_id' => 'Choose the subject of this module.']);
     $this->actingAs($this->author)->postJson('/questions/check', filingQuestion())
-        ->assertJsonPath('errors.node_id.0', 'Choose the subject of this module.');
+        ->assertJsonMissingPath('errors.node_id');
+    $this->actingAs($this->author)->post('/questions', filingQuestion())->assertSessionHasNoErrors()->assertRedirect();
+    $version = QuestionVersion::query()->latest('id')->firstOrFail();
+    expect($version->node_id)->toBeNull();
+    $this->actingAs($this->author)->post("/questions/{$version->question_id}/versions/{$version->id}/submit")->assertRedirect();
+    expect($version->fresh()->status)->toBe(VersionStatus::Submitted);
 
     $subject = $this->cmsCurriculumNode($this->course, $this->programme, 'Anatomy');
     $this->actingAs($this->author)->post('/questions', filingQuestion(['node_id' => $subject]))->assertRedirect();
