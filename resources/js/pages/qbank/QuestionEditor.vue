@@ -21,6 +21,7 @@ import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import ChecksPanel from '@/components/qbank/ChecksPanel.vue';
 import ItemsEditor from '@/components/qbank/ItemsEditor.vue';
 import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
+import QuestionNeighbours from '@/components/qbank/QuestionNeighbours.vue';
 import OptionsEditor from '@/components/qbank/OptionsEditor.vue';
 import ReferencesEditor from '@/components/qbank/ReferencesEditor.vue';
 import RichTextField from '@/components/qbank/RichTextField.vue';
@@ -37,6 +38,7 @@ import type {
     ExamTypeOption,
     QuestionChecks,
     QuestionDraft,
+    QuestionNeighbourLinks,
     QuestionTypeInfo,
     StoredVersion,
     YearOption,
@@ -81,6 +83,8 @@ const props = defineProps<{
         stemMax: number;
         marksMax: number;
     };
+    /** Previous / next in the question list it was opened from. */
+    neighbours?: QuestionNeighbourLinks | null;
 }>();
 
 const draft = ref<QuestionDraft>(
@@ -1313,6 +1317,10 @@ function submit(): void {
                     </p>
                 </div>
             </div>
+        </div>
+
+        <div v-if="neighbours" class="px-4 pb-4">
+            <QuestionNeighbours :neighbours="neighbours" />
         </div>
     </div>
 </template>

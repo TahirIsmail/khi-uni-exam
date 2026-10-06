@@ -27,6 +27,7 @@ use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Domain\QuestionBank\Validation\QuestionValidator;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\QuestionBank\Concerns\FollowsTheList;
 use App\Http\Requests\QuestionBank\SaveQuestionRequest;
 use App\Support\Cms\CmsAcademic;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -46,6 +47,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class QuestionController extends Controller
 {
+    use FollowsTheList;
+
     public function __construct(
         private readonly ActiveBranch $activeBranch,
         private readonly QuestionEditorData $editorData,
@@ -56,7 +59,7 @@ class QuestionController extends Controller
      *
      * @return array<string, mixed>
      */
-    private static function filterRules(): array
+    public static function filterRules(): array
     {
         return [
             'search' => ['nullable', 'string', 'max:100'],
@@ -145,6 +148,8 @@ class QuestionController extends Controller
             'canApprove' => $request->user('web')->can('qbank.question.approve'),
             // kmu-cms: Question Bank → Questions → Delete.
             'canDelete' => $request->user('web')->can('qbank.question.archive'),
+            // kmu-cms: Question Bank & Exams → Advanced Question Filters.
+            'canFilter' => $request->user('web')->can('qbank.question.filter'),
         ]);
     }
 
@@ -265,6 +270,7 @@ class QuestionController extends Controller
             'version' => $this->editorData->version($version),
             'reference' => $question->public_ref,
             'can' => $this->editorData->abilities($request->user('web'), $version),
+            'neighbours' => $this->listNeighbours($request, $version),
             ...$this->editorData->forCreate($request->user('web'), $this->branchId($request)),
         ]);
     }
@@ -410,6 +416,7 @@ class QuestionController extends Controller
             'version' => $this->editorData->version($version),
             'can' => $this->editorData->abilities($request->user('web'), $version),
             'reviewHere' => $this->hasReviewWork($request, $version),
+            'neighbours' => $this->listNeighbours($request, $version),
             'checks' => $validator->check($reader->read($version)),
             ...$this->editorData->lookups(),
         ]);
@@ -426,6 +433,8 @@ class QuestionController extends Controller
         return Inertia::render('qbank/QuestionHistory', [
             ...$history->for($question, $request->user('web')),
             'can' => $this->editorData->abilities($request->user('web'), $latest),
+            // The list shows each question's newest version, so that is where this one stands in it.
+            'neighbours' => $this->listNeighbours($request, $latest, history: true),
         ]);
     }
 

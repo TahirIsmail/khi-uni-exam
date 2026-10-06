@@ -312,3 +312,29 @@ test('the search narrows by year or semester, examination, and whether a questio
     $this->actingAs($this->author)->get('/questions?year=abc')->assertSessionHasErrors('year');
     $this->actingAs($this->author)->get('/questions?used=sometimes')->assertSessionHasErrors('used');
 });
+
+/* KMU (2026-10-06): the extra filters are shown only to the roles kmu-cms gives them to. */
+test('the advanced filters are offered only with their kmu-cms right', function () {
+    $this->actingAs($this->author)->get('/questions')->assertInertia(fn ($page) => $page->where('canFilter', false));
+
+    $role = $this->cmsRole('Controller');
+    $this->cmsGrant($role, 'qbank_questions', 'view');
+    $this->cmsGrant($role, 'qbank_filters', 'view');
+    $this->actingAs($this->staffUser([$role], $this->branch))->get('/questions')->assertInertia(fn ($page) => $page->where('canFilter', true));
+});
+
+test('a question\'s history offers the previous and next question of the list it was opened from', function () {
+    $versions = collect(['barking cough', 'wheeze', 'stridor'])
+        ->map(fn (string $words): QuestionVersion => write(['stem' => "<p>A 3-year-old child has a {$words} for two days.</p>"]));
+    $list = 'status=all';
+    $history = fn (QuestionVersion $version): string => "/questions/{$version->question_id}?list=".rawurlencode($list);
+
+    // Newest first: stridor, wheeze, barking cough — and each one opens at its history.
+    $this->actingAs($this->author)->get($history($versions[1]))->assertInertia(fn ($page) => $page
+        ->component('qbank/QuestionHistory')
+        ->where('neighbours.previous.url', $history($versions[2]))
+        ->where('neighbours.next.url', $history($versions[0]))
+        ->where('neighbours.position', 2));
+
+    $this->actingAs($this->author)->get("/questions/{$versions[1]->question_id}")->assertInertia(fn ($page) => $page->where('neighbours', null));
+});

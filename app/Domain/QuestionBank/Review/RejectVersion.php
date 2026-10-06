@@ -16,7 +16,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Remove / Discard: the version is archived, with a reason when one is given (KMU, 2026-10-06: it is
  * optional), and the open reviews are called off. An approver may remove a question at any step, even
- * once it is in the QBank, as their decision on it. Otherwise it is a delete, which needs the kmu-cms
+ * once it is in the QBank, as their decision on it ($asDecision, from the review screen). Anything
+ * else — the question list included — is a delete, which needs the kmu-cms
  * "Delete" right of Question Bank → Questions (KMU, 2026-10-06: Author and Controller): an author
  * deletes their own drafts, somebody who may edit any question (the Controller) any question.
  *
@@ -31,13 +32,13 @@ final class RejectVersion
         private readonly AuditLogger $audit,
     ) {}
 
-    public function __invoke(User $approver, QuestionVersion $version, ?string $reason = null): QuestionVersion
+    public function __invoke(User $approver, QuestionVersion $version, ?string $reason = null, bool $asDecision = false): QuestionVersion
     {
         $target = new ScopeTarget($version->branch_id, $version->programme_id, $version->professional_id, $version->course_id);
         $mayDelete = $this->access->allows($approver, 'qbank.question.archive', $target)
             && ($this->access->allows($approver, 'qbank.question.edit_any', $target)
                 || ($version->author_id === $approver->id && $version->isEditable() && $this->access->allows($approver, 'qbank.question.edit_own', $target)));
-        if (! $mayDelete && ! $this->access->allows($approver, 'qbank.question.approve', $target)) {
+        if (! $mayDelete && ! ($asDecision && $this->access->allows($approver, 'qbank.question.approve', $target))) {
             throw new AuthorizationException('You cannot delete this question.');
         }
         if (! $version->status->canMoveTo(VersionStatus::Archived)) {

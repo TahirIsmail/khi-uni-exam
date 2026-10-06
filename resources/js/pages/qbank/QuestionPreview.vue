@@ -5,12 +5,14 @@ import { computed } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import ChecksPanel from '@/components/qbank/ChecksPanel.vue';
 import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
+import QuestionNeighbours from '@/components/qbank/QuestionNeighbours.vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { index } from '@/routes/questions';
 import type {
     QuestionChecks,
     QuestionDraft,
+    QuestionNeighbourLinks,
     QuestionTypeInfo,
     StoredVersion,
 } from '@/types';
@@ -25,6 +27,8 @@ const props = defineProps<{
     can: { edit: boolean; submit: boolean; newVersion: boolean };
     /** This person reviews or decides on this version: their buttons are on the review screen. */
     reviewHere: boolean;
+    /** Previous / next in the question list it was opened from. */
+    neighbours: QuestionNeighbourLinks | null;
     checks: QuestionChecks;
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
@@ -162,5 +166,7 @@ function startNewVersion(): void {
                 <ChecksPanel :checks="checks" />
             </div>
         </div>
+
+        <QuestionNeighbours v-if="neighbours" :neighbours="neighbours" />
     </div>
 </template>

@@ -118,7 +118,7 @@ class ApprovalController extends Controller
         $this->authoriseVersion($request, $question, $version);
 
         $input = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
-        $reject($request->user('web'), $version, $input['reason'] ?? null);
+        $reject($request->user('web'), $version, $input['reason'] ?? null, asDecision: true);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('The question was turned down and archived.')]);
 

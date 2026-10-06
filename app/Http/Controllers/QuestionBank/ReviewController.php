@@ -16,6 +16,7 @@ use App\Domain\QuestionBank\Review\ReviewStage;
 use App\Domain\QuestionBank\Review\SubmitReview;
 use App\Domain\QuestionBank\Validation\VersionContentReader;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\QuestionBank\Concerns\FollowsTheList;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,8 @@ use Inertia\Response;
  */
 class ReviewController extends Controller
 {
+    use FollowsTheList;
+
     public function __construct(
         private readonly ActiveBranch $activeBranch,
         private readonly ReviewBoard $board,
@@ -93,8 +96,10 @@ class ReviewController extends Controller
                 'approveOwn' => $isAuthor && $user->can('qbank.question.approve'),
             ],
             'reviewers' => $reviewers,
-            // Previous / next in the approver's list, so they need not open the questions one by one.
-            'neighbours' => $mayApprove ? $this->board->approvalNeighbours($user, $this->branchId($request), $version) : null,
+            // Previous / next in the question list it was opened from, else in the approver's list,
+            // so nobody has to open the questions one by one.
+            'neighbours' => $this->listNeighbours($request, $version)
+                ?? ($mayApprove ? $this->board->approvalNeighbours($user, $this->branchId($request), $version) : null),
             ...$this->board->forVersion($user, $version, $this->board->namesVisibleTo($user, $version)),
             ...$this->editorData->lookups(),
         ]);

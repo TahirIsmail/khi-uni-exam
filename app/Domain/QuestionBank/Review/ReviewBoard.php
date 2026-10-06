@@ -120,7 +120,7 @@ final class ReviewBoard
      * from one question to the next without going back to the list. A question that is not in the
      * list (decided already, or their own) is followed by the first one still waiting.
      *
-     * @return array{previous: array{questionId: int, versionId: int, reference: string}|null, next: array{questionId: int, versionId: int, reference: string}|null, position: int|null, total: int}
+     * @return array{previous: array{url: string, reference: string}|null, next: array{url: string, reference: string}|null, position: int|null, total: int, label: string}
      */
     public function approvalNeighbours(User $approver, int $branchId, QuestionVersion $version): array
     {
@@ -128,20 +128,22 @@ final class ReviewBoard
             ->with('question:id,public_ref')
             ->get(['id', 'question_id', 'version_no'])
             ->map(fn (QuestionVersion $row): array => [
-                'questionId' => $row->question_id,
                 'versionId' => $row->id,
+                'url' => "/questions/{$row->question_id}/versions/{$row->id}/review",
                 'reference' => $row->question->public_ref.' v'.$row->version_no,
             ])
             ->values()
             ->all();
 
         $at = array_search($version->id, array_column($queue, 'versionId'), true);
+        $link = fn (?array $row): ?array => $row === null ? null : ['url' => $row['url'], 'reference' => $row['reference']];
 
         return [
-            'previous' => $at === false || $at === 0 ? null : $queue[$at - 1],
-            'next' => $at === false ? ($queue[0] ?? null) : ($queue[$at + 1] ?? null),
+            'previous' => $link($at === false || $at === 0 ? null : $queue[$at - 1]),
+            'next' => $link($at === false ? ($queue[0] ?? null) : ($queue[$at + 1] ?? null)),
             'position' => $at === false ? null : $at + 1,
             'total' => count($queue),
+            'label' => 'ready to decide',
         ];
     }
 

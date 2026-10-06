@@ -1,17 +1,10 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import {
-    Check,
-    ChevronLeft,
-    ChevronRight,
-    History,
-    Play,
-    UserPlus,
-    X,
-} from '@lucide/vue';
+import { Check, History, Play, UserPlus, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CandidatePreview from '@/components/qbank/CandidatePreview.vue';
 import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
+import QuestionNeighbours from '@/components/qbank/QuestionNeighbours.vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +19,7 @@ import type {
     PrehocDecisionInfo,
     PrehocRow,
     QuestionDraft,
+    QuestionNeighbourLinks,
     QuestionTypeInfo,
     ReviewRow,
     StoredVersion,
@@ -71,22 +65,8 @@ const props = defineProps<{
     types: QuestionTypeInfo[];
     cognitiveLevels: { id: number; name: string; description: string | null }[];
     difficultyLevels: { id: number; name: string }[];
-    neighbours: {
-        previous: NeighbourQuestion | null;
-        next: NeighbourQuestion | null;
-        position: number | null;
-        total: number;
-    } | null;
+    neighbours: QuestionNeighbourLinks | null;
 }>();
-
-type NeighbourQuestion = {
-    questionId: number;
-    versionId: number;
-    reference: string;
-};
-
-const reviewUrl = (row: NeighbourQuestion): string =>
-    `/questions/${row.questionId}/versions/${row.versionId}/review`;
 
 const type = computed(
     () =>
@@ -989,40 +969,7 @@ function cancelAssignment(id: number): void {
             </div>
         </div>
 
-        <!-- The approver goes through the "Ready to decide" list one question after another. -->
-        <nav
-            v-if="neighbours && neighbours.total > 0"
-            class="flex flex-wrap items-center justify-between gap-2 border-t pt-4"
-            data-test="neighbours"
-        >
-            <Button
-                v-if="neighbours.previous"
-                as-child
-                variant="outline"
-                data-test="previous"
-            >
-                <Link :href="reviewUrl(neighbours.previous)"
-                    ><ChevronLeft /> Previous ·
-                    {{ neighbours.previous.reference }}</Link
-                >
-            </Button>
-            <span v-else />
-            <span class="text-muted-foreground text-sm">{{
-                neighbours.position
-                    ? `${neighbours.position} of ${neighbours.total} ready to decide`
-                    : `${neighbours.total} ready to decide`
-            }}</span>
-            <Button
-                v-if="neighbours.next"
-                as-child
-                variant="outline"
-                data-test="next"
-            >
-                <Link :href="reviewUrl(neighbours.next)"
-                    >Next · {{ neighbours.next.reference }} <ChevronRight
-                /></Link>
-            </Button>
-            <span v-else />
-        </nav>
+        <!-- Previous / next: in the list it was opened from, else the approver's own list. -->
+        <QuestionNeighbours v-if="neighbours" :neighbours="neighbours" />
     </div>
 </template>

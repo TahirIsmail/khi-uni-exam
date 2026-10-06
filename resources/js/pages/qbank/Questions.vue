@@ -80,6 +80,8 @@ const props = defineProps<{
     canEditAny: boolean;
     canApprove: boolean;
     canDelete: boolean;
+    /** kmu-cms "Advanced Question Filters": More filters and Same text twice. */
+    canFilter: boolean;
 }>();
 
 const search = ref(props.filters.search);
@@ -192,6 +194,25 @@ function apply(changes: Partial<Record<keyof Filters, unknown>>): void {
 
     router.get(index.url(), query, { preserveState: true, replace: true });
 }
+
+// A question opened from here carries the list's filters, so its page offers previous / next
+// within this same list. "All" is said outright: an empty list query means the default (Accept).
+const listQuery = computed(() => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(props.filters)) {
+        if (value !== null && value !== '' && value !== false) {
+            query.set(key, value === true ? '1' : String(value));
+        }
+    }
+    if (props.filters.status === '') {
+        query.set('status', 'all');
+    }
+
+    return query.toString();
+});
+
+const opened = (url: string): string =>
+    `${url}?list=${encodeURIComponent(listQuery.value)}`;
 
 // The export takes exactly what the search is showing, so it carries the same filters.
 const exportUrl = computed(() => {
@@ -379,8 +400,10 @@ const statusStyles: Record<string, string> = {
                     ><Search /> Search</Button
                 >
                 <Button
+                    v-if="canFilter"
                     type="button"
                     :variant="showMore ? 'default' : 'outline'"
+                    data-test="more-filters"
                     @click="showMore = !showMore"
                 >
                     <Filter /> More filters
@@ -437,6 +460,7 @@ const statusStyles: Record<string, string> = {
                     >Written by me</Button
                 >
                 <Button
+                    v-if="canFilter"
                     type="button"
                     size="sm"
                     :variant="filters.duplicates ? 'default' : 'outline'"
@@ -447,7 +471,7 @@ const statusStyles: Record<string, string> = {
             </div>
 
             <div
-                v-if="showMore"
+                v-if="canFilter && showMore"
                 class="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4"
             >
                 <div class="grid gap-1.5">
@@ -924,7 +948,9 @@ const statusStyles: Record<string, string> = {
                         >Revise</Button
                     >
                 </template>
+                <!-- From the list, removing is a delete: kmu-cms "Delete" (Author, Controller). -->
                 <Button
+                    v-if="canDelete"
                     size="sm"
                     variant="destructive"
                     :disabled="bulk.processing"
@@ -1032,7 +1058,7 @@ const statusStyles: Record<string, string> = {
                             class="px-3 py-2 font-mono text-xs whitespace-nowrap"
                         >
                             <Link
-                                :href="`/questions/${row.id}`"
+                                :href="opened(`/questions/${row.id}`)"
                                 class="underline-offset-4 hover:underline"
                             >
                                 {{ row.reference }}
@@ -1070,7 +1096,7 @@ const statusStyles: Record<string, string> = {
                                 variant="ghost"
                                 title="History and versions"
                             >
-                                <Link :href="`/questions/${row.id}`"
+                                <Link :href="opened(`/questions/${row.id}`)"
                                     ><History
                                 /></Link>
                             </Button>
@@ -1081,16 +1107,22 @@ const statusStyles: Record<string, string> = {
                                 :data-decide="row.versionId"
                             >
                                 <Link
-                                    :href="`/questions/${row.id}/versions/${row.versionId}/review`"
+                                    :href="
+                                        opened(
+                                            `/questions/${row.id}/versions/${row.versionId}/review`,
+                                        )
+                                    "
                                     >Decide</Link
                                 >
                             </Button>
                             <Button v-else as-child size="sm" variant="outline">
                                 <Link
                                     :href="
-                                        mayEdit(row)
-                                            ? `/questions/${row.id}/versions/${row.versionId}/edit`
-                                            : `/questions/${row.id}/versions/${row.versionId}`
+                                        opened(
+                                            mayEdit(row)
+                                                ? `/questions/${row.id}/versions/${row.versionId}/edit`
+                                                : `/questions/${row.id}/versions/${row.versionId}`,
+                                        )
                                     "
                                     >{{ mayEdit(row) ? 'Edit' : 'Open' }}</Link
                                 >

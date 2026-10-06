@@ -1159,12 +1159,23 @@ test('several questions ticked in the list take one decision, and those that can
         ->and($first->fresh()->decision_code)->toBe('retain')
         ->and($second->fresh()->status)->toBe(VersionStatus::Active);
 
-    // Accepting again is skipped (already in the QBank); removing them works, with or without a reason.
+    // Accepting again is skipped (already in the QBank).
     $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
         'action' => 'accept',
         'version_ids' => [$first->id],
     ])->assertRedirect('/questions');
     expect($first->fresh()->status)->toBe(VersionStatus::Active);
+
+    // Removing them from the list is a delete, which an approver does not do (KMU, 2026-10-06)...
+    $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
+        'action' => 'remove',
+        'version_ids' => [$first->id, $second->id],
+    ])->assertRedirect('/questions');
+    expect($first->fresh()->status)->toBe(VersionStatus::Active);
+
+    // ...but somebody who may edit and delete any question does, with or without a reason.
+    $this->cmsGrant($this->approverRole, 'qbank_questions', 'edit', 'delete');
+    app(AccessControl::class)->forget($this->approver);
 
     $this->actingAs($this->approver)->from('/questions')->post('/questions/bulk', [
         'action' => 'remove',
@@ -1255,14 +1266,14 @@ test('the approver goes from one question to the next in their list', function (
     $url = fn (QuestionVersion $version): string => "/questions/{$version->question_id}/versions/{$version->id}/review";
 
     $this->actingAs($this->approver)->get($url($second))->assertInertia(fn ($page) => $page
-        ->where('neighbours.previous.versionId', $first->id)
-        ->where('neighbours.next.versionId', $third->id)
+        ->where('neighbours.previous.url', $url($first))
+        ->where('neighbours.next.url', $url($third))
         ->where('neighbours.position', 2)
         ->where('neighbours.total', 3));
 
     $this->actingAs($this->approver)->get($url($first))->assertInertia(fn ($page) => $page
         ->where('neighbours.previous', null)
-        ->where('neighbours.next.versionId', $second->id));
+        ->where('neighbours.next.url', $url($second)));
 
     // Deciding goes straight on to the next question, and the decided one leaves the list.
     $accept = (int) PrehocDecision::query()->where('code', 'accept')->value('id');
@@ -1305,4 +1316,37 @@ test('somebody who may edit and delete any question deletes one already in the Q
         ->assertSessionHasNoErrors()->assertRedirect('/questions');
     expect($version->fresh()->status)->toBe(VersionStatus::Archived)
         ->and(Question::query()->findOrFail($version->question_id)->is_archived)->toBeTrue();
+});
+
+test('a question opened from the list offers the previous and next question of that same list', function () {
+    $drafts = collect(['chest pain', 'breathlessness', 'palpitations'])->map(function (string $words): QuestionVersion {
+        $this->actingAs($this->author)->post('/questions', array_replace(questionFields(), ['stem' => "<p>A 50-year-old man presents with {$words} for two hours.</p>"]))->assertRedirect();
+
+        return QuestionVersion::query()->latest('id')->firstOrFail();
+    });
+    $sent = sendForReview(['stem' => '<p>A 70-year-old woman has sudden tearing chest pain radiating to the back.</p>']);
+    $list = 'status=draft';
+    $edit = fn (QuestionVersion $version): string => "/questions/{$version->question_id}/versions/{$version->id}/edit?list=".rawurlencode($list);
+
+    // The list shows the newest first: palpitations, breathlessness, chest pain. Drafts open in the editor.
+    $this->actingAs($this->author)->get("/questions/{$drafts[1]->question_id}/versions/{$drafts[1]->id}/edit?list=".rawurlencode($list))
+        ->assertInertia(fn ($page) => $page
+            ->where('neighbours.previous.url', $edit($drafts[2]))
+            ->where('neighbours.next.url', $edit($drafts[0]))
+            ->where('neighbours.position', 2)
+            ->where('neighbours.total', 3)
+            ->where('neighbours.label', 'in the list'));
+
+    // The same question with every status: the approver's next is the one they decide on, on the review screen.
+    $all = 'status=all';
+    $this->actingAs($this->approver)->get("/questions/{$drafts[2]->question_id}/versions/{$drafts[2]->id}?list=".rawurlencode($all))
+        ->assertInertia(fn ($page) => $page
+            ->where('neighbours.previous.url', "/questions/{$sent->question_id}/versions/{$sent->id}/review?list=".rawurlencode($all))
+            ->where('neighbours.total', 4));
+
+    // Without the list, or with filters that do not check out, there is nothing to go through.
+    $this->actingAs($this->author)->get("/questions/{$drafts[1]->question_id}/versions/{$drafts[1]->id}")
+        ->assertInertia(fn ($page) => $page->where('neighbours', null));
+    $this->actingAs($this->author)->get("/questions/{$drafts[1]->question_id}/versions/{$drafts[1]->id}?list=".rawurlencode('status=nonsense'))
+        ->assertInertia(fn ($page) => $page->where('neighbours', null));
 });

@@ -32,22 +32,59 @@ final class QuestionList
      */
     public function paginate(User $user, int $branchId, array $filters, int $perPage = 25): LengthAwarePaginator
     {
-        $sort = (string) ($filters['sort'] ?? '');
-        $search = (string) ($filters['search'] ?? '');
         $courseLabels = $this->academic->courseLabels($branchId);
         $examTypes = [];
         foreach ($this->academic->examTypes() as $examType) {
             $examTypes[$examType['id']] = $examType['name'];
         }
 
-        return $this->query($user, $branchId, $filters)
+        $query = $this->query($user, $branchId, $filters)
             ->select([
                 'q.id', 'q.public_ref', 'q.course_id', 'q.is_archived', 'q.times_used',
                 'v.id as version_id', 'v.version_no', 'v.status', 'v.stem', 'v.marks', 'v.node_id',
                 'v.author_id', 'v.updated_at', 'v.content_hash', 'v.discipline_id', 'v.decision_code',
                 'v.cognitive_level_id', 'v.difficulty_level_id', 'v.exam_type_id',
                 't.name as type_name', 'u.name as author_name',
-            ])
+            ]);
+
+        return $this->ordered($query, $filters)
+            ->paginate($perPage)
+            ->withQueryString()
+            ->through(fn (stdClass $row): array => $this->present($row, $courseLabels, $examTypes, $user));
+    }
+
+    /**
+     * The questions of a search in the order the list shows them, briefly — for going from one
+     * question to the next without going back to the list. Capped, so a huge search stays cheap.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<array{questionId: int, versionId: int, reference: string, status: string, authorId: int}>
+     */
+    public function inOrder(User $user, int $branchId, array $filters, int $limit = 5000): array
+    {
+        $query = $this->query($user, $branchId, $filters)->select(['q.id', 'q.public_ref', 'v.id as version_id', 'v.version_no', 'v.status', 'v.author_id']);
+
+        return array_values($this->ordered($query, $filters)->limit($limit)->get()
+            ->map(fn (stdClass $row): array => [
+                'questionId' => (int) $row->id,
+                'versionId' => (int) $row->version_id,
+                'reference' => $row->public_ref.' v'.$row->version_no,
+                'status' => (string) $row->status,
+                'authorId' => (int) $row->author_id,
+            ])->all());
+    }
+
+    /**
+     * The order of the list: the sort chosen, else the best matches for the words, else the newest work.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function ordered(Builder $query, array $filters): Builder
+    {
+        $sort = (string) ($filters['sort'] ?? '');
+        $search = (string) ($filters['search'] ?? '');
+
+        return $query
             // How well each row matches the words, so the best matches can come first.
             ->when(
                 $search !== '',
@@ -57,15 +94,11 @@ final class QuestionList
             ->when($sort === 'marks', fn (Builder $query): Builder => $query->orderByDesc('v.marks'))
             ->when($sort === 'reference', fn (Builder $query): Builder => $query->orderBy('q.public_ref'))
             ->when($sort === 'oldest', fn (Builder $query): Builder => $query->orderBy('v.updated_at'))
-            ->when(! in_array($sort, ['marks', 'reference', 'oldest'], true), function (Builder $query) use ($filters): Builder {
-                // With words to match, the best matches come first; otherwise the newest work.
-                return ($filters['search'] ?? '') !== ''
-                    ? $query->orderByDesc('relevance')->orderByDesc('v.updated_at')
-                    : $query->orderByDesc('v.updated_at');
-            })
-            ->paginate($perPage)
-            ->withQueryString()
-            ->through(fn (stdClass $row): array => $this->present($row, $courseLabels, $examTypes, $user));
+            ->when(! in_array($sort, ['marks', 'reference', 'oldest'], true), fn (Builder $query): Builder => $search !== ''
+                ? $query->orderByDesc('relevance')->orderByDesc('v.updated_at')
+                : $query->orderByDesc('v.updated_at'))
+            // Rows saved in the same second keep one order, so previous / next never skip one.
+            ->orderByDesc('v.id');
     }
 
     /**

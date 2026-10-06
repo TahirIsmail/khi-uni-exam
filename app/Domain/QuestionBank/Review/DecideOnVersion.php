@@ -44,7 +44,7 @@ final class DecideOnVersion
 
         return match ($decision->code) {
             'accept', 'retain' => ($this->approve)($approver, $version, $input),
-            'remove' => ($this->reject)($approver, $version, $input->reason),
+            'remove' => ($this->reject)($approver, $version, $input->reason, asDecision: true),
             'revise' => $this->backToAuthor($approver, $version, (string) $input->reason),
             'review' => $this->reviewAgain($approver, $version, (string) $input->reason),
             default => throw ValidationException::withMessages(['decision_id' => 'That decision cannot be taken here.']),

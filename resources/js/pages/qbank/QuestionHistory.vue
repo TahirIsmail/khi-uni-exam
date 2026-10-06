@@ -3,10 +3,12 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { CopyCheck, FilePlus2, GitCompare, History } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import QuestionJourney from '@/components/qbank/QuestionJourney.vue';
+import QuestionNeighbours from '@/components/qbank/QuestionNeighbours.vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { index } from '@/routes/questions';
+import type { QuestionNeighbourLinks } from '@/types';
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Question bank', href: index() }] },
@@ -67,6 +69,8 @@ const props = defineProps<{
         status: string;
         summary: string;
     }[];
+    /** Previous / next in the question list it was opened from. */
+    neighbours?: QuestionNeighbourLinks | null;
 }>();
 
 /** The newest version, whose place in Create → Review → Approve → Store is shown at the top. */
@@ -387,5 +391,7 @@ function startNewVersion(): void {
                 </p>
             </div>
         </div>
+
+        <QuestionNeighbours v-if="neighbours" :neighbours="neighbours" />
     </div>
 </template>

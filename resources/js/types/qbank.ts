@@ -355,3 +355,12 @@ export type ExamTypeOption = {
     name: string;
     calendar: string;
 };
+
+/** Previous / next question, in the list the question was opened from. */
+export type QuestionNeighbourLinks = {
+    previous: { url: string; reference: string } | null;
+    next: { url: string; reference: string } | null;
+    position: number | null;
+    total: number;
+    label: string;
+};

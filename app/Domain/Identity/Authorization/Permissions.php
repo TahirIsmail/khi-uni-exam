@@ -27,6 +27,8 @@ final class Permissions
             'qbank.question.archive' => ['Archive questions', 'qbank_questions', 'delete'],
             'qbank.question.restore' => ['Restore archived questions', 'qbank_questions', 'delete'],
             'qbank.question.export' => ['Export questions (including answer keys)', 'qbank_questions_export', 'view'],
+            // kmu-cms migration 20261018_0026: "More filters" and "Same text twice" on the list.
+            'qbank.question.filter' => ['Use the advanced question filters', 'qbank_filters', 'view'],
         ],
         'Review' => [
             'qbank.review.perform' => ['Review questions (department / subject level)', 'qbank_review', 'view'],
