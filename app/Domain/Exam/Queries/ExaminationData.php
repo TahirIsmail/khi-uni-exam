@@ -121,6 +121,10 @@ final class ExaminationData
             'closesAtLabel' => $examination->closes_at?->setTimezone($zone)->format('D j M Y, H:i'),
             // Staff who see the examination may see its exam PIN: they are the ones who give it out.
             'sharedPin' => $examination->shared_pin,
+            // The candidates' address, /sit/{code}.
+            'sitCode' => $examination->sit_code,
+            'sitUrl' => route('sit.login', $examination),
+            'showResult' => $examination->show_result,
             'durationMinutes' => $examination->duration_minutes,
             'totalMarks' => $examination->total_marks,
             'passPercentage' => $examination->pass_percentage,

@@ -24,5 +24,6 @@ final readonly class ExaminationInput
         public ?string $instructions,
         public ?CarbonImmutable $closesAt = null,
         public ?string $sharedPin = null,
+        public bool $showResult = false,
     ) {}
 }

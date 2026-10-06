@@ -27,7 +27,7 @@ final class EnsureDeliverySessionActive
 
             $exam = $request->route('exam');
 
-            return redirect()->route('sit.login', $exam instanceof Model ? $exam->getKey() : $exam)
+            return redirect()->route('sit.login', $exam instanceof Model ? $exam->getAttribute('sit_code') : $exam)
                 ->withErrors(['session' => 'You have been signed out: this exam is now open on another computer, or an invigilator ended this session.']);
         }
 

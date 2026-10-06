@@ -6,14 +6,15 @@ use App\Http\Controllers\Sit\SubmittedController;
 use Illuminate\Support\Facades\Route;
 
 /*
- * Sitting an exam (exam phase, step 18 — see ADR-0003). A candidate signs in here with their
+ * Sitting an exam (exam phase, step 18 — see ADR-0003). The address carries the examination's
+ * short random code (/sit/k7m2qx9p), never its number, so no other examination can be found from it. A candidate signs in here with their
  * candidate number and exam PIN, never through kmu-cms: this whole group uses the `candidate` guard,
  * not `web`.
  *
  * Every limit here is a named one (AppServiceProvider): counted per route and per candidate, so a
  * candidate's autosaves never use up their submit, and a hall behind one address can sign in together.
  */
-Route::prefix('sit/{exam}')->whereNumber('exam')->group(function () {
+Route::prefix('sit/{exam:sit_code}')->where(['exam' => '[a-z0-9]{8}'])->group(function () {
     Route::get('/', [LoginController::class, 'show'])->name('sit.login');
     Route::post('/', [LoginController::class, 'store'])->middleware('throttle:sit-login')->name('sit.login.store');
 

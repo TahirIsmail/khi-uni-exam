@@ -79,7 +79,7 @@ class SeedBscsEntryDemo extends Command
             title: 'BSCS Entry Test — TRIAL (10 questions)', courseId: $courseId, examTypeId: $type, intakeId: $intake,
             startsAt: $now->utc(), durationMinutes: 15, totalMarks: 10, passPercentage: 50, negativeMarking: false, negativeFraction: null,
             instructions: "Trial run to check the system.\nThere is one best answer to each question.",
-            closesAt: $now->addHours((int) $this->option('trial-hours'))->utc(), sharedPin: (string) $this->option('trial-pin'),
+            closesAt: $now->addHours((int) $this->option('trial-hours'))->utc(), sharedPin: (string) $this->option('trial-pin'), showResult: true,
         ), 10);
         $this->candidates($user, $trial, array_map(fn (int $i): array => [sprintf('TEST-%03d', $i), "Test Student {$i}"], range(1, 10)));
 
@@ -89,13 +89,13 @@ class SeedBscsEntryDemo extends Command
             startsAt: CarbonImmutable::parse("{$day} 09:00", $zone)->utc(), durationMinutes: 90, totalMarks: 100, passPercentage: 50,
             negativeMarking: false, negativeFraction: null,
             instructions: "100 questions, 90 minutes.\nThere is one best answer to each question.\nYour answers are saved as you go; the test ends by itself when the time is up.",
-            closesAt: CarbonImmutable::parse("{$day} 12:00", $zone)->utc(), sharedPin: (string) $this->option('main-pin'),
+            closesAt: CarbonImmutable::parse("{$day} 12:00", $zone)->utc(), sharedPin: (string) $this->option('main-pin'), showResult: true,
         ), 100);
         $this->candidates($user, $main, array_map(fn (int $i): array => [sprintf('BSCS26-%04d', $i), sprintf('Test Candidate %03d', $i)], range(1, 200)));
 
         foreach ([$trial, $main] as $exam) {
             $exam->refresh();
-            $this->info(sprintf('%s  %s  /sit/%d  PIN %s  %s – %s  candidates %d', $exam->public_ref, $exam->title, $exam->id, $exam->shared_pin,
+            $this->info(sprintf('%s  %s  %s  PIN %s  %s – %s  candidates %d', $exam->public_ref, $exam->title, route('sit.login', $exam), $exam->shared_pin,
                 $exam->starts_at?->setTimezone($zone)->format('j M H:i'), $exam->closes_at?->setTimezone($zone)->format('j M H:i'),
                 DB::table('cand_candidates')->where('examination_id', $exam->id)->count()));
         }

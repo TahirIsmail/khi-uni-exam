@@ -46,6 +46,7 @@ class ExamController extends Controller
         return Inertia::render('sit/Exam', [
             'examination' => [
                 'id' => $exam->id,
+                'code' => $exam->sit_code,
                 'title' => $exam->title,
                 'instructions' => $exam->instructions,
             ],

@@ -224,6 +224,18 @@ function minutes(seconds: number | null): string {
                                 {{ attempt.candidateNo }}
                             </div>
                             <div class="font-medium">{{ attempt.name }}</div>
+                            <Link
+                                v-if="attempt.status !== 'not_started'"
+                                :href="
+                                    conduct.attempts.review([
+                                        examination.id,
+                                        attempt.id,
+                                    ])
+                                "
+                                class="text-primary text-xs underline underline-offset-2"
+                                data-test="review-answers"
+                                >Answers</Link
+                            >
                         </td>
                         <td class="px-3 py-2">
                             {{ attempt.room ?? '—' }}

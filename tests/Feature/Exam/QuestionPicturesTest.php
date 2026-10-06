@@ -86,15 +86,15 @@ beforeEach(function () {
 });
 
 test('a candidate sees the pictures of their own questions, and no other picture', function () {
-    $this->post('/sit/'.$this->exam->id, ['candidate_no' => 'C-001', 'pin' => $this->pin])->assertRedirect();
+    $this->post('/sit/'.$this->exam->sit_code, ['candidate_no' => 'C-001', 'pin' => $this->pin])->assertRedirect();
 
-    $own = "/sit/{$this->exam->id}/media/{$this->diagram->id}";
-    $this->get("/sit/{$this->exam->id}/exam")->assertInertia(fn ($page) => $page
+    $own = "/sit/{$this->exam->sit_code}/media/{$this->diagram->id}";
+    $this->get("/sit/{$this->exam->sit_code}/exam")->assertInertia(fn ($page) => $page
         ->where('items', fn ($items) => collect($items)->contains(fn ($item) => str_contains($item['stem'], 'src="'.$own.'"')
             && ! str_contains($item['stem'], '/questions/media/'))));
 
     $this->get($own)->assertOk()->assertHeader('Content-Type', 'image/png');
-    $this->get("/sit/{$this->exam->id}/media/{$this->elsewhere->id}")->assertNotFound();
+    $this->get("/sit/{$this->exam->sit_code}/media/{$this->elsewhere->id}")->assertNotFound();
     // The staff address stays closed to a candidate, whose browser holds no staff sign-in. (The
     // test's one app instance still has the officer who set the exam up, and the candidate's guard.)
     app('auth')->shouldUse('web');
@@ -103,7 +103,7 @@ test('a candidate sees the pictures of their own questions, and no other picture
 });
 
 test('a picture cannot be fetched without signing in to the exam', function () {
-    $this->get("/sit/{$this->exam->id}/media/{$this->diagram->id}")->assertRedirect("/sit/{$this->exam->id}");
+    $this->get("/sit/{$this->exam->sit_code}/media/{$this->diagram->id}")->assertRedirect("/sit/{$this->exam->sit_code}");
 });
 
 test('the staff preview keeps the staff address for pictures', function () {

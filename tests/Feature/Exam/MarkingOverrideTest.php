@@ -105,12 +105,12 @@ function sitTheMcq(): CandidateExam
 {
     $t = test();
 
-    $t->post('/sit/'.$t->exam->id, ['candidate_no' => 'C-001', 'pin' => $t->pin]);
+    $t->post('/sit/'.$t->exam->sit_code, ['candidate_no' => 'C-001', 'pin' => $t->pin]);
     $attempt = CandidateExam::query()->where('candidate_id', $t->candidate->id)->firstOrFail();
 
     $item = $attempt->items()->with('paperItem')->get()->first();
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [$t->correctOptionId]]]);
-    $t->post("/sit/{$t->exam->id}/submit");
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [$t->correctOptionId]]]);
+    $t->post("/sit/{$t->exam->sit_code}/submit");
 
     $t->mcqItem = $item;
 

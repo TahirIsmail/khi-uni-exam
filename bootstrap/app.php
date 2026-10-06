@@ -34,7 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             if (is_string($name) && str_starts_with($name, 'sit.')) {
                 $exam = $request->route('exam');
 
-                return route('sit.login', $exam instanceof Model ? $exam->getKey() : $exam);
+                return route('sit.login', $exam instanceof Model ? $exam->getAttribute('sit_code') : $exam);
             }
 
             return route('login');

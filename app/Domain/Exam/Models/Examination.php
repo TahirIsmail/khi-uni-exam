@@ -29,6 +29,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $intake_id
  * @property Carbon|null $starts_at
  * @property Carbon|null $closes_at When set, candidates may start only from starts_at until this, and no time runs past it.
+ * @property string $sit_code The candidates' address, /sit/{code}: eight random characters.
+ * @property bool $show_result Candidates see their score and pass/fail when they submit.
  * @property string|null $shared_pin One exam PIN for every candidate (no check-in), or null for each candidate's own.
  * @property int $duration_minutes
  * @property float $total_marks
@@ -41,11 +43,32 @@ use Illuminate\Support\Carbon;
  * @property int $created_by
  * @property int|null $updated_by
  */
-#[Fillable(['public_ref', 'branch_id', 'title', 'programme_id', 'professional_id', 'term_id', 'course_id', 'exam_type_id', 'intake_id', 'starts_at', 'closes_at', 'shared_pin', 'duration_minutes', 'total_marks', 'pass_percentage', 'negative_marking', 'negative_fraction', 'require_double_marking', 'instructions', 'status', 'created_by', 'updated_by'])]
+#[Fillable(['public_ref', 'branch_id', 'title', 'programme_id', 'professional_id', 'term_id', 'course_id', 'exam_type_id', 'intake_id', 'starts_at', 'closes_at', 'shared_pin', 'show_result', 'duration_minutes', 'total_marks', 'pass_percentage', 'negative_marking', 'negative_fraction', 'require_double_marking', 'instructions', 'status', 'created_by', 'updated_by'])]
 #[Hidden(['shared_pin'])]
 final class Examination extends Model
 {
     protected $table = 'exm_examinations';
+
+    /** Eight characters, without the ones read alike (0/o, 1/l/i): about 850 billion codes. */
+    public static function newSitCode(): string
+    {
+        $alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+        do {
+            $code = '';
+            for ($i = 0; $i < 8; $i++) {
+                $code .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+        } while (self::query()->where('sit_code', $code)->exists());
+
+        return $code;
+    }
+
+    protected static function booted(): void
+    {
+        self::creating(function (self $examination): void {
+            $examination->sit_code ??= self::newSitCode();
+        });
+    }
 
     protected function casts(): array
     {
@@ -53,6 +76,7 @@ final class Examination extends Model
             'starts_at' => 'datetime',
             'closes_at' => 'datetime',
             'shared_pin' => 'encrypted',
+            'show_result' => 'boolean',
             'total_marks' => 'float',
             'pass_percentage' => 'float',
             'negative_marking' => 'boolean',

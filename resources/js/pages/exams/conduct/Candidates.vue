@@ -173,7 +173,7 @@ const statusStyle: Record<
                 data-test="shared-pin"
             >
                 Every candidate signs in at
-                <strong>/sit/{{ examination.id }}</strong> with their candidate
+                <strong>{{ examination.sitUrl }}</strong> with their candidate
                 number and the exam PIN
                 <strong class="font-mono text-base">{{
                     examination.sharedPin

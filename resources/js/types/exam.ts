@@ -41,6 +41,9 @@ export type ExaminationDetail = {
     closesAt: string | null;
     closesAtLabel: string | null;
     sharedPin: string | null;
+    sitCode: string;
+    sitUrl: string;
+    showResult: boolean;
     durationMinutes: number;
     totalMarks: number;
     passPercentage: number;

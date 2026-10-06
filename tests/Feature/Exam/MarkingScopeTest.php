@@ -64,8 +64,8 @@ beforeEach(function () {
     $this->actingAs($officer, 'web')->post("/exams/{$this->exam->id}/candidates/{$candidate->id}/allocate", ['room_id' => $room->id])->assertSessionHasNoErrors();
 
     $checkedIn = app(CheckInCandidate::class)($officer, $this->exam, $candidate->refresh());
-    $this->post('/sit/'.$this->exam->id, ['candidate_no' => 'C-001', 'pin' => $checkedIn['pin']]);
-    $this->post("/sit/{$this->exam->id}/submit");
+    $this->post('/sit/'.$this->exam->sit_code, ['candidate_no' => 'C-001', 'pin' => $checkedIn['pin']]);
+    $this->post("/sit/{$this->exam->sit_code}/submit");
 
     $this->markerRole = $this->cmsRole('Examiner');
     $this->cmsGrant($this->markerRole, 'exam_marking', 'view');

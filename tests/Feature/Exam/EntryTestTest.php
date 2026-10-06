@@ -11,6 +11,7 @@ use App\Domain\Paper\Models\PaperItem;
 use App\Domain\QuestionBank\Models\Question;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Inertia\Support\SessionKey;
 use Tests\Concerns\BuildsExaminations;
 use Tests\Concerns\InteractsWithCms;
@@ -87,9 +88,9 @@ test('candidates on a roll-number list sign in with the one exam PIN, no check-i
     ])->assertSessionHasNoErrors();
     expect(Candidate::query()->where('examination_id', $exam->id)->pluck('candidate_no')->sort()->values()->all())->toBe(['BSCS-1001', 'BSCS-1002']);
 
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'BSCS-1001', 'pin' => '000000'])->assertInvalid(['pin']);
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'BSCS-9999', 'pin' => '482915'])->assertInvalid(['pin']);
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'BSCS-1001', 'pin' => '482915'])->assertRedirect("/sit/{$exam->id}/exam");
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'BSCS-1001', 'pin' => '000000'])->assertInvalid(['pin']);
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'BSCS-9999', 'pin' => '482915'])->assertInvalid(['pin']);
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'BSCS-1001', 'pin' => '482915'])->assertRedirect("/sit/{$exam->sit_code}/exam");
 
     $attempt = CandidateExam::query()->firstOrFail();
     expect($attempt->items()->count())->toBe(5);
@@ -105,21 +106,21 @@ test('an examination with a window opens at its start, closes on time, and no ti
     $at = fn (string $time) => $this->travelTo(CarbonImmutable::parse("2026-10-07 {$time}", $zone));
 
     $at('08:59');
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-1', 'pin' => '123456'])->assertInvalid(['pin' => 'opens at 9:00 AM']);
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-1', 'pin' => '123456'])->assertInvalid(['pin' => 'opens at 9:00 AM']);
 
     $at('09:05');
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-1', 'pin' => '123456'])->assertRedirect();
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-1', 'pin' => '123456'])->assertRedirect();
     expect(CandidateExam::query()->latest('id')->first()->deadline_at->equalTo(CarbonImmutable::parse('2026-10-07 10:35', $zone)))->toBeTrue();
 
     // Starting at 11:00 leaves one hour, not ninety minutes.
     $at('11:00');
     $this->flushSession();
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-2', 'pin' => '123456'])->assertRedirect();
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-2', 'pin' => '123456'])->assertRedirect();
     expect(CandidateExam::query()->latest('id')->first()->deadline_at->equalTo(CarbonImmutable::parse('2026-10-07 12:00', $zone)))->toBeTrue();
 
     $at('12:00');
     $this->flushSession();
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-3', 'pin' => '123456'])->assertInvalid(['pin' => 'closed at 12:00 PM']);
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-3', 'pin' => '123456'])->assertInvalid(['pin' => 'closed at 12:00 PM']);
 });
 
 test('the window and the exam PIN are checked when the examination is saved', function () {
@@ -202,7 +203,7 @@ test('with PINs of their own, check-in-all checks in the seated, issues each a P
     $response->assertRedirect("/exams/{$exam->id}/checkin");
 
     // The PIN issued works.
-    $this->post("/sit/{$exam->id}", ['candidate_no' => $pins[0]['candidateNo'], 'pin' => $pins[0]['pin']])->assertRedirect("/sit/{$exam->id}/exam");
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => $pins[0]['candidateNo'], 'pin' => $pins[0]['pin']])->assertRedirect("/sit/{$exam->sit_code}/exam");
 });
 
 test('computers wait for approval only when Setup says so, and a centre\'s waiting computers are approved all at once', function () {
@@ -214,8 +215,8 @@ test('computers wait for approval only when Setup says so, and a centre\'s waiti
     $candidate = Candidate::query()->where('examination_id', $exam->id)->firstOrFail();
     $this->actingAs($this->admin)->post("/exams/{$exam->id}/candidates/{$candidate->id}/allocate", ['room_id' => $room->id]);
 
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-001', 'pin' => '112233']);
-    $device = fn () => $this->postJson("/sit/{$exam->id}/device", ['fingerprint' => 'Chrome|1920x1080|Asia/Karachi'])->json('status');
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-001', 'pin' => '112233']);
+    $device = fn () => $this->postJson("/sit/{$exam->sit_code}/device", ['fingerprint' => 'Chrome|1920x1080|Asia/Karachi'])->json('status');
 
     // Off under Setup: no waiting.
     $this->cmsExamSettings(['kmu_assess_device_approval' => 0]);
@@ -234,7 +235,7 @@ test('computers wait for approval only when Setup says so, and a centre\'s waiti
 
 test('the monitor shows a page at a time, with the whole examination counted', function () {
     $exam = entryWithRoster(3, ['shared_pin' => '999000']);
-    $this->post("/sit/{$exam->id}", ['candidate_no' => 'R-001', 'pin' => '999000'])->assertRedirect();
+    $this->post("/sit/{$exam->sit_code}", ['candidate_no' => 'R-001', 'pin' => '999000'])->assertRedirect();
 
     app('auth')->shouldUse('web');
     $this->actingAs($this->admin)->get("/exams/{$exam->id}/monitor")->assertOk()
@@ -244,3 +245,111 @@ test('the monitor shows a page at a time, with the whole examination counted', f
             ->where('attempts.0.candidateNo', 'R-001')
             ->where('attempts.0.status', 'in_progress'));
 });
+
+test('candidates open an examination by its short random code, never by its number', function () {
+    entryTest(5, ['shared_pin' => '102030'])->assertSessionHasNoErrors();
+    $exam = Examination::query()->latest('id')->firstOrFail();
+
+    expect($exam->sit_code)->toMatch('/^[a-z0-9]{8}$/');
+    $this->get("/sit/{$exam->sit_code}")->assertOk();
+    $this->get("/sit/{$exam->id}")->assertNotFound();
+    $this->get('/sit/zzzzzzzz')->assertNotFound();
+    $this->actingAs($this->admin)->get("/exams/{$exam->id}/candidates")
+        ->assertInertia(fn ($page) => $page->where('examination.sitUrl', route('sit.login', $exam)));
+});
+
+test('the sign-in page says when the examination opens, counts down to it, and says when it has closed', function () {
+    entryTest(5, ['shared_pin' => '102030', 'starts_at' => '2026-10-07T09:00', 'closes_at' => '2026-10-07T12:00'])->assertSessionHasNoErrors();
+    $exam = Examination::query()->latest('id')->firstOrFail();
+    $zone = (string) config('exam.timezone');
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-07 08:30', $zone));
+    $this->get("/sit/{$exam->sit_code}")->assertInertia(fn ($page) => $page
+        ->where('opening.state', 'not_yet')->where('opening.secondsToOpen', 1800)
+        ->where('opening.opensAt', 'Wednesday 7 October 2026, 9:00 AM'));
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-07 10:00', $zone));
+    $this->get("/sit/{$exam->sit_code}")->assertInertia(fn ($page) => $page->where('opening.state', 'open'));
+
+    $this->travelTo(CarbonImmutable::parse('2026-10-07 12:00', $zone));
+    $this->get("/sit/{$exam->sit_code}")->assertInertia(fn ($page) => $page->where('opening.state', 'closed'));
+});
+
+/** An entry test of three questions with options, so answers can be right or wrong. */
+function entryScoredExam(bool $showResult): Examination
+{
+    Question::query()->update(['is_archived' => true]);
+    foreach (['Nerve of the deltoid?' => 'Axillary', 'Unit of force?' => 'Newton', 'Capital of Pakistan?' => 'Islamabad'] as $stem => $right) {
+        test()->activeQuestion(test()->node, stem: $stem, options: [['A', $right, true], ['B', 'Something else entirely', false]]);
+    }
+    entryTest(3, ['shared_pin' => '445566', 'show_result' => $showResult, 'pass_percentage' => 60])->assertSessionHasNoErrors();
+    $exam = Examination::query()->latest('id')->firstOrFail();
+    test()->actingAs(test()->admin)->post("/exams/{$exam->id}/candidates/import", [
+        'file' => UploadedFile::fake()->createWithContent('list.csv', "roll_no,name\nR-1,Ali\nR-2,Sana"),
+    ])->assertSessionHasNoErrors();
+
+    return $exam;
+}
+
+/** Signs a candidate in, answers every question (the right option, or the wrong one), and submits. */
+function entrySitAndSubmit(Examination $exam, string $candidateNo, bool $right): CandidateExam
+{
+    test()->flushSession();
+    app('auth')->forgetGuards();
+    test()->post("/sit/{$exam->sit_code}", ['candidate_no' => $candidateNo, 'pin' => '445566'])->assertRedirect("/sit/{$exam->sit_code}/exam");
+    $attempt = CandidateExam::query()->whereHas('candidate', fn ($q) => $q->where('candidate_no', $candidateNo))->firstOrFail();
+    foreach ($attempt->items()->with('paperItem')->get() as $i => $item) {
+        $option = DB::table('qb_question_options')->where('version_id', $item->paperItem->version_id)
+            ->where('is_correct', $right)->value('id');
+        test()->postJson("/sit/{$exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => $i + 1, 'payload' => ['selected' => [$option]], 'flagged' => false])->assertOk();
+    }
+    test()->post("/sit/{$exam->sit_code}/submit")->assertRedirect("/sit/{$exam->sit_code}/submitted");
+
+    return $attempt->refresh();
+}
+
+test('on submitting, a candidate sees their score and whether they passed, when the examination says so', function () {
+    $exam = entryScoredExam(showResult: true);
+
+    entrySitAndSubmit($exam, 'R-1', right: true);
+    $this->get("/sit/{$exam->sit_code}/submitted")->assertInertia(fn ($page) => $page
+        ->where('result.awarded', 3)->where('result.total', 3)->where('result.percent', 100)->where('result.passed', true));
+
+    entrySitAndSubmit($exam, 'R-2', right: false);
+    $this->get("/sit/{$exam->sit_code}/submitted")->assertInertia(fn ($page) => $page
+        ->where('result.awarded', 0)->where('result.passed', false));
+});
+
+test('without that setting, the candidate is only told their answers were received', function () {
+    $exam = entryScoredExam(showResult: false);
+    entrySitAndSubmit($exam, 'R-1', right: true);
+    $this->get("/sit/{$exam->sit_code}/submitted")->assertInertia(fn ($page) => $page->where('result', null));
+});
+
+test('staff go through a candidate\'s answers question by question, with what they chose and the right answer', function () {
+    $exam = entryScoredExam(showResult: false);
+    $attempt = entrySitAndSubmit($exam, 'R-2', right: false);
+
+    app('auth')->shouldUse('web');
+    $this->actingAs($this->admin)->get("/exams/{$exam->id}/attempts/{$attempt->id}/review")->assertOk()
+        ->assertInertia(fn ($page) => $page->component('exams/conduct/AttemptReview')
+            ->where('candidate.candidateNo', 'R-2')
+            ->where('counts.wrong', 3)->where('counts.correct', 0)
+            ->where('score.passed', false)
+            ->has('items', 3)
+            ->where('items.0.outcome', 'wrong')
+            ->where('items.0.options', fn ($options) => collect($options)->contains(fn ($o) => $o['chosen'] && ! $o['isCorrect'])
+                && collect($options)->contains(fn ($o) => $o['isCorrect'] && ! $o['chosen'])));
+
+    // Another examination's attempt is not reachable through this one.
+    $other = entryOtherExam();
+    $this->actingAs($this->admin)->get("/exams/{$other->id}/attempts/{$attempt->id}/review")->assertNotFound();
+});
+
+function entryOtherExam(): Examination
+{
+    test()->activeQuestion(test()->node);
+    entryTest(1)->assertSessionHasNoErrors();
+
+    return Examination::query()->latest('id')->firstOrFail();
+}

@@ -34,6 +34,7 @@ class PreviewController extends ExamAreaController
         return Inertia::render('sit/Exam', [
             'examination' => [
                 'id' => $exam->id,
+                'code' => $exam->sit_code,
                 'title' => $exam->title,
                 'instructions' => $exam->instructions,
             ],
@@ -125,6 +126,7 @@ class PreviewController extends ExamAreaController
         return Inertia::render('exams/PreviewResult', [
             'examination' => [
                 'id' => $exam->id,
+                'code' => $exam->sit_code,
                 'title' => $exam->title,
                 'totalMarks' => (float) $exam->total_marks,
                 'passPercentage' => (float) $exam->pass_percentage,

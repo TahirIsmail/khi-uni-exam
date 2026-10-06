@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Exam\AttemptReviewController;
 use App\Http\Controllers\Exam\CandidateController;
 use App\Http\Controllers\Exam\CentreController;
 use App\Http\Controllers\Exam\CheckInController;
@@ -48,6 +49,8 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::post('checkin/{candidate}/reissue-pin', [CheckInController::class, 'reissuePin'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.reissue-pin');
 
         // Watching an examination while it is sat, and the invigilator's own actions on it (step 18).
+        // One candidate's answers, question by question, with the key (after or during the exam).
+        Route::get('attempts/{attempt}/review', [AttemptReviewController::class, 'show'])->whereNumber('attempt')->name('conduct.attempts.review');
         Route::get('monitor', [MonitorController::class, 'index'])->middleware('can:delivery.monitor')->name('conduct.monitor');
         Route::post('monitor/attempts/{attempt}/end-session', [MonitorController::class, 'endSession'])->whereNumber('attempt')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.end-session');
         Route::post('monitor/attempts/{attempt}/add-time', [MonitorController::class, 'addTime'])->whereNumber('attempt')->middleware(['can:delivery.session_control', 'throttle:30,1'])->name('conduct.monitor.add-time');

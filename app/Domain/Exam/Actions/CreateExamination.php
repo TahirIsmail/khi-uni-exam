@@ -54,6 +54,7 @@ final class CreateExamination
                 'starts_at' => $input->startsAt,
                 'closes_at' => $input->closesAt,
                 'shared_pin' => $input->sharedPin,
+                'show_result' => $input->showResult,
                 'duration_minutes' => $input->durationMinutes,
                 'total_marks' => $input->totalMarks,
                 'pass_percentage' => $input->passPercentage,

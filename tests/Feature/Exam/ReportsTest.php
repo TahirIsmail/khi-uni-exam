@@ -98,11 +98,11 @@ function sitWith(string $candidateNo, int $optionId): void
 
     $checkedIn = app(CheckInCandidate::class)($t->officer, $t->exam, $candidate->refresh());
 
-    $t->post('/sit/'.$t->exam->id, ['candidate_no' => $candidateNo, 'pin' => $checkedIn['pin']]);
+    $t->post('/sit/'.$t->exam->sit_code, ['candidate_no' => $candidateNo, 'pin' => $checkedIn['pin']]);
     $attempt = CandidateExam::query()->where('candidate_id', $candidate->id)->firstOrFail();
     $item = $attempt->items()->firstOrFail();
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [$optionId]]]);
-    $t->post("/sit/{$t->exam->id}/submit");
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [$optionId]]]);
+    $t->post("/sit/{$t->exam->sit_code}/submit");
 }
 
 function publishResults(): void

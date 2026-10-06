@@ -72,15 +72,15 @@ beforeEach(function () {
 
 function proctoringSignIn(string $candidateNo, string $pin): TestResponse
 {
-    return test()->post('/sit/'.test()->exam->id, ['candidate_no' => $candidateNo, 'pin' => $pin]);
+    return test()->post('/sit/'.test()->exam->sit_code, ['candidate_no' => $candidateNo, 'pin' => $pin]);
 }
 
 test('a candidate\'s browser reporting a lockdown event records it with the right severity', function () {
     proctoringSignIn('C-001', $this->pin);
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
 
-    $this->postJson("/sit/{$this->exam->id}/proctor-event", ['type' => 'right_click'])->assertOk();
-    $this->postJson("/sit/{$this->exam->id}/proctor-event", ['type' => 'devtools_opened'])->assertOk();
+    $this->postJson("/sit/{$this->exam->sit_code}/proctor-event", ['type' => 'right_click'])->assertOk();
+    $this->postJson("/sit/{$this->exam->sit_code}/proctor-event", ['type' => 'devtools_opened'])->assertOk();
 
     expect(DB::table('dlv_proctor_events')->where('candidate_exam_id', $attempt->id)->where('type', 'right_click')->value('severity'))->toBe('low')
         ->and(DB::table('dlv_proctor_events')->where('candidate_exam_id', $attempt->id)->where('type', 'devtools_opened')->value('severity'))->toBe('high')
@@ -90,7 +90,7 @@ test('a candidate\'s browser reporting a lockdown event records it with the righ
 test('a device not seen before at this centre is pending until an invigilator approves it', function () {
     proctoringSignIn('C-001', $this->pin);
 
-    $this->postJson("/sit/{$this->exam->id}/device", ['fingerprint' => 'browser-a'])
+    $this->postJson("/sit/{$this->exam->sit_code}/device", ['fingerprint' => 'browser-a'])
         ->assertOk()->assertJson(['status' => 'pending']);
 
     $device = CandidateDevice::query()->where('centre_id', $this->centre->id)->firstOrFail();
@@ -98,13 +98,13 @@ test('a device not seen before at this centre is pending until an invigilator ap
 
     $this->actingAs($this->conductOfficer, 'web')->post("/exams/conduct/centres/{$this->centre->id}/devices/{$device->id}/approve")->assertSessionHasNoErrors();
 
-    $this->postJson("/sit/{$this->exam->id}/device", ['fingerprint' => 'browser-a'])
+    $this->postJson("/sit/{$this->exam->sit_code}/device", ['fingerprint' => 'browser-a'])
         ->assertOk()->assertJson(['status' => 'approved']);
 });
 
 test('approving a device needs centre.manage, not just centre.view', function () {
     proctoringSignIn('C-001', $this->pin);
-    $this->postJson("/sit/{$this->exam->id}/device", ['fingerprint' => 'browser-a']);
+    $this->postJson("/sit/{$this->exam->sit_code}/device", ['fingerprint' => 'browser-a']);
     $device = CandidateDevice::query()->where('centre_id', $this->centre->id)->firstOrFail();
 
     $viewOnlyRole = $this->cmsRole('Centre viewer');
@@ -118,7 +118,7 @@ test('approving a device needs centre.manage, not just centre.view', function ()
 test('a committee decision is recorded, and voiding an attempt transitions its status', function () {
     proctoringSignIn('C-001', $this->pin);
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
-    $this->postJson("/sit/{$this->exam->id}/proctor-event", ['type' => 'devtools_opened']);
+    $this->postJson("/sit/{$this->exam->sit_code}/proctor-event", ['type' => 'devtools_opened']);
 
     $this->actingAs($this->proctor, 'web')->post("/exams/{$this->exam->id}/proctoring/{$attempt->id}/decide", [
         'decision' => 'void_attempt',
@@ -148,7 +148,7 @@ test('deciding a case needs proctor.review.decide, not just proctor.events.view'
 test('a proctoring event is never changed or deleted, and neither is a decision', function () {
     proctoringSignIn('C-001', $this->pin);
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
-    $this->postJson("/sit/{$this->exam->id}/proctor-event", ['type' => 'tab_hidden']);
+    $this->postJson("/sit/{$this->exam->sit_code}/proctor-event", ['type' => 'tab_hidden']);
 
     expect(fn () => DB::table('dlv_proctor_events')->where('candidate_exam_id', $attempt->id)->update(['severity' => 'high']))
         ->toThrow(QueryException::class, 'never changed')
@@ -168,7 +168,7 @@ test('a proctoring event is never changed or deleted, and neither is a decision'
 test('voiding an attempt is allowed even after it has been submitted', function () {
     proctoringSignIn('C-001', $this->pin);
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
-    $this->post("/sit/{$this->exam->id}/submit");
+    $this->post("/sit/{$this->exam->sit_code}/submit");
     expect($attempt->fresh()->status)->toBe(AttemptStatus::Submitted);
 
     $this->actingAs($this->proctor, 'web')->post("/exams/{$this->exam->id}/proctoring/{$attempt->id}/decide", [

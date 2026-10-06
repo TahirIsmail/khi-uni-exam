@@ -75,11 +75,11 @@ beforeEach(function () {
 
 function signInPin(string $candidateNo, string $pin): TestResponse
 {
-    return test()->post('/sit/'.test()->exam->id, ['candidate_no' => $candidateNo, 'pin' => $pin]);
+    return test()->post('/sit/'.test()->exam->sit_code, ['candidate_no' => $candidateNo, 'pin' => $pin]);
 }
 
 test('a candidate signs in with their number and PIN, and the exam is assigned', function () {
-    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/exam");
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->sit_code}/exam");
 
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
     expect($attempt->status)->toBe(AttemptStatus::InProgress)
@@ -100,10 +100,10 @@ test('a candidate who has been saving answers quickly can still submit', functio
     $item = $attempt->items()->firstOrFail();
 
     foreach (range(1, 15) as $sequence) {
-        $this->postJson("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => $sequence, 'payload' => ['text' => (string) $sequence]])->assertOk();
+        $this->postJson("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => $sequence, 'payload' => ['text' => (string) $sequence]])->assertOk();
     }
 
-    $this->post("/sit/{$this->exam->id}/submit")->assertRedirect("/sit/{$this->exam->id}/submitted");
+    $this->post("/sit/{$this->exam->sit_code}/submit")->assertRedirect("/sit/{$this->exam->sit_code}/submitted");
     expect($attempt->fresh()->status)->toBe(AttemptStatus::Submitted);
 });
 
@@ -112,7 +112,7 @@ test('a hall signing in from one address does not lock the next candidate out', 
         signInPin('C-9'.$i, '000000')->assertInvalid(['pin']);
     }
 
-    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/exam");
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->sit_code}/exam");
 });
 
 test('guessing the PIN of one candidate number is cut off', function () {
@@ -139,7 +139,7 @@ test('a computer silent for a while lets the next sign-in resume automatically',
     $firstSession = DeliverySession::query()->where('candidate_exam_id', $attempt->id)->firstOrFail();
     $firstSession->update(['last_heartbeat_at' => now()->subSeconds(120)]);
 
-    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/exam");
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->sit_code}/exam");
 
     expect($firstSession->fresh()->ended_at)->not->toBeNull()
         ->and($firstSession->fresh()->end_reason)->toBe('replaced')
@@ -155,7 +155,7 @@ test('an invigilator can end an open session so the candidate may resume elsewhe
 
     $this->actingAs($this->invigilator)->post("/exams/{$this->exam->id}/monitor/attempts/{$attempt->id}/end-session")->assertSessionHasNoErrors();
 
-    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/exam");
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->sit_code}/exam");
 });
 
 test('ending a session needs its own right, separate from just monitoring', function () {
@@ -176,8 +176,8 @@ test('an answer is saved, and resending the same sequence number changes nothing
     $item = $attempt->items()->orderBy('position')->firstOrFail();
 
     $answer = ['selected' => [1]];
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => $answer])->assertOk();
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [2]]])->assertOk();
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => $answer])->assertOk();
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [2]]])->assertOk();
 
     expect(DB::table('dlv_answer_events')->where('candidate_exam_id', $attempt->id)->count())->toBe(1);
     $current = DB::table('dlv_answers_current')->where('candidate_exam_id', $attempt->id)->where('cand_paper_item_id', $item->id)->first();
@@ -189,8 +189,8 @@ test('an older, out-of-order retry never overwrites a newer answer', function ()
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
     $item = $attempt->items()->orderBy('position')->firstOrFail();
 
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 2, 'payload' => ['selected' => [2]]])->assertOk();
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])->assertOk();
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 2, 'payload' => ['selected' => [2]]])->assertOk();
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])->assertOk();
 
     $current = DB::table('dlv_answers_current')->where('candidate_exam_id', $attempt->id)->where('cand_paper_item_id', $item->id)->first();
     expect(json_decode((string) $current->payload, true))->toBe(['selected' => [2]]);
@@ -201,21 +201,21 @@ test('the candidate submits, and no more answers can be recorded', function () {
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
     $item = $attempt->items()->orderBy('position')->firstOrFail();
 
-    $this->post("/sit/{$this->exam->id}/submit")->assertRedirect("/sit/{$this->exam->id}/submitted");
+    $this->post("/sit/{$this->exam->sit_code}/submit")->assertRedirect("/sit/{$this->exam->sit_code}/submitted");
 
     expect($attempt->fresh()->status)->toBe(AttemptStatus::Submitted)
         ->and(DB::table('dlv_submissions')->where('candidate_exam_id', $attempt->id)->exists())->toBeTrue()
         ->and(DeliverySession::query()->where('candidate_exam_id', $attempt->id)->whereNull('ended_at')->count())->toBe(0);
 
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])
-        ->assertRedirect("/sit/{$this->exam->id}");
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])
+        ->assertRedirect("/sit/{$this->exam->sit_code}");
 });
 
 test('signing in once submitted opens the submitted screen, not the exam', function () {
     signInPin('C-001', $this->pin);
-    $this->post("/sit/{$this->exam->id}/submit");
+    $this->post("/sit/{$this->exam->sit_code}/submit");
 
-    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->id}/submitted");
+    signInPin('C-001', $this->pin)->assertRedirect("/sit/{$this->exam->sit_code}/submitted");
 });
 
 test('the database refuses to record the same answer sequence number twice', function () {
@@ -242,7 +242,7 @@ test('an answer event is never changed or deleted, and an attempt is never delet
     signInPin('C-001', $this->pin);
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
     $item = $attempt->items()->orderBy('position')->firstOrFail();
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]]);
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]]);
 
     expect(fn () => DB::table('dlv_answer_events')->where('candidate_exam_id', $attempt->id)->update(['sequence_no' => 5]))
         ->toThrow(QueryException::class, 'never changed')
@@ -264,7 +264,7 @@ test('pausing a room freezes every deadline in it, and resuming restores the tim
 
     // Answers cannot be saved while the room is paused.
     $item = $attempt->items()->orderBy('position')->firstOrFail();
-    $this->post("/sit/{$this->exam->id}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])->assertInvalid(['attempt']);
+    $this->post("/sit/{$this->exam->sit_code}/answer", ['item_id' => $item->id, 'sequence' => 1, 'payload' => ['selected' => [1]]])->assertInvalid(['attempt']);
 
     DB::table('cand_candidate_exams')->where('id', $attempt->id)->update(['paused_at' => now()->subMinutes(5)]);
     $this->actingAs($this->invigilator)->post("/exams/{$this->exam->id}/monitor/rooms/{$this->room->id}/resume")->assertSessionHasNoErrors();
@@ -295,7 +295,7 @@ test('once the deadline and its grace period have passed, the next request submi
     $attempt = CandidateExam::query()->where('candidate_id', $this->candidate->id)->firstOrFail();
     DB::table('cand_candidate_exams')->where('id', $attempt->id)->update(['deadline_at' => now()->subMinutes(10)]);
 
-    $response = $this->postJson("/sit/{$this->exam->id}/heartbeat");
+    $response = $this->postJson("/sit/{$this->exam->sit_code}/heartbeat");
     $response->assertOk();
 
     expect($attempt->fresh()->status)->toBe(AttemptStatus::Submitted)

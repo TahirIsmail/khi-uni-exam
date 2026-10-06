@@ -94,7 +94,7 @@ beforeEach(function () {
 function analyticsSitAndSubmit(string $candidateNo, bool $answerCorrectly): array
 {
     $t = test();
-    $t->post('/sit/'.$t->exam->id, ['candidate_no' => $candidateNo, 'pin' => $t->pins[$candidateNo]]);
+    $t->post('/sit/'.$t->exam->sit_code, ['candidate_no' => $candidateNo, 'pin' => $t->pins[$candidateNo]]);
     $candidate = Candidate::query()->where('candidate_no', $candidateNo)->firstOrFail();
     $attempt = CandidateExam::query()->where('candidate_id', $candidate->id)->firstOrFail();
     $items = $attempt->items()->with('paperItem')->get();
@@ -103,10 +103,10 @@ function analyticsSitAndSubmit(string $candidateNo, bool $answerCorrectly): arra
     $essayItem = $items->firstWhere('paperItem.question_type_id', $t->typeId('essay'));
 
     $chosen = $answerCorrectly ? $t->correctOptionId : $t->wrongOptionId;
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $sbaItem->id, 'sequence' => 1, 'payload' => ['selected' => [$chosen]]]);
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $essayItem->id, 'sequence' => 2, 'payload' => ['text' => 'An essay answer.']]);
-    $t->post("/sit/{$t->exam->id}/submit");
-    $t->post("/sit/{$t->exam->id}/logout");
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $sbaItem->id, 'sequence' => 1, 'payload' => ['selected' => [$chosen]]]);
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $essayItem->id, 'sequence' => 2, 'payload' => ['text' => 'An essay answer.']]);
+    $t->post("/sit/{$t->exam->sit_code}/submit");
+    $t->post("/sit/{$t->exam->sit_code}/logout");
 
     return ['attempt' => $attempt->fresh(), 'essayItem' => $essayItem];
 }

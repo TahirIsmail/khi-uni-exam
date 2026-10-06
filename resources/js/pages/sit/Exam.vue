@@ -15,7 +15,12 @@ import type {
 } from '@/types';
 
 const props = defineProps<{
-    examination: { id: number; title: string; instructions: string | null };
+    examination: {
+        id: number;
+        code: string;
+        title: string;
+        instructions: string | null;
+    };
     attempt: AttemptState;
     items: AttemptItem[];
     /**
@@ -139,7 +144,7 @@ async function flushQueue(): Promise<void> {
             const entry = queue[0];
             try {
                 const response = await post(
-                    sit.answer(props.examination.id).url,
+                    sit.answer(props.examination.code).url,
                     entry,
                 );
                 if (!response.ok) {
@@ -207,12 +212,12 @@ let heartbeatTimer: number | undefined;
 async function heartbeat(): Promise<void> {
     try {
         const response = await post(
-            sit.heartbeat(props.examination.id).url,
+            sit.heartbeat(props.examination.code).url,
             {},
         );
         if (response.status === 422) {
             // Ended elsewhere: the next load will send them to sign in again.
-            window.location.href = sit.login(props.examination.id).url;
+            window.location.href = sit.login(props.examination.code).url;
 
             return;
         }
@@ -224,7 +229,7 @@ async function heartbeat(): Promise<void> {
             data.remainingSeconds ?? remainingSeconds.value;
         paused.value = data.status === 'paused';
         if (data.status === 'submitted') {
-            window.location.href = sit.submitted(props.examination.id).url;
+            window.location.href = sit.submitted(props.examination.code).url;
         }
     } catch {
         // Offline: the local timer keeps counting down until the next successful heartbeat.
@@ -245,7 +250,7 @@ function deviceFingerprint(): string {
 let deviceCheckTimer: number | undefined;
 async function checkDevice(): Promise<void> {
     try {
-        const response = await post(sit.device(props.examination.id).url, {
+        const response = await post(sit.device(props.examination.code).url, {
             fingerprint: deviceFingerprint(),
         });
         const data = (await response.json()) as { status: string };
@@ -266,7 +271,7 @@ function reportProctorEvent(
     type: ProctorEventType,
     detail?: Record<string, unknown>,
 ): void {
-    void post(sit.proctorEvent(props.examination.id).url, { type, detail });
+    void post(sit.proctorEvent(props.examination.code).url, { type, detail });
 }
 function onVisibilityChange(): void {
     if (document.hidden) {
@@ -399,7 +404,7 @@ async function submit(): Promise<void> {
     }
     submitting.value = true;
     await flushQueue();
-    router.post(sit.submit(props.examination.id).url);
+    router.post(sit.submit(props.examination.code).url);
 }
 
 const answeredCount = computed(

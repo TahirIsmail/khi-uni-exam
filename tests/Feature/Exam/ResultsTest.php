@@ -94,16 +94,16 @@ beforeEach(function () {
 function resultsSitAndSubmitWrong(): array
 {
     $t = test();
-    $t->post('/sit/'.$t->exam->id, ['candidate_no' => 'C-001', 'pin' => $t->pin]);
+    $t->post('/sit/'.$t->exam->sit_code, ['candidate_no' => 'C-001', 'pin' => $t->pin]);
     $attempt = CandidateExam::query()->where('candidate_id', $t->candidate->id)->firstOrFail();
     $items = $attempt->items()->with('paperItem')->get();
 
     $sbaItem = $items->firstWhere('paperItem.question_type_id', $t->typeId('single_best_answer'));
     $essayItem = $items->firstWhere('paperItem.question_type_id', $t->typeId('essay'));
 
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $sbaItem->id, 'sequence' => 1, 'payload' => ['selected' => [$t->wrongOptionId]]]);
-    $t->post("/sit/{$t->exam->id}/answer", ['item_id' => $essayItem->id, 'sequence' => 2, 'payload' => ['text' => 'An essay answer.']]);
-    $t->post("/sit/{$t->exam->id}/submit");
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $sbaItem->id, 'sequence' => 1, 'payload' => ['selected' => [$t->wrongOptionId]]]);
+    $t->post("/sit/{$t->exam->sit_code}/answer", ['item_id' => $essayItem->id, 'sequence' => 2, 'payload' => ['text' => 'An essay answer.']]);
+    $t->post("/sit/{$t->exam->sit_code}/submit");
 
     return ['attempt' => $attempt->fresh(), 'sbaItem' => $sbaItem, 'essayItem' => $essayItem];
 }

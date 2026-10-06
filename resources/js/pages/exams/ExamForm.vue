@@ -72,6 +72,7 @@ const form = useForm({
     starts_at: props.examination?.startsAt ?? '',
     closes_at: props.examination?.closesAt ?? '',
     shared_pin: props.examination?.sharedPin ?? '',
+    show_result: props.examination?.showResult ?? false,
     question_count: '' as number | '',
     duration_minutes:
         props.examination?.durationMinutes ?? props.defaults.durationMinutes,
@@ -479,6 +480,20 @@ const select =
                             }}
                         </p>
                         <InputError :message="form.errors.pass_percentage" />
+                    </div>
+
+                    <div class="grid min-w-0 content-start gap-1 md:col-span-2">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input
+                                v-model="form.show_result"
+                                type="checkbox"
+                                class="size-4"
+                                data-test="show-result"
+                            />
+                            Show candidates their score, and whether they
+                            passed, as soon as they submit
+                        </label>
+                        <InputError :message="form.errors.show_result" />
                     </div>
 
                     <div class="grid min-w-0 content-start gap-2 md:col-span-2">

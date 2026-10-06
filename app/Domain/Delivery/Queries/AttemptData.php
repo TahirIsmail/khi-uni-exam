@@ -33,7 +33,7 @@ final class AttemptData
             'paperItem' => $candidateItem->paperItem,
             'optionOrder' => $candidateItem->option_order,
             'answer' => $answers->get($candidateItem->id),
-        ])->values()->all(), fn (int $mediaId): string => route('sit.media', [$attempt->examination_id, $mediaId], absolute: false));
+        ])->values()->all(), fn (int $mediaId): string => route('sit.media', [$attempt->examination->sit_code, $mediaId], absolute: false));
 
         return [
             'attempt' => [

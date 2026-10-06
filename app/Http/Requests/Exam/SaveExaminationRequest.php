@@ -30,6 +30,8 @@ class SaveExaminationRequest extends FormRequest
             'closes_at' => ['nullable', 'date_format:Y-m-d\TH:i'],
             // Optional: one exam PIN for every candidate, so nobody needs a PIN of their own.
             'shared_pin' => ['nullable', 'string', 'regex:/^[0-9]{4,10}$/'],
+            // Candidates see their score and pass/fail the moment they submit.
+            'show_result' => ['boolean'],
             // Creating only: draw this many questions from the whole course and publish the paper.
             'question_count' => ['nullable', 'integer', 'min:1', 'max:500'],
             'duration_minutes' => ['required', 'integer', 'min:'.(int) config('exam.duration_minutes.min'), 'max:'.(int) config('exam.duration_minutes.max')],
@@ -100,6 +102,7 @@ class SaveExaminationRequest extends FormRequest
             instructions: $instructions === '' ? null : $instructions,
             closesAt: $this->closesAt(),
             sharedPin: isset($data['shared_pin']) && $data['shared_pin'] !== '' ? (string) $data['shared_pin'] : null,
+            showResult: (bool) ($data['show_result'] ?? false),
         );
     }
 
