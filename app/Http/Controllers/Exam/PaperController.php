@@ -18,6 +18,8 @@ use App\Domain\Paper\Models\PaperComment;
 use App\Domain\Paper\Models\PaperItem;
 use App\Domain\Paper\PaperItems;
 use App\Domain\Paper\Queries\PaperData;
+use App\Domain\QuestionBank\Models\QuestionVersion;
+use App\Domain\QuestionBank\Queries\QuestionEditorData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,6 +47,47 @@ class PaperController extends ExamAreaController
         return Inertia::render('exams/Paper', [
             'examination' => $examinations->detail($exam),
             ...$data->screen($request->user('web'), $exam, $paper),
+        ]);
+    }
+
+    /**
+     * The whole paper to read through: the examination's details, then every question in order with
+     * its marks — and the answer key, for whoever turns it on. Only for those who may read a paper's
+     * questions (PaperData::mayRead), not merely count them.
+     */
+    public function preview(Request $request, Examination $exam, ExaminationData $examinations, PaperData $data, QuestionEditorData $editorData): Response
+    {
+        $this->guard($request, $exam);
+        $this->mustSeePapers($request, $exam);
+        abort_unless($data->mayRead($request->user('web'), $exam), 403, 'You cannot read the questions of this paper.');
+
+        $input = $request->validate(['version' => ['nullable', 'integer', 'min:1']]);
+        $paper = isset($input['version'])
+            ? Paper::query()->where('examination_id', $exam->id)->where('version_no', (int) $input['version'])->firstOrFail()
+            : $this->paperOrFail($exam);
+
+        $items = PaperItem::query()->where('paper_id', $paper->id)->orderBy('position')->get();
+        $versions = QuestionVersion::query()->whereIn('id', $items->pluck('version_id'))->with('question:id,public_ref')->get()->keyBy('id');
+
+        return Inertia::render('exams/PaperPreview', [
+            'examination' => $examinations->detail($exam),
+            'paper' => [
+                'versionNo' => $paper->version_no,
+                'statusLabel' => $paper->status->label(),
+                'shuffleQuestions' => (bool) $paper->shuffle_questions,
+                'shuffleOptions' => (bool) $paper->shuffle_options,
+            ],
+            'questions' => array_values($items->map(function (PaperItem $item) use ($versions, $editorData): ?array {
+                $version = $versions->get($item->version_id);
+
+                return $version === null ? null : [
+                    'number' => $item->position,
+                    'reference' => $version->question->public_ref.' v'.$version->version_no,
+                    // The marks this paper gives it, which may differ from the question bank's.
+                    'version' => ['marks' => (float) $item->marks] + $editorData->version($version),
+                ];
+            })->filter()->all()),
+            'types' => $editorData->lookups()['types'],
         ]);
     }
 

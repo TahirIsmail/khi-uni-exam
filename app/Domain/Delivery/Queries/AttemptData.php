@@ -4,6 +4,8 @@ namespace App\Domain\Delivery\Queries;
 
 use App\Domain\Delivery\Models\CandidateExam;
 use App\Domain\Delivery\Models\CandidatePaperItem;
+use App\Domain\Paper\Models\Paper;
+use App\Domain\Paper\Models\PaperItem;
 use App\Domain\QuestionBank\Models\QuestionType;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -21,10 +23,70 @@ final class AttemptData
      */
     public function screen(CandidateExam $attempt): array
     {
-        $types = QuestionType::query()->get()->keyBy('id');
+        /** @var Collection<int, stdClass> $answers */
+        $answers = DB::table('dlv_answers_current')->where('candidate_exam_id', $attempt->id)
+            ->get(['cand_paper_item_id', 'payload', 'flagged'])->keyBy('cand_paper_item_id');
 
-        $candidateItems = $attempt->items()->with('paperItem')->get();
-        $versionIds = $candidateItems->pluck('paperItem.version_id')->unique()->values();
+        $rows = $this->rows($attempt->items()->with('paperItem')->get()->map(fn (CandidatePaperItem $candidateItem): array => [
+            'id' => $candidateItem->id,
+            'position' => $candidateItem->position,
+            'paperItem' => $candidateItem->paperItem,
+            'optionOrder' => $candidateItem->option_order,
+            'answer' => $answers->get($candidateItem->id),
+        ])->values()->all());
+
+        return [
+            'attempt' => [
+                'status' => $attempt->status->value,
+                'startedAt' => $attempt->started_at?->toIso8601String(),
+                'deadlineAt' => $attempt->deadline_at?->toIso8601String(),
+                'remainingSeconds' => $this->remainingSeconds($attempt),
+                'lastItemId' => $attempt->last_item_id,
+            ],
+            'items' => $rows,
+        ];
+    }
+
+    /**
+     * The paper as a candidate would be given it, for staff to look at before anybody sits it: in the
+     * paper's own order, unshuffled, nothing answered, the whole time on the clock. No attempt is
+     * made and nothing is stored.
+     *
+     * @return array<string, mixed>
+     */
+    public function preview(Paper $paper, int $durationMinutes): array
+    {
+        $rows = $this->rows(PaperItem::query()->where('paper_id', $paper->id)->orderBy('position')->get()
+            ->map(fn (PaperItem $item): array => [
+                'id' => $item->id,
+                'position' => $item->position,
+                'paperItem' => $item,
+                'optionOrder' => null,
+                'answer' => null,
+            ])->values()->all());
+
+        return [
+            'attempt' => [
+                'status' => 'in_progress',
+                'startedAt' => null,
+                'deadlineAt' => null,
+                'remainingSeconds' => $durationMinutes * 60,
+                'lastItemId' => null,
+            ],
+            'items' => $rows,
+        ];
+    }
+
+    /**
+     * @param  array<int, array{id: int, position: int, paperItem: PaperItem|null, optionOrder: list<int>|null, answer: stdClass|null}>  $entries
+     * @return list<array<string, mixed>>
+     */
+    private function rows(array $entries): array
+    {
+        // An item whose paper item is gone has nothing to show.
+        $entries = collect($entries)->filter(fn (array $entry): bool => $entry['paperItem'] !== null);
+        $types = QuestionType::query()->get()->keyBy('id');
+        $versionIds = $entries->map(fn (array $entry): int => (int) $entry['paperItem']->version_id)->unique()->values();
 
         /** @var Collection<int, stdClass> $versions */
         $versions = DB::table('qb_question_versions')->whereIn('id', $versionIds)
@@ -36,26 +98,22 @@ final class AttemptData
         $itemsByVersion = DB::table('qb_question_items')->whereIn('version_id', $versionIds)
             ->orderBy('sort_order')->get(['id', 'version_id', 'body'])->groupBy('version_id');
 
-        /** @var Collection<int, stdClass> $answers */
-        $answers = DB::table('dlv_answers_current')->where('candidate_exam_id', $attempt->id)
-            ->get(['cand_paper_item_id', 'payload', 'flagged'])->keyBy('cand_paper_item_id');
-
-        $rows = array_values($candidateItems->map(function (CandidatePaperItem $candidateItem) use ($types, $versions, $optionsByVersion, $itemsByVersion, $answers): array {
-            $paperItem = $candidateItem->paperItem;
+        return array_values($entries->map(function (array $entry) use ($types, $versions, $optionsByVersion, $itemsByVersion): array {
+            $paperItem = $entry['paperItem'];
             $type = $types->get($paperItem->question_type_id);
             $version = $versions->get($paperItem->version_id);
-            $answer = $answers->get($candidateItem->id);
+            $answer = $entry['answer'];
 
             /** @var Collection<int, stdClass> $versionOptions */
             $versionOptions = $optionsByVersion->get($paperItem->version_id, collect());
-            $orderedOptions = $this->inOrder($versionOptions, $candidateItem->option_order);
+            $orderedOptions = $this->inOrder($versionOptions, $entry['optionOrder']);
 
             /** @var Collection<int, stdClass> $versionItems */
             $versionItems = $itemsByVersion->get($paperItem->version_id, collect());
 
             return [
-                'id' => $candidateItem->id,
-                'position' => $candidateItem->position,
+                'id' => $entry['id'],
+                'position' => $entry['position'],
                 'marks' => (float) $paperItem->marks,
                 'typeCode' => $type?->code,
                 'hasOptions' => (bool) $type?->has_options,
@@ -73,17 +131,6 @@ final class AttemptData
                 'flagged' => $answer !== null && (bool) $answer->flagged,
             ];
         })->all());
-
-        return [
-            'attempt' => [
-                'status' => $attempt->status->value,
-                'startedAt' => $attempt->started_at?->toIso8601String(),
-                'deadlineAt' => $attempt->deadline_at?->toIso8601String(),
-                'remainingSeconds' => $this->remainingSeconds($attempt),
-                'lastItemId' => $attempt->last_item_id,
-            ],
-            'items' => $rows,
-        ];
     }
 
     public function remainingSeconds(CandidateExam $attempt): ?int

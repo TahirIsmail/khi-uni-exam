@@ -332,9 +332,29 @@ const showMix = (rows: PaperMixRow[]): boolean =>
                 :title="`Paper — ${examination.title}`"
                 :description="`${examination.reference} · ${examination.course} · ${examination.examType} · ${number(examination.totalMarks)} marks`"
             />
-            <Button as-child variant="ghost">
-                <Link :href="base">Back to the examination</Link>
-            </Button>
+            <div class="flex flex-wrap gap-2">
+                <!-- The whole paper to read through, and the screen a candidate gets. -->
+                <template v-if="paper && mayRead">
+                    <Button
+                        as-child
+                        variant="outline"
+                        data-test="preview-paper"
+                    >
+                        <Link
+                            :href="`${base}/paper/preview?version=${paper.versionNo}`"
+                            >Preview paper</Link
+                        >
+                    </Button>
+                    <Button as-child variant="outline">
+                        <a :href="`${base}/preview`" target="_blank"
+                            >Preview as candidate</a
+                        >
+                    </Button>
+                </template>
+                <Button as-child variant="ghost">
+                    <Link :href="base">Back to the examination</Link>
+                </Button>
+            </div>
         </div>
 
         <ExamJourney

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { Clock, Upload, Users } from '@lucide/vue';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { Clock, Copy, Eye, FileText, Upload, Users } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +24,25 @@ const props = defineProps<{
     summary: CandidateSummary;
     can: CandidateAbilities;
     centres: CentreChoice[];
+    next: {
+        sitUrl: string;
+        published: boolean;
+        canPreview: boolean;
+        canMonitor: boolean;
+    };
 }>();
+
+// ---- what comes after this page: check-in, the sign-in address, watching it -------------------
+const copied = ref(false);
+async function copySitUrl(): Promise<void> {
+    try {
+        await navigator.clipboard.writeText(props.next.sitUrl);
+        copied.value = true;
+        window.setTimeout(() => (copied.value = false), 2000);
+    } catch {
+        window.prompt('Copy the sign-in address:', props.next.sitUrl);
+    }
+}
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Conduct Exam', href: conduct.index() }] },
@@ -122,10 +140,77 @@ const statusStyle: Record<
     <Head :title="`Candidates — ${examination.title}`" />
 
     <div class="flex flex-col gap-6 p-4">
-        <Heading
-            :title="`Candidates — ${examination.title}`"
-            :description="`${examination.reference} · ${examination.course}`"
-        />
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <Heading
+                :title="`Candidates — ${examination.title}`"
+                :description="`${examination.reference} · ${examination.course}`"
+            />
+            <div v-if="next.canPreview" class="flex flex-wrap gap-2">
+                <Button as-child variant="outline" data-test="preview-paper">
+                    <Link :href="`/exams/${examination.id}/paper/preview`"
+                        ><FileText /> Preview paper</Link
+                    >
+                </Button>
+                <Button as-child variant="outline" data-test="preview-exam">
+                    <a
+                        :href="conduct.preview(examination.id).url"
+                        target="_blank"
+                        ><Eye /> Preview as candidate</a
+                    >
+                </Button>
+            </div>
+        </div>
+
+        <!-- After the roster: check-in on the day, then candidates sign in and sit it. -->
+        <div
+            class="grid gap-3 rounded-xl border p-4 text-sm shadow-xs"
+            data-test="next-steps"
+        >
+            <h2 class="font-medium">On the day of the examination</h2>
+            <p
+                v-if="!next.published"
+                class="rounded-md bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                data-test="not-published"
+            >
+                The paper is not published yet, so candidates cannot sign in.
+                Publish it from the examination's paper first.
+            </p>
+            <ol class="grid list-decimal gap-2 pl-5">
+                <li>
+                    <Link
+                        v-if="can.checkin"
+                        :href="conduct.checkin(examination.id)"
+                        class="font-medium underline-offset-4 hover:underline"
+                        >Check in</Link
+                    ><span v-else class="font-medium">Check in</span> each
+                    candidate as they arrive. Each one is given an exam PIN.
+                </li>
+                <li>
+                    On the exam computer the candidate opens
+                    <code class="bg-muted rounded px-1" data-test="sit-url">{{
+                        next.sitUrl
+                    }}</code>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        class="ml-1"
+                        data-test="copy-sit-url"
+                        @click="copySitUrl"
+                        ><Copy /> {{ copied ? 'Copied' : 'Copy' }}</Button
+                    >
+                    and signs in with their candidate number and PIN.
+                </li>
+                <li>
+                    <Link
+                        v-if="next.canMonitor"
+                        :href="conduct.monitor(examination.id)"
+                        class="font-medium underline-offset-4 hover:underline"
+                        >Monitor</Link
+                    ><span v-else class="font-medium">Monitor</span> who is
+                    sitting it, add time or pause a room while it runs.
+                </li>
+            </ol>
+        </div>
 
         <div class="flex flex-wrap gap-4 text-sm" data-test="summary">
             <div class="rounded-xl border px-4 py-3">

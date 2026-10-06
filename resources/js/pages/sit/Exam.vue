@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { Flag } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AnswerCapture from '@/components/sit/AnswerCapture.vue';
@@ -18,6 +18,16 @@ const props = defineProps<{
     examination: { id: number; title: string; instructions: string | null };
     attempt: AttemptState;
     items: AttemptItem[];
+    /**
+     * Staff looking at the screen a candidate gets ("Preview as candidate"): answers stay in this
+     * page, the clock runs, and nothing — answers, heartbeats, device, proctoring — reaches the server.
+     */
+    preview?: {
+        backUrl: string;
+        checkUrl: string;
+        paper: string;
+        published: boolean;
+    } | null;
 }>();
 
 // ---- local, per-attempt state: the answers as they stand, and a "Saved" indicator per item ------
@@ -162,6 +172,9 @@ function queueAnswer(
         ...answers.value,
         [item.id]: { answer: payload, flagged },
     };
+    if (props.preview) {
+        return;
+    }
     savedUpTo.value = { ...savedUpTo.value, [item.id]: false };
 
     const sequence = nextSequence++;
@@ -249,7 +262,10 @@ async function checkDevice(): Promise<void> {
 
 // ---- browser lockdown (exam phase step 19): fullscreen, and every attempt to leave it, copy, ----
 // paste, right-click, print or open developer tools is reported, never silently blocked alone.
-function reportProctorEvent(type: ProctorEventType, detail?: Record<string, unknown>): void {
+function reportProctorEvent(
+    type: ProctorEventType,
+    detail?: Record<string, unknown>,
+): void {
     void post(sit.proctorEvent(props.examination.id).url, { type, detail });
 }
 function onVisibilityChange(): void {
@@ -309,6 +325,13 @@ function stopLockdown(): void {
 }
 
 onMounted(() => {
+    if (props.preview) {
+        tickTimer = window.setInterval(() => {
+            remainingSeconds.value = Math.max(0, remainingSeconds.value - 1);
+        }, 1000);
+
+        return;
+    }
     void flushQueue();
     void heartbeat();
     void checkDevice();
@@ -331,6 +354,30 @@ onBeforeUnmount(() => {
 // ---- submitting ---------------------------------------------------------------------------------
 const submitting = ref(false);
 async function submit(): Promise<void> {
+    if (props.preview) {
+        // Nothing is submitted: the answers go to be marked as they would be, for staff to see.
+        if (
+            window.confirm(
+                'Finish the preview? You will see what the candidate sees after submitting, and how these answers would be marked. Nothing is saved.',
+            )
+        ) {
+            submitting.value = true;
+            router.post(
+                props.preview.checkUrl,
+                {
+                    answers: Object.fromEntries(
+                        Object.entries(answers.value).map(([id, row]) => [
+                            id,
+                            row.answer,
+                        ]),
+                    ),
+                },
+                { onFinish: () => (submitting.value = false) },
+            );
+        }
+
+        return;
+    }
     if (
         !window.confirm(
             'Submit this exam? Once submitted, it cannot be changed.',
@@ -362,6 +409,23 @@ const answeredCount = computed(
     />
 
     <div class="bg-background flex min-h-screen flex-col">
+        <div
+            v-if="preview"
+            class="flex flex-wrap items-center justify-between gap-2 bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+            data-test="preview-banner"
+        >
+            <span
+                ><strong>Preview</strong> — this is the screen a candidate gets.
+                Nothing you answer is saved. {{ preview.paper
+                }}<template v-if="!preview.published"
+                    >: candidates cannot sign in until it is
+                    published.</template
+                ></span
+            >
+            <Link :href="preview.backUrl" class="font-medium underline"
+                >Leave the preview</Link
+            >
+        </div>
         <header
             class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
         >

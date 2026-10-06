@@ -13,6 +13,9 @@ use App\Domain\Candidate\Queries\CentreData;
 use App\Domain\Exam\Models\Examination;
 use App\Domain\Exam\Queries\ExaminationData;
 use App\Domain\Identity\ActiveBranch;
+use App\Domain\Paper\Enums\PaperStatus;
+use App\Domain\Paper\Models\Paper;
+use App\Domain\Paper\Queries\PaperData;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,6 +45,13 @@ class CandidateController extends Controller
             'summary' => $candidates->summary($exam),
             'can' => $candidates->abilities($request->user('web'), $exam),
             'centres' => $centres->choices($exam->branch_id),
+            // What comes next: the address candidates sign in at, and whether they can yet.
+            'next' => [
+                'sitUrl' => route('sit.login', $exam),
+                'published' => Paper::query()->where('examination_id', $exam->id)->where('status', PaperStatus::Published)->exists(),
+                'canPreview' => app(PaperData::class)->mayRead($request->user('web'), $exam),
+                'canMonitor' => $request->user('web')->can('delivery.monitor'),
+            ],
         ]);
     }
 

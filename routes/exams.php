@@ -30,6 +30,8 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         // The paper: chosen from the question bank to match the approved blueprint.
         Route::prefix('paper')->group(function () {
             Route::get('/', [PaperController::class, 'show'])->middleware('can:exam.view')->name('papers.show');
+            // The whole paper, question by question with its marks, to read or print.
+            Route::get('preview', [PaperController::class, 'preview'])->middleware('can:exam.view')->name('papers.preview');
             Route::post('/', [PaperController::class, 'store'])->middleware(['can:exam.select_questions', 'throttle:30,1'])->name('papers.store');
             Route::put('/', [PaperController::class, 'update'])->middleware(['can:exam.select_questions', 'throttle:60,1'])->name('papers.update');
             Route::post('fill', [PaperController::class, 'fill'])->middleware(['can:exam.select_questions', 'throttle:20,1'])->name('papers.fill');

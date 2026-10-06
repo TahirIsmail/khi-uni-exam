@@ -5,6 +5,7 @@ use App\Http\Controllers\Exam\CentreController;
 use App\Http\Controllers\Exam\CheckInController;
 use App\Http\Controllers\Exam\ConductController;
 use App\Http\Controllers\Exam\MonitorController;
+use App\Http\Controllers\Exam\PreviewController;
 use App\Http\Controllers\Exam\ProctorController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +36,11 @@ Route::middleware('auth')->prefix('exams')->group(function () {
         Route::post('candidates/{candidate}/allocate', [CandidateController::class, 'allocateOne'])->whereNumber('candidate')->middleware(['can:centre.allocate', 'throttle:60,1'])->name('conduct.candidates.allocate-one');
         Route::post('candidates/{candidate}/extra-time', [CandidateController::class, 'extraTime'])->whereNumber('candidate')->middleware(['can:candidate.extra_time', 'throttle:60,1'])->name('conduct.candidates.extra-time');
 
+        // The exam screen as a candidate sees it, nothing saved — to check the paper or show students.
+        Route::get('preview', [PreviewController::class, 'show'])->middleware('can:exam.view')->name('conduct.preview');
+        // Finishing the preview: how the answers just given would be marked, shown to staff, never stored.
+        Route::post('preview/check', [PreviewController::class, 'check'])->middleware(['can:exam.view', 'throttle:30,1'])->name('conduct.preview.check');
+        Route::get('preview/check', [PreviewController::class, 'again'])->middleware('can:exam.view');
         Route::get('checkin', [CheckInController::class, 'index'])->middleware('can:candidate.checkin')->name('conduct.checkin');
         Route::post('checkin/{candidate}', [CheckInController::class, 'checkIn'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.do');
         Route::post('checkin/{candidate}/reissue-pin', [CheckInController::class, 'reissuePin'])->whereNumber('candidate')->middleware(['can:candidate.checkin', 'throttle:60,1'])->name('conduct.checkin.reissue-pin');

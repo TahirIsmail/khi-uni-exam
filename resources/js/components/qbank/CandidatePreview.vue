@@ -7,6 +7,8 @@ const props = defineProps<{
     draft: QuestionDraft;
     type: QuestionTypeInfo | null;
     showAnswers?: boolean;
+    /** The heading; a paper names each question by its number instead. */
+    title?: string;
 }>();
 
 // What the candidate sees: the same sanitised HTML the server stored, without the key.
@@ -28,7 +30,9 @@ const shuffled = computed(() => {
         <header
             class="flex items-center justify-between gap-2 border-b px-4 py-3"
         >
-            <h3 class="font-medium">As the candidate sees it</h3>
+            <h3 class="font-medium">
+                {{ title ?? 'As the candidate sees it' }}
+            </h3>
             <Badge variant="outline"
                 >{{ draft.marks }} mark{{ draft.marks === 1 ? '' : 's' }}</Badge
             >
