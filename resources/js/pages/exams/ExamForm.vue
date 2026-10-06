@@ -72,7 +72,7 @@ const form = useForm({
     starts_at: props.examination?.startsAt ?? '',
     closes_at: props.examination?.closesAt ?? '',
     shared_pin: props.examination?.sharedPin ?? '',
-    show_result: props.examination?.showResult ?? false,
+    show_result: props.examination?.showResult ?? true,
     question_count: '' as number | '',
     duration_minutes:
         props.examination?.durationMinutes ?? props.defaults.durationMinutes,
